@@ -1,0 +1,41 @@
+**Brush Up Life — 30s**
+
+**Scene 1 (Inside the plane) — 3s**
+
+* Use in-flight ambience; at first glance it must read as “on a plane” (show a plane window, seats, etc.).
+* The male and female leads sit in their seats (upper bodies are enough). Their heads slowly lean together; red hearts appear behind them; add a faint pink, romantic screen effect.
+* Both look shy and gaze at each other. This warm moment lasts for the first 2 seconds; from 2–3s, transition into a plane-in-distress state.
+* Suddenly the plane shakes (apply continuous screen shake; the leads also wobble). Flash warning lights; add sizzling malfunction sparks, smoke, and dropping oxygen masks.
+
+**Scene 2 (Black screen) — 1s**
+
+* Hard cut to black like a power outage. The leads call each other’s names, “Anna” and “Neil,” with matching text bubbles popping up.
+
+**Scene 3 (Plane crash) — 2s**
+
+* A green-screen plane asset, with fire and thick smoke, flies off the screen; add an explosion effect at the edge as it exits, then the screen gradually flashes to white.
+
+**Scene 4 (Heaven background) — 10–15s**
+
+* With the white-flash transition, the heroine (half-body, same clothes as before) appears. She gasps, spreads her hands, looks at herself, and mutters: “Am I dead?”
+* A blue box pops up at the top: “You are already dead.” She reacts with a sad expression.
+* Another blue box appears explaining she can be reborn once; she looks surprised.
+* Three profession choices appear; a black slider bar rises from the bottom; the heroine moves out of frame. (Refer to the PSD “rebirth” UI.)
+* A finger moves to the first option, “CEO,” and banknotes fall across the screen; moves to the second option, add neon effects and floating music notes.
+* The finger moves away; the heroine re-enters, clenches her fist with determination, and says: “I want to be reborn to save our love!” She steps aside again; the finger taps the third option and then drags the bottom slider.
+* (All click/hover/selection animations in this scene must be implemented.)
+
+**Scene 5 (Rapid flashback montage; heavier motion blur on cuts) — 6–8s**
+
+* Use a “rebirth-flashback” style transition with a countdown (ending at **1** is fine).
+* The heroine (half-body) looks up at the countdown UI, surprised, then runs toward the right side of the screen as scenes whip past. Emphasize tension; start the countdown around 6–7s.
+* She reaches the cockpit door. Switch to her POV. Slowly push in on the door; the door slides open; use a white-flash zoom transition; the timer can end at **1**.
+
+**Scene 6 (Entering the cockpit)**
+
+* The heroine sits in the outboard co-pilot seat, hands over her mouth in shock, then with tears welling and a mix of sorrow and excitement says: “Neil!!!”
+
+**Scene 7 (Cover/End card)**
+
+* The hero says: “Let’s save our love together!”
+* End slate: show the product icon and download channels. Background is defocused with various book covers slowly moving.

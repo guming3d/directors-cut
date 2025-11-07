@@ -1,0 +1,10 @@
+
+* For all videos, pay close attention to pacing. Keep on-screen text visible long enough to be easily read, and keep visual pacing tight and brisk. You don’t need to rigidly follow the exact seconds listed in the brief—adjust timing based on the visuals.
+* Note: After grasping the overall intent and storyline, creators are encouraged to exercise creative freedom on details not explicitly covered in the script.
+* For character assets (clothing and body), do not merge layers. Keep folders in Photoshop (PS) or separate compositions in After Effects (AE) to make later outfit changes easier.
+* When creating layers for facial-expression changes, avoid overlapping layers. Expressions don’t need to stay the same—switch them according to the story and shots.
+* Keep typography consistent—font choice, size, alignment/centering, etc.
+* Make actions as lively and smooth as possible. Pay attention to shot changes and feel free to use a variety of transitions.
+* Mind character-to-scene composition and scale. Emphasize key elements; blur less important parts when appropriate.
+* Understand the story and build atmosphere. Avoid stiffness.
+* Ensure the music matches the plot. For tense scenes, the score should convey tension—don’t use soothing music.
