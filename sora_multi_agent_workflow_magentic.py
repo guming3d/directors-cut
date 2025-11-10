@@ -20,7 +20,7 @@ from agent_framework import (
     MagenticOrchestratorMessageEvent,
     WorkflowOutputEvent,
 )
-from agent_framework.openai import OpenAIChatClient, OpenAIResponsesClient
+from agent_framework.azure import AzureOpenAIChatClient, AzureOpenAIResponsesClient
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -145,7 +145,7 @@ def build_agents() -> dict[str, ChatAgent]:
             Communicate clearly, cite file paths, and do not skip steps.
             """
         ).strip(),
-        chat_client=OpenAIChatClient(),
+        chat_client=AzureOpenAIChatClient(),
     )
 
     screenwriter_agent = ChatAgent(
@@ -159,7 +159,7 @@ def build_agents() -> dict[str, ChatAgent]:
             Write the prompt to `output/prompts/scene_<scene_id>.txt` before responding. Confirm file paths and durations.
             """
         ).strip(),
-        chat_client=OpenAIChatClient(),
+        chat_client=AzureOpenAIChatClient(),
     )
 
     storyboard_agent = ChatAgent(
@@ -171,7 +171,7 @@ def build_agents() -> dict[str, ChatAgent]:
             Return a table mapping scene_id to the chosen relative image path and rationale focused on framing and tone consistency.
             """
         ).strip(),
-        chat_client=OpenAIResponsesClient(),
+        chat_client=AzureOpenAIResponsesClient(),
         tools=HostedCodeInterpreterTool(),
     )
 
@@ -185,11 +185,11 @@ def build_agents() -> dict[str, ChatAgent]:
             2. Call the Azure Sora client by invoking `python sora-openai-client.py --prompt-file <prompt_path> --input-image <resized_image> --resolution {TARGET_RESOLUTION} --duration <seconds>` so duration matches the plan.
             3. Move/rename the downloaded MP4 to `output/scenes/scene_<scene_id>.mp4`.
             4. Log metadata (prompt, image, job_id) into `output/scenes/scene_<scene_id>.json`.
-            Use the HostedCodeInterpreterTool for Python + shell (ffmpeg, Pillow). Ensure environment variables `AZURE_OPENAI_API_KEY`, `ENDPOINT_URL`, `DEPLOYMENT_NAME` are set before running the client.
+            Use the HostedCodeInterpreterTool for Python + shell (ffmpeg, Pillow). Ensure environment variables `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_RESPONSES_DEPLOYMENT_NAME`, `ENDPOINT_URL`, `DEPLOYMENT_NAME` are set before running the client.
             Report success with paths for video, log, and resized image.
             """
         ).strip(),
-        chat_client=OpenAIResponsesClient(),
+        chat_client=AzureOpenAIResponsesClient(),
         tools=HostedCodeInterpreterTool(),
     )
 
@@ -206,7 +206,7 @@ def build_agents() -> dict[str, ChatAgent]:
             Verify audio continuity and report any warnings.
             """
         ).strip(),
-        chat_client=OpenAIResponsesClient(),
+        chat_client=AzureOpenAIResponsesClient(),
         tools=HostedCodeInterpreterTool(),
     )
 
@@ -238,8 +238,8 @@ async def run_workflow() -> None:
             composer=agents["composer"],
         )
         .with_standard_manager(
-            chat_client=OpenAIChatClient(),
-            max_round_count=20,
+            chat_client=AzureOpenAIChatClient(),
+            max_round_count=100,
             max_stall_count=4,
             max_reset_count=2,
         )
