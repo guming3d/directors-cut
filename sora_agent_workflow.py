@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Sequence
 
+from PIL import Image
+
 from pydantic import BaseModel, Field
 
 from agent_framework import Executor, WorkflowBuilder, WorkflowContext, handler
@@ -27,6 +29,14 @@ SCENES_DIR = OUTPUT_DIR / "scenes"
 FINAL_VIDEO_PATH = OUTPUT_DIR / "sora_story_compilation.mp4"
 SORA_CLIENT = ROOT / "sora-openai-client.py"
 TMP_DIR = OUTPUT_DIR / "tmp"
+DEFAULT_SORA_RESOLUTION = "720x1280"
+SCENE_IMAGE_DIR = ROOT / "scene_start_screen"
+SCENE_IMAGE_PATTERN = re.compile(r"scene0*(\d+)\.(?:png|jpe?g)$", re.IGNORECASE)
+SCENE_IMAGE_SIZE = (720, 1280)
+try:
+    SCENE_IMAGE_RESAMPLE = Image.Resampling.LANCZOS  # type: ignore[attr-defined]
+except AttributeError:  # pragma: no cover - Pillow < 10 fallback
+    SCENE_IMAGE_RESAMPLE = Image.LANCZOS
 
 ALLOWED_DURATIONS = (4, 8, 12)
 HEADER_PATTERN = re.compile(r"^\*\*\s*(Scene\s+(\d+)[^*]*)\*\*$", re.IGNORECASE)
@@ -76,8 +86,12 @@ class VideoWorkflowRequest(BaseModel):
     tmp_dir: str = Field(default=str(TMP_DIR), description="Directory for intermediate artifacts.")
     final_video_path: str = Field(default=str(FINAL_VIDEO_PATH), description="Final stitched MP4 path.")
     sora_client_path: str = Field(default=str(SORA_CLIENT), description="Path to sora-openai-client.py.")
+    scene_image_dir: str = Field(
+        default=str(SCENE_IMAGE_DIR),
+        description="Directory containing scene start screen images (scene1.png, scene2.png, ...).",
+    )
     target_seconds: int = Field(default=35, ge=4, description="Desired final runtime.")
-    resolution: str = Field(default=os.getenv("VIDEO_SIZE", "1280x720"), description="Clip resolution.")
+    resolution: str = Field(default=DEFAULT_SORA_RESOLUTION, description="Clip resolution (fixed 720x1280 portrait).")
     thread_count: int = Field(
         default=int(os.getenv("SORA_WORKFLOW_THREADS", "3")),
         ge=1,
@@ -225,6 +239,67 @@ def escape_for_concat(path: Path) -> str:
     return f"file '{escaped}'"
 
 
+def _resize_scene_image(source: Path, dest: Path) -> None:
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with Image.open(source) as img:
+        mode = "RGBA" if img.mode == "RGBA" else "RGB"
+        converted = img.convert(mode)
+        resized = converted.resize(SCENE_IMAGE_SIZE, SCENE_IMAGE_RESAMPLE)
+        resized.save(dest, format="PNG")
+
+
+def prepare_scene_start_images(scene_dir: Path, tmp_dir: Path, scene_count: int) -> list[str]:
+    if scene_count <= 0:
+        return []
+    if not scene_dir.is_dir():
+        raise FileNotFoundError(
+            f"Scene start screen directory not found: {scene_dir}. Provide one with scene1.png, scene2.png, ..."
+        )
+
+    matches: dict[int, Path] = {}
+    for entry in scene_dir.iterdir():
+        if not entry.is_file():
+            continue
+        match = SCENE_IMAGE_PATTERN.fullmatch(entry.name)
+        if match:
+            index = int(match.group(1))
+            matches[index] = entry
+
+    if not matches:
+        raise RuntimeError(
+            f"No scene start screens found in {scene_dir}. Expected files named scene1.png, scene2.png, ..."
+        )
+
+    expected = set(range(1, scene_count + 1))
+    available = set(matches)
+    if expected != available:
+        missing = sorted(expected - available)
+        extra = sorted(available - expected)
+        issues: list[str] = []
+        if missing:
+            issues.append(
+                "missing " + ", ".join(f"scene{idx}.png" for idx in missing)
+            )
+        if extra:
+            issues.append(
+                "unexpected " + ", ".join(f"scene{idx}.png" for idx in extra)
+            )
+        raise RuntimeError(
+            "Scene/image count mismatch: "
+            + "; ".join(issues)
+            + f". Ensure there is exactly one file per scene in {scene_dir}."
+        )
+
+    prepared_dir = tmp_dir / "scene_start_images"
+    prepared_paths: list[str] = []
+    for idx in range(1, scene_count + 1):
+        source = matches[idx]
+        dest = prepared_dir / f"scene{idx}_720x1280.png"
+        _resize_scene_image(source, dest)
+        prepared_paths.append(str(dest))
+    return prepared_paths
+
+
 async def run_subprocess(cmd: Sequence[str], cwd: Path | None = None, env: dict[str, str] | None = None) -> tuple[str, str]:
     process = await asyncio.create_subprocess_exec(
         *cmd,
@@ -303,8 +378,11 @@ class DirectorAgent(Executor):
                 )
             )
 
+        tmp_dir = Path(request.tmp_dir)
+        scene_images = prepare_scene_start_images(Path(request.scene_image_dir), tmp_dir, len(plans))
         total_assigned = sum(plan.duration_seconds for plan in plans)
         await ctx.set_shared_state("scene_manifest", plans)
+        await ctx.set_shared_state("scene_images", scene_images)
         await ctx.yield_output(
             f"Director planned {len(plans)} scene(s) for {total_assigned}s "
             f"(target {request.target_seconds}s, composer trims excess)."
@@ -323,13 +401,14 @@ class Sora2Agent(Executor):
     @handler
     async def handle(self, batch: ScenePlanBatch, ctx: WorkflowContext[SceneRenderBatch]) -> None:
         request: VideoWorkflowRequest = await ctx.get_shared_state("request")  # type: ignore
+        scene_images: Sequence[str] = await ctx.get_shared_state("scene_images")  # type: ignore
         scenes_dir = Path(request.scenes_dir)
         scenes_dir.mkdir(parents=True, exist_ok=True)
         semaphore = asyncio.Semaphore(max(1, request.thread_count))
 
         async def render_scene(plan: ScenePlan) -> SceneRender:
             async with semaphore:
-                return await self._invoke_sora(plan, request, scenes_dir)
+                return await self._invoke_sora(plan, request, scenes_dir, scene_images)
 
         tasks = [asyncio.create_task(render_scene(plan)) for plan in batch.plans]
         renders: list[SceneRender] = []
@@ -346,6 +425,7 @@ class Sora2Agent(Executor):
         plan: ScenePlan,
         request: VideoWorkflowRequest,
         scenes_dir: Path,
+        scene_images: Sequence[str],
     ) -> SceneRender:
         scene_basename = f"scene_{plan.order:02d}.mp4"
         video_path = scenes_dir / scene_basename
@@ -369,6 +449,13 @@ class Sora2Agent(Executor):
             "--duration",
             str(plan.duration_seconds),
         ]
+
+        scene_index = plan.order - 1
+        if scene_index < 0 or scene_index >= len(scene_images):
+            raise RuntimeError(
+                f"Missing prepared start screen for {plan.label} (index {scene_index}). Verify plan/image alignment."
+            )
+        cmd.extend(["--input-image", scene_images[scene_index]])
 
         stdout, stderr = await run_subprocess(cmd, cwd=ROOT, env=env)
         client_log_path = video_path.with_suffix(".client.log")
@@ -487,17 +574,25 @@ def main() -> None:
     parser.add_argument("--script-path", default=str(SCRIPT_PATH), help="Path to video script (default: Chapters/video_script.txt).")
     parser.add_argument("--target-seconds", type=int, default=35, help="Final video runtime target.")
     parser.add_argument("--threads", type=int, default=3, help="Parallel Sora jobs (default 3).")
-    parser.add_argument("--resolution", default="1280x720", help="Clip resolution passed to Sora.")
+    parser.add_argument(
+        "--resolution",
+        default=DEFAULT_SORA_RESOLUTION,
+        help=f"Clip resolution passed to Sora (must remain {DEFAULT_SORA_RESOLUTION}).",
+    )
     parser.add_argument("--final-video", default=str(FINAL_VIDEO_PATH), help="Output MP4 path.")
     parser.add_argument("--devui", action="store_true", help="Launch Agent Framework DevUI.")
     parser.add_argument("--devui-port", type=int, default=8091, help="Port for DevUI (default 8091).")
     args = parser.parse_args()
 
+    cli_resolution = (args.resolution or "").strip() or DEFAULT_SORA_RESOLUTION
+    if cli_resolution != DEFAULT_SORA_RESOLUTION:
+        parser.error(f"--resolution must be {DEFAULT_SORA_RESOLUTION} to align with portrait workflow assets.")
+
     request = VideoWorkflowRequest(
         script_path=args.script_path,
         target_seconds=args.target_seconds,
         thread_count=args.threads,
-        resolution=args.resolution,
+        resolution=DEFAULT_SORA_RESOLUTION,
         final_video_path=args.final_video,
     )
 
