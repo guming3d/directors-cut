@@ -40,7 +40,6 @@ except AttributeError:  # pragma: no cover - Pillow < 10 fallback
 
 ALLOWED_DURATIONS = (4, 8, 12)
 HEADER_PATTERN = re.compile(r"^\*\*\s*(Scene\s+(\d+)[^*]*)\*\*$", re.IGNORECASE)
-DURATION_PATTERN = re.compile(r"(\d+)(?:\s*[–-]\s*(\d+))?\s*s", re.IGNORECASE)
 
 
 def _configure_logging() -> logging.Logger:
@@ -90,7 +89,6 @@ class VideoWorkflowRequest(BaseModel):
         default=str(SCENE_IMAGE_DIR),
         description="Directory containing scene start screen images (scene1.png, scene2.png, ...).",
     )
-    target_seconds: int = Field(default=35, ge=4, description="Desired final runtime.")
     resolution: str = Field(default=DEFAULT_SORA_RESOLUTION, description="Clip resolution (fixed 720x1280 portrait).")
     thread_count: int = Field(
         default=int(os.getenv("SORA_WORKFLOW_THREADS", "3")),
@@ -110,7 +108,6 @@ class SceneDraft:
     scene_number: int
     title: str
     description_lines: list[str]
-    suggested_seconds: int | None
 
 
 @dataclass
@@ -127,7 +124,6 @@ class ScenePlan:
 class ScenePlanBatch:
     plans: list[ScenePlan]
     assigned_total_seconds: int
-    target_seconds: int
 
 
 @dataclass
@@ -174,13 +170,11 @@ def parse_script(script_text: str) -> list[SceneDraft]:
             number_text = header_match.group(2)
             title_match = re.search(r"\((.*?)\)", header_text)
             title = title_match.group(1) if title_match else header_text
-            suggested = parse_duration_hint(header_text)
             current = SceneDraft(
                 order=order,
                 scene_number=int(number_text or order),
                 title=title.strip(),
                 description_lines=[],
-                suggested_seconds=suggested,
             )
             continue
         if current and line:
@@ -193,26 +187,18 @@ def parse_script(script_text: str) -> list[SceneDraft]:
     return drafts
 
 
-def parse_duration_hint(text: str) -> int | None:
-    normalized = text.replace("—", "-")
-    match = DURATION_PATTERN.search(normalized)
-    if not match:
-        return None
-    first = int(match.group(1))
-    second = match.group(2)
-    if second:
-        return (first + int(second)) // 2
-    return first
+def estimate_duration_from_description(lines: Sequence[str]) -> int:
+    """Choose 4/8/12 seconds based on description density."""
 
+    text = " ".join(lines)
+    word_count = len(re.findall(r"\w+", text))
+    line_count = len([line for line in lines if line.strip()])
 
-def pick_allowed_duration(suggested: int | None) -> int:
-    if suggested is None:
-        return 4
-    if suggested <= 4:
-        return 4
-    if suggested <= 8:
+    if word_count >= 150 or line_count >= 6:
+        return 12
+    if word_count >= 70 or line_count >= 3:
         return 8
-    return 12
+    return 4
 
 
 def slugify(value: str) -> str:
@@ -242,10 +228,27 @@ def escape_for_concat(path: Path) -> str:
 def _resize_scene_image(source: Path, dest: Path) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
     with Image.open(source) as img:
-        mode = "RGBA" if img.mode == "RGBA" else "RGB"
+        has_alpha = "A" in img.getbands()
+        mode = "RGBA" if has_alpha else "RGB"
         converted = img.convert(mode)
-        resized = converted.resize(SCENE_IMAGE_SIZE, SCENE_IMAGE_RESAMPLE)
-        resized.save(dest, format="PNG")
+
+        target_w, target_h = SCENE_IMAGE_SIZE
+        src_w, src_h = converted.size
+        if src_w == 0 or src_h == 0:
+            raise ValueError(f"Invalid source image dimensions for {source}")
+
+        scale = min(target_w / src_w, target_h / src_h)
+        resized_w = max(1, int(round(src_w * scale)))
+        resized_h = max(1, int(round(src_h * scale)))
+        resized = converted.resize((resized_w, resized_h), SCENE_IMAGE_RESAMPLE)
+
+        background_color = (0, 0, 0, 255) if mode == "RGBA" else (0, 0, 0)
+        canvas = Image.new(mode, (target_w, target_h), background_color)
+        offset_x = (target_w - resized_w) // 2
+        offset_y = (target_h - resized_h) // 2
+        mask = resized if mode == "RGBA" else None
+        canvas.paste(resized, (offset_x, offset_y), mask)
+        canvas.save(dest, format="PNG")
 
 
 def prepare_scene_start_images(scene_dir: Path, tmp_dir: Path, scene_count: int) -> list[str]:
@@ -316,10 +319,9 @@ async def run_subprocess(cmd: Sequence[str], cwd: Path | None = None, env: dict[
     return stdout, stderr
 
 
-def summarize_manifest(renders: list[SceneRender], final_video: Path, total_seconds: int, target_seconds: int) -> dict[str, Any]:
+def summarize_manifest(renders: list[SceneRender], final_video: Path, total_seconds: int) -> dict[str, Any]:
     return {
         "final_video": str(final_video),
-        "target_seconds": target_seconds,
         "assigned_seconds": total_seconds,
         "scenes": [
             {
@@ -360,7 +362,7 @@ class DirectorAgent(Executor):
 
         plans: list[ScenePlan] = []
         for idx, draft in enumerate(drafts, start=1):
-            duration = pick_allowed_duration(draft.suggested_seconds)
+            duration = estimate_duration_from_description(draft.description_lines)
             description = "\n".join(draft.description_lines)
             slug = slugify(f"{draft.scene_number:02d}-{draft.title}")
             prompt_path = prompt_dir / f"scene_{idx:02d}_{slug}.txt"
@@ -384,11 +386,10 @@ class DirectorAgent(Executor):
         await ctx.set_shared_state("scene_manifest", plans)
         await ctx.set_shared_state("scene_images", scene_images)
         await ctx.yield_output(
-            f"Director planned {len(plans)} scene(s) for {total_assigned}s "
-            f"(target {request.target_seconds}s, composer trims excess)."
+            f"Director planned {len(plans)} scene(s) totaling {total_assigned}s based on script detail."
         )
         await ctx.send_message(
-            ScenePlanBatch(plans=plans, assigned_total_seconds=total_assigned, target_seconds=request.target_seconds)
+            ScenePlanBatch(plans=plans, assigned_total_seconds=total_assigned)
         )
 
 
@@ -486,7 +487,7 @@ class Sora2Agent(Executor):
 
 
 class ComposerAgent(Executor):
-    """Concatenate clips with ffmpeg and trim/pad to the target runtime."""
+    """Concatenate clips with ffmpeg, preserving the scripted runtime."""
 
     def __init__(self) -> None:
         super().__init__(id="composer_agent")
@@ -499,24 +500,21 @@ class ComposerAgent(Executor):
         tmp_dir = Path(request.tmp_dir)
         tmp_dir.mkdir(parents=True, exist_ok=True)
         concat_list = tmp_dir / "concat.txt"
-        temp_full = tmp_dir / "temp_full.mp4"
 
         with open(concat_list, "w", encoding="utf-8") as fh:
             for render in batch.renders:
                 fh.write(escape_for_concat(Path(render.video_path)) + "\n")
 
         await run_subprocess(
-            ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_list), "-c", "copy", str(temp_full)]
-        )
-
-        await run_subprocess(
             [
                 "ffmpeg",
                 "-y",
+                "-f",
+                "concat",
+                "-safe",
+                "0",
                 "-i",
-                str(temp_full),
-                "-t",
-                str(request.target_seconds),
+                str(concat_list),
                 "-c",
                 "copy",
                 str(final_video),
@@ -527,7 +525,6 @@ class ComposerAgent(Executor):
             batch.renders,
             final_video,
             batch.assigned_total_seconds,
-            request.target_seconds,
         )
         manifest_path = final_video.with_suffix(".json")
         manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
@@ -572,7 +569,6 @@ async def _run_once(request: VideoWorkflowRequest) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Three-agent Azure Sora workflow runner.")
     parser.add_argument("--script-path", default=str(SCRIPT_PATH), help="Path to video script (default: Chapters/video_script.txt).")
-    parser.add_argument("--target-seconds", type=int, default=35, help="Final video runtime target.")
     parser.add_argument("--threads", type=int, default=3, help="Parallel Sora jobs (default 3).")
     parser.add_argument(
         "--resolution",
@@ -590,7 +586,6 @@ def main() -> None:
 
     request = VideoWorkflowRequest(
         script_path=args.script_path,
-        target_seconds=args.target_seconds,
         thread_count=args.threads,
         resolution=DEFAULT_SORA_RESOLUTION,
         final_video_path=args.final_video,
