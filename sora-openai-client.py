@@ -29,7 +29,7 @@ Style: 1970s romantic drama, shot on 35 mm film with natural flares, soft focus,
 ).strip()
 
 default_seconds = (os.getenv("VIDEO_DURATION_SECONDS") or "8").strip()
-default_size = (os.getenv("VIDEO_SIZE") or "1280x720").strip()
+default_size = (os.getenv("VIDEO_SIZE") or "720x1280").strip()
 
 def resolve_reference_path(cli_path: Optional[str]) -> Optional[str]:
     """Return the CLI-supplied reference image path when provided."""
