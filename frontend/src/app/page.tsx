@@ -12,7 +12,6 @@ import {
   PlayCircleIcon,
 } from "@heroicons/react/24/outline";
 import Image from "next/image";
-import soraLogo from "@/../public/sora2_logo.jpg";
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000").replace(
   /\/$/,
@@ -279,21 +278,22 @@ export default function Home() {
           <div className="relative flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-center gap-5">
               <Image
-                src={soraLogo}
+                src="/sora2_logo.jpg"
                 alt="Sora Agent Workflow logo"
+                width={64}
+                height={64}
                 className="h-16 w-16 rounded-2xl border border-slate-200/80 object-cover shadow-sm"
                 priority
               />
               <div>
                 <span className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">
-                  Sora Agent Workflow
+                  Sora Agent Workflow by Azure Sora2
                 </span>
                 <h1 className="mt-2 text-3xl font-semibold text-slate-900 lg:text-4xl">
-                  Director · Sora · Composer
+                  Script to Video AI Composer
                 </h1>
                 <p className="mt-3 max-w-xl text-sm leading-relaxed text-slate-600">
-                  Launch story-driven renders with a refined interface inspired by the
-                  Midjourney design language&mdash;light, minimal, and focused on the craft
+                  Launch story-driven renders with a refined interface 
                   of visuals.
                 </p>
               </div>
@@ -350,7 +350,7 @@ export default function Home() {
                   <button
                     type="submit"
                     disabled={isSubmitting}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 via-indigo-400 to-sky-400 px-5 py-2.5 text-sm font-semibold text-white shadow-[0_18px_40px_-20px_rgba(79,70,229,0.65)] transition hover:from-indigo-500/90 hover:to-sky-400/90 disabled:cursor-not-allowed disabled:opacity-70"
+                    className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-900/10 bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-200 disabled:text-slate-500"
                   >
                     {isSubmitting ? (
                       <>
@@ -396,9 +396,9 @@ export default function Home() {
                     <span>Progress</span>
                     <span>{progressPercent}%</span>
                   </div>
-                  <div className="h-2.5 overflow-hidden rounded-full bg-slate-100">
+                  <div className="h-2.5 overflow-hidden rounded-full border border-slate-200 bg-slate-100">
                     <div
-                      className="h-full rounded-full bg-gradient-to-r from-indigo-500 via-sky-400 to-emerald-400 transition-all duration-500 ease-out"
+                      className="h-full rounded-full bg-slate-900 transition-all duration-500 ease-out"
                       style={{ width: `${progressPercent}%` }}
                     />
                   </div>
