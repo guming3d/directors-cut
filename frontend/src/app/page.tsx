@@ -10,8 +10,9 @@ import {
   FilmIcon,
   PaperAirplaneIcon,
   PlayCircleIcon,
-  VideoCameraIcon,
 } from "@heroicons/react/24/outline";
+import Image from "next/image";
+import soraLogo from "@/../public/sora2_logo.jpg";
 
 const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000").replace(
   /\/$/,
@@ -53,19 +54,19 @@ type JobStatus = {
 const STATUS_TOKENS: Record<string, { label: string; className: string }> = {
   queued: {
     label: "Queued",
-    className: "border border-amber-400/30 bg-amber-500/20 text-amber-100",
+    className: "border border-amber-200 bg-amber-50 text-amber-700",
   },
   running: {
     label: "In Progress",
-    className: "border border-sky-400/30 bg-sky-500/20 text-sky-100",
+    className: "border border-sky-200 bg-sky-50 text-sky-700",
   },
   completed: {
     label: "Completed",
-    className: "border border-emerald-400/40 bg-emerald-500/15 text-emerald-100",
+    className: "border border-emerald-200 bg-emerald-50 text-emerald-700",
   },
   failed: {
     label: "Failed",
-    className: "border border-rose-400/40 bg-rose-500/20 text-rose-100",
+    className: "border border-rose-200 bg-rose-50 text-rose-700",
   },
 };
 
@@ -127,13 +128,13 @@ const getStatusToken = (status: string | undefined) => {
   if (!status) {
     return {
       label: "Idle",
-      className: "border border-slate-600/40 bg-slate-700/30 text-slate-200",
+      className: "border border-slate-200 bg-slate-100 text-slate-600",
     };
   }
   return (
     STATUS_TOKENS[status] ?? {
       label: status.charAt(0).toUpperCase() + status.slice(1),
-      className: "border border-slate-600/40 bg-slate-700/30 text-slate-200",
+      className: "border border-slate-200 bg-slate-100 text-slate-600",
     }
   );
 };
@@ -266,60 +267,81 @@ export default function Home() {
   const currentStatusToken = getStatusToken(job?.status);
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      <div className="mx-auto flex max-w-6xl flex-col gap-8 px-6 pb-16 pt-14">
-        <header className="flex flex-col gap-4 border-b border-slate-800 pb-6 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex items-center gap-4">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-500/20 text-indigo-200 ring-1 ring-inset ring-indigo-400/40">
-              <VideoCameraIcon className="h-8 w-8" />
-            </div>
-            <div>
-              <h1 className="text-3xl font-semibold tracking-tight">
-                Sora Agent Workflow
-              </h1>
-              <p className="text-sm text-slate-400">
-                Generate scene-by-scene videos from a storyboard script using the Azure
-                Sora multi-agent pipeline.
-              </p>
-            </div>
-          </div>
-          {job && (
-            <div className="space-y-1 text-right text-sm text-slate-400">
-              <div className="text-xs uppercase tracking-wide text-slate-500">
-                Current Job
+    <div className="relative min-h-screen overflow-hidden bg-[#f6f5f2] text-slate-800">
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute -left-24 -top-16 h-72 w-72 rounded-full bg-gradient-to-br from-indigo-200/70 via-rose-100/40 to-transparent blur-3xl" />
+        <div className="absolute right-[-12%] top-24 h-80 w-80 rounded-full bg-gradient-to-br from-sky-100/60 via-white/40 to-transparent blur-3xl" />
+        <div className="absolute bottom-[-18%] left-[18%] h-96 w-96 rounded-[260px] bg-gradient-to-br from-violet-100/70 via-white/60 to-transparent blur-3xl" />
+      </div>
+      <div className="mx-auto flex max-w-6xl flex-col gap-8 px-6 pb-20 pt-16">
+        <header className="relative overflow-hidden rounded-3xl border border-slate-200/80 bg-white/90 px-8 py-10 shadow-[0_45px_120px_-80px_rgba(20,32,62,0.6)] backdrop-blur">
+          <div className="pointer-events-none absolute inset-y-0 right-0 hidden w-1/2 translate-x-10 bg-[radial-gradient(circle_at_top,_rgba(99,102,241,0.12),transparent_60%)] md:block" />
+          <div className="relative flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex items-center gap-5">
+              <Image
+                src={soraLogo}
+                alt="Sora Agent Workflow logo"
+                className="h-16 w-16 rounded-2xl border border-slate-200/80 object-cover shadow-sm"
+                priority
+              />
+              <div>
+                <span className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">
+                  Sora Agent Workflow
+                </span>
+                <h1 className="mt-2 text-3xl font-semibold text-slate-900 lg:text-4xl">
+                  Director · Sora · Composer
+                </h1>
+                <p className="mt-3 max-w-xl text-sm leading-relaxed text-slate-600">
+                  Launch story-driven renders with a refined interface inspired by the
+                  Midjourney design language&mdash;light, minimal, and focused on the craft
+                  of visuals.
+                </p>
               </div>
-              <div className="font-mono text-slate-200">{job.job_id}</div>
-              <div>Started {formatTimeDistance(job.started_at)}</div>
             </div>
-          )}
+            {job ? (
+              <div className="rounded-2xl border border-slate-200 bg-white/70 p-5 text-right shadow-sm">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Current Workflow
+                </div>
+                <div className="mt-2 font-mono text-sm text-slate-800">{job.job_id}</div>
+                <div className="mt-1 text-xs text-slate-500">
+                  Started {formatTimeDistance(job.started_at)}
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-dashed border-slate-200 bg-white/40 p-5 text-sm text-slate-500">
+                Start a storyboard workflow to track its progress here.
+              </div>
+            )}
+          </div>
         </header>
 
         {error && (
-          <div className="flex items-center gap-3 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
-            <ExclamationTriangleIcon className="h-5 w-5 flex-none" />
+          <div className="flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50/90 px-4 py-3 text-sm text-rose-700 shadow-sm">
+            <ExclamationTriangleIcon className="h-5 w-5 flex-none text-rose-400" />
             <span>{error}</span>
           </div>
         )}
 
-        <div className="grid gap-8 lg:grid-cols-[1.15fr,0.85fr]">
+        <div className="grid gap-8 xl:grid-cols-[1.15fr,0.85fr]">
           <section className="space-y-8">
-            <div className="rounded-3xl border border-slate-800 bg-slate-900/60 p-6 shadow-lg shadow-black/30 backdrop-blur">
+            <div className="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-[0_30px_90px_-70px_rgba(29,37,59,0.55)] backdrop-blur">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-lg font-semibold text-slate-100">
-                  <DocumentTextIcon className="h-5 w-5 text-indigo-300" />
+                <div className="flex items-center gap-2 text-lg font-semibold text-slate-900">
+                  <DocumentTextIcon className="h-5 w-5 text-indigo-500" />
                   Storyboard Script
                 </div>
               </div>
-              <p className="mt-2 text-sm text-slate-400">
+              <p className="mt-2 text-sm text-slate-600">
                 Paste your storyboard using{" "}
-                <span className="font-mono text-xs text-indigo-200">
+                <span className="font-mono text-xs text-indigo-500">
                   **Scene 1 (Title)**
                 </span>{" "}
-                headings. The Director agent will build prompts for each scene.
+                headings. The Director agent will craft prompts for each scene.
               </p>
               <form className="mt-5 space-y-4" onSubmit={handleSubmit}>
                 <textarea
-                  className="min-h-[280px] w-full rounded-2xl border border-slate-700 bg-slate-950/60 px-4 py-3 text-sm text-slate-200 shadow-inner shadow-black/40 transition focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-400/40"
+                  className="min-h-[280px] w-full resize-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-[0_20px_45px_-35px_rgba(28,33,53,0.5)] transition focus:border-indigo-300 focus:outline-none focus:ring-4 focus:ring-indigo-200/80"
                   placeholder="**Scene 1 (Sunrise Over the City)**&#10;The camera glides through..."
                   value={script}
                   onChange={(event) => setScript(event.target.value)}
@@ -328,7 +350,7 @@ export default function Home() {
                   <button
                     type="submit"
                     disabled={isSubmitting}
-                    className="inline-flex items-center justify-center gap-2 rounded-2xl bg-indigo-500 px-4 py-2.5 text-sm font-medium text-white shadow-lg shadow-indigo-900/40 transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:bg-indigo-500/60"
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 via-indigo-400 to-sky-400 px-5 py-2.5 text-sm font-semibold text-white shadow-[0_18px_40px_-20px_rgba(79,70,229,0.65)] transition hover:from-indigo-500/90 hover:to-sky-400/90 disabled:cursor-not-allowed disabled:opacity-70"
                   >
                     {isSubmitting ? (
                       <>
@@ -344,7 +366,7 @@ export default function Home() {
                   </button>
                   <p className="text-xs text-slate-500">
                     API target:{" "}
-                    <span className="font-mono text-[11px] text-slate-300">
+                    <span className="font-mono text-[11px] text-slate-700">
                       {API_BASE}/api/workflows
                     </span>
                   </p>
@@ -353,14 +375,14 @@ export default function Home() {
             </div>
 
             {job && (
-              <div className="rounded-3xl border border-slate-800 bg-slate-900/60 p-6 shadow-lg shadow-black/30 backdrop-blur">
-                <div className="flex items-start justify-between gap-4">
+              <div className="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-sm shadow-slate-200/70 backdrop-blur">
+                <div className="flex flex-wrap items-start justify-between gap-4">
                   <div>
-                    <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-100">
-                      <FilmIcon className="h-5 w-5 text-indigo-300" />
+                    <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
+                      <FilmIcon className="h-5 w-5 text-indigo-500" />
                       Workflow Status
                     </h2>
-                    <p className="mt-1 text-sm text-slate-400">{stageLabel(job.stage)}</p>
+                    <p className="mt-1 text-sm text-slate-600">{stageLabel(job.stage)}</p>
                   </div>
                   <span
                     className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${currentStatusToken.className}`}
@@ -370,36 +392,36 @@ export default function Home() {
                 </div>
 
                 <div className="mt-6 space-y-3">
-                  <div className="flex items-center justify-between text-xs text-slate-400">
+                  <div className="flex items-center justify-between text-xs text-slate-500">
                     <span>Progress</span>
                     <span>{progressPercent}%</span>
                   </div>
-                  <div className="h-2.5 overflow-hidden rounded-full border border-slate-800 bg-slate-800/60">
+                  <div className="h-2.5 overflow-hidden rounded-full bg-slate-100">
                     <div
-                      className="h-full rounded-full bg-gradient-to-r from-indigo-400 via-sky-400 to-emerald-400 transition-all duration-500 ease-out"
+                      className="h-full rounded-full bg-gradient-to-r from-indigo-500 via-sky-400 to-emerald-400 transition-all duration-500 ease-out"
                       style={{ width: `${progressPercent}%` }}
                     />
                   </div>
                   {job.error && (
-                    <div className="flex items-center gap-2 rounded-xl border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-100">
+                    <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
                       <ExclamationTriangleIcon className="h-4 w-4" />
                       {job.error}
                     </div>
                   )}
                 </div>
 
-                <dl className="mt-6 grid gap-4 text-sm text-slate-300 sm:grid-cols-2">
+                <dl className="mt-6 grid gap-4 text-sm text-slate-600 sm:grid-cols-2">
                   <div>
                     <dt className="text-xs uppercase tracking-wide text-slate-500">
                       Started
                     </dt>
-                    <dd className="mt-1">{formatTimeDistance(job.started_at)}</dd>
+                    <dd className="mt-1 text-slate-700">{formatTimeDistance(job.started_at)}</dd>
                   </div>
                   <div>
                     <dt className="text-xs uppercase tracking-wide text-slate-500">
                       Completed
                     </dt>
-                    <dd className="mt-1">
+                    <dd className="mt-1 text-slate-700">
                       {job.completed_at ? formatTimeDistance(job.completed_at) : "—"}
                     </dd>
                   </div>
@@ -407,19 +429,19 @@ export default function Home() {
 
                 {finalVideoUrl && (
                   <div className="mt-8 space-y-3">
-                    <h3 className="text-sm font-semibold text-slate-200">Final Video</h3>
+                    <h3 className="text-sm font-semibold text-slate-800">Final Video</h3>
                     <video
                       controls
-                      className="max-h-[420px] w-full rounded-2xl border border-slate-800 bg-black"
+                      className="max-h-[420px] w-full rounded-2xl border border-slate-200 bg-black"
                       src={finalVideoUrl}
                     >
-                      Your browser does not support embedded video playback.
+                      Your browser does not support HTML5 video.
                     </video>
                     <a
                       href={finalVideoUrl}
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex items-center gap-2 text-sm text-indigo-300 hover:text-indigo-200"
+                      className="inline-flex items-center gap-2 text-sm font-medium text-indigo-600 hover:text-indigo-500"
                     >
                       <PlayCircleIcon className="h-4 w-4" />
                       Open MP4 in new tab
@@ -430,9 +452,9 @@ export default function Home() {
             )}
 
             {job?.scenes?.length ? (
-              <div className="rounded-3xl border border-slate-800 bg-slate-900/60 p-6 shadow-lg shadow-black/30 backdrop-blur">
-                <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-100">
-                  <PlayCircleIcon className="h-5 w-5 text-indigo-300" />
+              <div className="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-sm shadow-slate-200/70 backdrop-blur">
+                <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
+                  <PlayCircleIcon className="h-5 w-5 text-indigo-500" />
                   Scene Renders
                 </h2>
                 <div className="mt-5 grid gap-5 md:grid-cols-2">
@@ -441,18 +463,18 @@ export default function Home() {
                     return (
                       <div
                         key={scene.order}
-                        className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4 shadow-inner shadow-black/30"
+                        className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm shadow-slate-200/60"
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div>
-                            <h3 className="text-sm font-semibold text-slate-100">
+                            <h3 className="text-sm font-semibold text-slate-900">
                               {scene.label}
                             </h3>
                             <p className="text-xs text-slate-500">
                               {scene.duration_seconds} seconds
                             </p>
                           </div>
-                          <span className="rounded-full border border-slate-700 px-2 py-0.5 text-[11px] uppercase tracking-wide text-slate-400">
+                          <span className="rounded-full border border-slate-200 px-2 py-0.5 text-[11px] uppercase tracking-wide text-slate-500">
                             Scene {scene.order}
                           </span>
                         </div>
@@ -460,13 +482,13 @@ export default function Home() {
                           <video
                             key={`${scene.order}-${sceneVideoUrl}`}
                             controls
-                            className="mt-3 max-h-56 w-full rounded-xl border border-slate-800 bg-black"
+                            className="mt-3 max-h-56 w-full rounded-xl border border-slate-200 bg-black"
                             src={sceneVideoUrl}
                           >
                             Video unavailable.
                           </video>
                         ) : (
-                          <div className="mt-3 flex h-40 items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-900/40 text-xs text-slate-500">
+                          <div className="mt-3 flex h-40 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 text-xs text-slate-400">
                             Clip pending...
                           </div>
                         )}
@@ -480,21 +502,24 @@ export default function Home() {
 
           <aside className="space-y-8">
             {job?.messages?.length ? (
-              <div className="rounded-3xl border border-slate-800 bg-slate-900/60 p-6 shadow-lg shadow-black/30 backdrop-blur">
-                <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-100">
-                  <ClockIcon className="h-5 w-5 text-indigo-300" />
+              <div className="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-sm shadow-slate-200/70 backdrop-blur">
+                <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
+                  <ClockIcon className="h-5 w-5 text-indigo-500" />
                   Workflow Timeline
                 </h2>
                 <ol className="mt-6 space-y-4">
                   {job.messages.map((message, index) => {
                     const Icon = stageIcons[message.stage] ?? ArrowPathIcon;
                     return (
-                      <li key={`${message.timestamp}-${index}`} className="relative flex gap-3">
-                        <div className="relative mt-0.5 flex h-7 w-7 items-center justify-center rounded-full border border-slate-700 bg-slate-900">
-                          <Icon className="h-4 w-4 text-indigo-300" />
+                      <li
+                        key={`${message.timestamp}-${index}`}
+                        className="relative flex gap-3 rounded-2xl border border-slate-100 bg-white/90 p-3 shadow-sm shadow-slate-200/40"
+                      >
+                        <div className="relative mt-0.5 flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white">
+                          <Icon className="h-4 w-4 text-indigo-500" />
                         </div>
                         <div>
-                          <p className="text-sm text-slate-200">{message.text}</p>
+                          <p className="text-sm text-slate-800">{message.text}</p>
                           <p className="text-xs text-slate-500">
                             {formatTimestamp(message.timestamp)} · {stageLabel(message.stage)}
                           </p>
@@ -507,12 +532,12 @@ export default function Home() {
             ) : null}
 
             {jobs.length > 0 && (
-              <div className="rounded-3xl border border-slate-800 bg-slate-900/60 p-6 shadow-lg shadow-black/30 backdrop-blur">
-                <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-100">
-                  <ArrowPathIcon className="h-5 w-5 text-indigo-300" />
+              <div className="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-sm shadow-slate-200/70 backdrop-blur">
+                <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
+                  <ArrowPathIcon className="h-5 w-5 text-indigo-500" />
                   Recent Runs
                 </h2>
-                <ul className="mt-4 space-y-2 text-sm">
+                <ul className="mt-4 space-y-3 text-sm">
                   {jobs.map((item) => {
                     const token = getStatusToken(item.status);
                     const isActive = item.job_id === activeJobId;
@@ -521,12 +546,14 @@ export default function Home() {
                         <button
                           type="button"
                           onClick={() => setActiveJobId(item.job_id)}
-                          className={`w-full rounded-2xl border border-slate-800 px-4 py-3 text-left transition hover:border-indigo-400/60 hover:bg-slate-800/60 ${
-                            isActive ? "border-indigo-500/60 bg-indigo-500/10" : ""
+                          className={`w-full rounded-2xl border px-4 py-3 text-left transition ${
+                            isActive
+                              ? "border-indigo-200 bg-indigo-50 shadow-sm"
+                              : "border-slate-200 bg-white shadow-sm hover:border-indigo-200 hover:bg-indigo-50/70"
                           }`}
                         >
                           <div className="flex items-center justify-between">
-                            <span className="font-mono text-xs text-slate-200">
+                            <span className="font-mono text-xs text-slate-700">
                               {item.job_id.slice(0, 12)}
                             </span>
                             <span
