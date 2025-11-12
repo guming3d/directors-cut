@@ -1,0 +1,6 @@
+agent-framework>=1.0.0b251105
+fastapi>=0.112.2
+openai>=2.3.0
+pillow>=10.4.0
+python-dotenv>=1.0.1
+uvicorn[standard]>=0.31.0
