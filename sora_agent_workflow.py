@@ -1,4 +1,4 @@
-"""Three-agent workflow for stitching a 35-second Azure Sora video."""
+"""Three-agent workflow for stitching a Video using Azure Sora2 api."""
 
 import argparse
 import asyncio
@@ -7,15 +7,18 @@ import logging
 import os
 import re
 import sys
-from dataclasses import dataclass
+import uuid
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Sequence
-
-from PIL import Image
-
-from pydantic import BaseModel, Field
+from typing import Any, Sequence, Optional
 
 from agent_framework import Executor, WorkflowBuilder, WorkflowContext, handler
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from PIL import Image
+from pydantic import BaseModel, Field
 
 # -------------------------
 # Paths & constants
@@ -73,23 +76,37 @@ logger = _configure_logging()
 # -------------------------
 # Data models
 # -------------------------
-
-
 class VideoWorkflowRequest(BaseModel):
     """Configuration for the multi-agent video workflow."""
 
-    script_path: str = Field(default=str(SCRIPT_PATH), description="Path to the master video script.")
+    script_path: str = Field(
+        default=str(SCRIPT_PATH), description="Path to the master video script."
+    )
     output_dir: str = Field(default=str(OUTPUT_DIR), description="Root output folder.")
-    prompt_dir: str = Field(default=str(PROMPTS_DIR), description="Directory for generated prompt text files.")
-    scenes_dir: str = Field(default=str(SCENES_DIR), description="Directory for downloaded scene MP4s.")
-    tmp_dir: str = Field(default=str(TMP_DIR), description="Directory for intermediate artifacts.")
-    final_video_path: str = Field(default=str(FINAL_VIDEO_PATH), description="Final stitched MP4 path.")
-    sora_client_path: str = Field(default=str(SORA_CLIENT), description="Path to sora-openai-client.py.")
+    prompt_dir: str = Field(
+        default=str(PROMPTS_DIR),
+        description="Directory for generated prompt text files.",
+    )
+    scenes_dir: str = Field(
+        default=str(SCENES_DIR), description="Directory for downloaded scene MP4s."
+    )
+    tmp_dir: str = Field(
+        default=str(TMP_DIR), description="Directory for intermediate artifacts."
+    )
+    final_video_path: str = Field(
+        default=str(FINAL_VIDEO_PATH), description="Final stitched MP4 path."
+    )
+    sora_client_path: str = Field(
+        default=str(SORA_CLIENT), description="Path to sora-openai-client.py."
+    )
     scene_image_dir: str = Field(
         default=str(SCENE_IMAGE_DIR),
         description="Directory containing scene start screen images (scene1.png, scene2.png, ...).",
     )
-    resolution: str = Field(default=DEFAULT_SORA_RESOLUTION, description="Clip resolution (fixed 720x1280 portrait).")
+    resolution: str = Field(
+        default=DEFAULT_SORA_RESOLUTION,
+        description="Clip resolution (fixed 720x1280 portrait).",
+    )
     thread_count: int = Field(
         default=int(os.getenv("SORA_WORKFLOW_THREADS", "3")),
         ge=1,
@@ -100,6 +117,429 @@ class VideoWorkflowRequest(BaseModel):
         default=os.getenv("VIDEO_DOWNLOAD_VARIANT", "video"),
         description="Variant name passed to sora-openai-client.",
     )
+    job_id: Optional[str] = Field(
+        default=None,
+        description="Server-assigned workflow job identifier used for progress tracking.",
+    )
+
+
+STATIC_URL_PREFIX = "/static"
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+@dataclass
+class ProgressMessage:
+    timestamp: datetime
+    stage: str
+    text: str
+
+
+@dataclass
+class SceneStatus:
+    order: int
+    label: str
+    duration_seconds: int
+    prompt_path: str
+    video_path: str
+    log_path: Optional[str] = None
+    client_log_path: Optional[str] = None
+
+
+@dataclass
+class WorkflowJobState:
+    job_id: str
+    status: str = "queued"
+    stage: Optional[str] = None
+    progress: float = 0.0
+    started_at: datetime = field(default_factory=_utc_now)
+    completed_at: Optional[datetime] = None
+    error: Optional[str] = None
+    final_video_path: Optional[str] = None
+    manifest: Optional[dict[str, Any]] = None
+    total_scenes: int = 0
+    completed_scenes: int = 0
+    messages: list[ProgressMessage] = field(default_factory=list)
+    scenes: list[SceneStatus] = field(default_factory=list)
+
+    def add_message(self, stage: str, text: str) -> None:
+        self.messages.append(ProgressMessage(timestamp=_utc_now(), stage=stage, text=text))
+
+
+class JobMessageModel(BaseModel):
+    timestamp: datetime
+    stage: str
+    text: str
+
+
+class SceneStatusModel(BaseModel):
+    order: int
+    label: str
+    duration_seconds: int
+    prompt_path: str
+    video_path: str
+    video_url: Optional[str] = None
+    log_path: Optional[str] = None
+    client_log_path: Optional[str] = None
+
+
+class JobStatusResponse(BaseModel):
+    job_id: str
+    status: str
+    stage: Optional[str]
+    progress: float
+    started_at: datetime
+    completed_at: Optional[datetime]
+    error: Optional[str]
+    final_video_path: Optional[str]
+    final_video_url: Optional[str]
+    manifest: Optional[dict[str, Any]]
+    messages: list[JobMessageModel]
+    scenes: list[SceneStatusModel]
+
+
+class WorkflowJobStore:
+    def __init__(self) -> None:
+        self._jobs: dict[str, WorkflowJobState] = {}
+        self._lock = asyncio.Lock()
+
+    def _require(self, job_id: str) -> WorkflowJobState:
+        job = self._jobs.get(job_id)
+        if job is None:
+            raise KeyError(job_id)
+        return job
+
+    async def create_job(self, job_id: str) -> None:
+        async with self._lock:
+            state = WorkflowJobState(job_id=job_id)
+            state.add_message("queued", "Job queued.")
+            self._jobs[job_id] = state
+
+    async def mark_running(self, job_id: str) -> None:
+        async with self._lock:
+            job = self._require(job_id)
+            job.status = "running"
+            job.stage = "initializing"
+            job.progress = max(job.progress, 0.01)
+            job.add_message("initializing", "Workflow execution started.")
+
+    async def update_stage(
+        self,
+        job_id: str,
+        stage: str,
+        message: Optional[str] = None,
+        progress: Optional[float] = None,
+    ) -> None:
+        async with self._lock:
+            job = self._require(job_id)
+            job.stage = stage
+            if progress is not None:
+                job.progress = max(job.progress, min(max(progress, 0.0), 1.0))
+            if message:
+                job.add_message(stage, message)
+
+    async def set_total_scenes(self, job_id: str, total: int) -> None:
+        async with self._lock:
+            job = self._require(job_id)
+            job.total_scenes = max(total, 0)
+
+    async def record_scene_completion(self, job_id: str, render: "SceneRender") -> None:
+        async with self._lock:
+            job = self._require(job_id)
+            job.completed_scenes += 1
+            job.scenes.append(
+                SceneStatus(
+                    order=render.order,
+                    label=render.label,
+                    duration_seconds=render.duration_seconds,
+                    prompt_path=render.prompt_path,
+                    video_path=render.video_path,
+                    log_path=render.log_path,
+                    client_log_path=render.client_log_path,
+                )
+            )
+            total = job.total_scenes or 1
+            fraction = min(job.completed_scenes / total, 1.0)
+            progress = 0.2 + 0.6 * fraction
+            job.progress = max(job.progress, progress)
+            job.stage = "rendering"
+            job.add_message("rendering", f"Completed {render.label}.")
+
+    async def mark_composing(self, job_id: str, message: str | None = None) -> None:
+        async with self._lock:
+            job = self._require(job_id)
+            job.stage = "composing"
+            job.progress = max(job.progress, 0.85)
+            if message:
+                job.add_message("composing", message)
+
+    async def mark_completed(
+        self, job_id: str, final_video_path: str, manifest: dict[str, Any]
+    ) -> None:
+        async with self._lock:
+            job = self._require(job_id)
+            job.status = "completed"
+            job.stage = "completed"
+            job.progress = 1.0
+            job.completed_at = _utc_now()
+            job.final_video_path = final_video_path
+            job.manifest = manifest
+            job.add_message("completed", "Workflow complete.")
+
+    async def mark_failed(self, job_id: str, error: str) -> None:
+        async with self._lock:
+            job = self._require(job_id)
+            job.status = "failed"
+            job.stage = "failed"
+            job.error = error
+            job.completed_at = _utc_now()
+            job.add_message("failed", error)
+
+    def _static_url(self, path: Optional[str]) -> Optional[str]:
+        if not path:
+            return None
+        file_path = Path(path)
+        try:
+            rel = file_path.relative_to(OUTPUT_DIR)
+        except ValueError:
+            return None
+        return f"{STATIC_URL_PREFIX}/{rel.as_posix()}"
+
+    def _snapshot(self, job: WorkflowJobState) -> JobStatusResponse:
+        messages = [
+            JobMessageModel(timestamp=item.timestamp, stage=item.stage, text=item.text)
+            for item in job.messages
+        ]
+        scenes = [
+            SceneStatusModel(
+                order=scene.order,
+                label=scene.label,
+                duration_seconds=scene.duration_seconds,
+                prompt_path=scene.prompt_path,
+                video_path=scene.video_path,
+                video_url=self._static_url(scene.video_path),
+                log_path=scene.log_path,
+                client_log_path=scene.client_log_path,
+            )
+            for scene in sorted(job.scenes, key=lambda item: item.order)
+        ]
+        return JobStatusResponse(
+            job_id=job.job_id,
+            status=job.status,
+            stage=job.stage,
+            progress=job.progress,
+            started_at=job.started_at,
+            completed_at=job.completed_at,
+            error=job.error,
+            final_video_path=job.final_video_path,
+            final_video_url=self._static_url(job.final_video_path),
+            manifest=job.manifest,
+            messages=messages,
+            scenes=scenes,
+        )
+
+    async def get_status(self, job_id: str) -> JobStatusResponse:
+        async with self._lock:
+            job = self._require(job_id)
+            return self._snapshot(job)
+
+    async def list_statuses(self) -> list[JobStatusResponse]:
+        async with self._lock:
+            return [
+                self._snapshot(job)
+                for job in sorted(
+                    self._jobs.values(),
+                    key=lambda item: item.started_at,
+                    reverse=True,
+                )
+            ]
+
+
+JOB_STORE = WorkflowJobStore()
+
+
+class StartWorkflowPayload(BaseModel):
+    script: str = Field(
+        ..., description="Storyboard script content for the Director agent to process."
+    )
+    threads: Optional[int] = Field(
+        default=None, ge=1, le=10, description="Override concurrent Sora render threads."
+    )
+    resolution: Optional[str] = Field(
+        default=None,
+        description=f"Optional override for render resolution (must remain {DEFAULT_SORA_RESOLUTION}).",
+    )
+    scene_image_dir: Optional[str] = Field(
+        default=None,
+        description="Optional override for the directory containing scene start screen images.",
+    )
+    download_variant: Optional[str] = Field(
+        default=None,
+        description="Optional override for the VIDEO_DOWNLOAD_VARIANT sent to the Sora client.",
+    )
+
+
+def _normalize_script_text(raw: str) -> str:
+    cleaned = raw.strip()
+    if not cleaned:
+        raise ValueError("Script text cannot be empty.")
+    if not cleaned.endswith("\n"):
+        cleaned += "\n"
+    return cleaned
+
+
+def _job_root(job_id: str) -> Path:
+    return OUTPUT_DIR / job_id
+
+
+def _prepare_request_for_job(job_id: str, payload: StartWorkflowPayload) -> VideoWorkflowRequest:
+    job_dir = _job_root(job_id)
+    job_dir.mkdir(parents=True, exist_ok=True)
+    prompts_dir = job_dir / "prompts"
+    scenes_dir = job_dir / "scenes"
+    tmp_dir = job_dir / "tmp"
+    final_video = job_dir / "sora_story_compilation.mp4"
+
+    for path in (prompts_dir, scenes_dir, tmp_dir):
+        path.mkdir(parents=True, exist_ok=True)
+
+    script_path = job_dir / "script.txt"
+    script_path.write_text(_normalize_script_text(payload.script), encoding="utf-8")
+
+    if payload.resolution and payload.resolution != DEFAULT_SORA_RESOLUTION:
+        raise ValueError(
+            f"Resolution must remain {DEFAULT_SORA_RESOLUTION} to align with prepared assets."
+        )
+
+    thread_count = payload.threads or int(os.getenv("SORA_WORKFLOW_THREADS", "3"))
+    download_variant = payload.download_variant or os.getenv("VIDEO_DOWNLOAD_VARIANT", "video")
+    scene_image_dir = (
+        Path(payload.scene_image_dir).expanduser().resolve()
+        if payload.scene_image_dir
+        else SCENE_IMAGE_DIR
+    )
+
+    request = VideoWorkflowRequest(
+        script_path=str(script_path),
+        output_dir=str(job_dir),
+        prompt_dir=str(prompts_dir),
+        scenes_dir=str(scenes_dir),
+        tmp_dir=str(tmp_dir),
+        final_video_path=str(final_video),
+        sora_client_path=str(SORA_CLIENT),
+        scene_image_dir=str(scene_image_dir),
+        resolution=DEFAULT_SORA_RESOLUTION,
+        thread_count=thread_count,
+        download_variant=download_variant,
+        job_id=job_id,
+    )
+    return request
+
+
+async def _run_workflow_job(job_id: str, request: VideoWorkflowRequest) -> None:
+    try:
+        await JOB_STORE.mark_running(job_id)
+        await workflow.run(request)
+    except Exception as exc:  # pragma: no cover - defensive logging
+        logger.exception("Workflow %s failed: %s", job_id, exc)
+        await JOB_STORE.mark_failed(job_id, str(exc))
+
+
+def _allowed_origins() -> list[str]:
+    configured = os.getenv("SORA_WORKFLOW_ALLOWED_ORIGINS")
+    if not configured:
+        return ["*"]
+    values = [origin.strip() for origin in configured.split(",")]
+    return [origin for origin in values if origin]
+
+
+fastapi_app = FastAPI(
+    title="Sora Agent Workflow API",
+    description="Async workflow orchestrator for Azure Sora multi-agent pipeline.",
+)
+
+fastapi_app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_allowed_origins(),
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+fastapi_app.mount(
+    STATIC_URL_PREFIX,
+    StaticFiles(directory=str(OUTPUT_DIR), check_dir=False),
+    name="output",
+)
+
+
+@fastapi_app.post("/api/workflows", response_model=JobStatusResponse)
+async def start_workflow(payload: StartWorkflowPayload) -> JobStatusResponse:
+    script = payload.script or ""
+    if not script.strip():
+        raise HTTPException(status_code=400, detail="Script text is required.")
+
+    job_id = uuid.uuid4().hex
+    await JOB_STORE.create_job(job_id)
+    try:
+        request = _prepare_request_for_job(job_id, payload)
+    except ValueError as exc:
+        await JOB_STORE.mark_failed(job_id, str(exc))
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    await JOB_STORE.update_stage(job_id, "queued", "Script accepted.", progress=0.0)
+    asyncio.create_task(_run_workflow_job(job_id, request))
+    return await JOB_STORE.get_status(job_id)
+
+
+@fastapi_app.get("/api/workflows", response_model=list[JobStatusResponse])
+async def list_workflows() -> list[JobStatusResponse]:
+    return await JOB_STORE.list_statuses()
+
+
+@fastapi_app.get("/api/workflows/{job_id}", response_model=JobStatusResponse)
+async def get_workflow(job_id: str) -> JobStatusResponse:
+    try:
+        return await JOB_STORE.get_status(job_id)
+    except KeyError as exc:  # pragma: no cover - FastAPI translates to HTTP response
+        raise HTTPException(status_code=404, detail=f"Unknown job: {job_id}") from exc
+
+
+async def _report_progress(
+    request: VideoWorkflowRequest,
+    stage: str,
+    message: str,
+    progress: Optional[float] = None,
+) -> None:
+    logger.info("[%s] %s", stage, message)
+    if request.job_id:
+        await JOB_STORE.update_stage(request.job_id, stage, message, progress)
+
+
+async def _record_total_scenes(request: VideoWorkflowRequest, total: int) -> None:
+    if request.job_id:
+        await JOB_STORE.set_total_scenes(request.job_id, total)
+
+
+async def _record_scene_completion(
+    request: VideoWorkflowRequest, render: "SceneRender"
+) -> None:
+    if request.job_id:
+        await JOB_STORE.record_scene_completion(request.job_id, render)
+
+
+async def _mark_composing(request: VideoWorkflowRequest, message: str | None = None) -> None:
+    if request.job_id:
+        await JOB_STORE.mark_composing(request.job_id, message)
+
+
+async def _mark_completed(
+    request: VideoWorkflowRequest, final_video_path: str, manifest: dict[str, Any]
+) -> None:
+    if request.job_id:
+        await JOB_STORE.mark_completed(request.job_id, final_video_path, manifest)
 
 
 @dataclass
@@ -146,8 +586,6 @@ class SceneRenderBatch:
 # -------------------------
 # Helpers
 # -------------------------
-
-
 def read_text(path: Path) -> str:
     if not path.is_file():
         raise FileNotFoundError(f"Missing required script file: {path}")
@@ -206,8 +644,12 @@ def slugify(value: str) -> str:
     return slug or "scene"
 
 
-def build_prompt_text(title: str, description: str, duration: int, resolution: str) -> str:
-    bullet_lines = "\n".join(f"- {line.strip()}" for line in description.splitlines() if line.strip())
+def build_prompt_text(
+    title: str, description: str, duration: int, resolution: str
+) -> str:
+    bullet_lines = "\n".join(
+        f"- {line.strip()}" for line in description.splitlines() if line.strip()
+    )
     return (
         f"Scene title: {title}\n"
         f"Clip duration: {duration} seconds (limit choices: {ALLOWED_DURATIONS}).\n"
@@ -251,7 +693,9 @@ def _resize_scene_image(source: Path, dest: Path) -> None:
         canvas.save(dest, format="PNG")
 
 
-def prepare_scene_start_images(scene_dir: Path, tmp_dir: Path, scene_count: int) -> list[str]:
+def prepare_scene_start_images(
+    scene_dir: Path, tmp_dir: Path, scene_count: int
+) -> list[str]:
     if scene_count <= 0:
         return []
     if not scene_dir.is_dir():
@@ -280,13 +724,9 @@ def prepare_scene_start_images(scene_dir: Path, tmp_dir: Path, scene_count: int)
         extra = sorted(available - expected)
         issues: list[str] = []
         if missing:
-            issues.append(
-                "missing " + ", ".join(f"scene{idx}.png" for idx in missing)
-            )
+            issues.append("missing " + ", ".join(f"scene{idx}.png" for idx in missing))
         if extra:
-            issues.append(
-                "unexpected " + ", ".join(f"scene{idx}.png" for idx in extra)
-            )
+            issues.append("unexpected " + ", ".join(f"scene{idx}.png" for idx in extra))
         raise RuntimeError(
             "Scene/image count mismatch: "
             + "; ".join(issues)
@@ -303,7 +743,9 @@ def prepare_scene_start_images(scene_dir: Path, tmp_dir: Path, scene_count: int)
     return prepared_paths
 
 
-async def run_subprocess(cmd: Sequence[str], cwd: Path | None = None, env: dict[str, str] | None = None) -> tuple[str, str]:
+async def run_subprocess(
+    cmd: Sequence[str], cwd: Path | None = None, env: dict[str, str] | None = None
+) -> tuple[str, str]:
     process = await asyncio.create_subprocess_exec(
         *cmd,
         cwd=str(cwd) if cwd else None,
@@ -315,11 +757,15 @@ async def run_subprocess(cmd: Sequence[str], cwd: Path | None = None, env: dict[
     stdout = stdout_bytes.decode(errors="ignore")
     stderr = stderr_bytes.decode(errors="ignore")
     if process.returncode != 0:
-        raise RuntimeError(f"Command {' '.join(cmd)} failed ({process.returncode}): {stderr or stdout}")
+        raise RuntimeError(
+            f"Command {' '.join(cmd)} failed ({process.returncode}): {stderr or stdout}"
+        )
     return stdout, stderr
 
 
-def summarize_manifest(renders: list[SceneRender], final_video: Path, total_seconds: int) -> dict[str, Any]:
+def summarize_manifest(
+    renders: list[SceneRender], final_video: Path, total_seconds: int
+) -> dict[str, Any]:
     return {
         "final_video": str(final_video),
         "assigned_seconds": total_seconds,
@@ -341,8 +787,6 @@ def summarize_manifest(renders: list[SceneRender], final_video: Path, total_seco
 # -------------------------
 # Agents
 # -------------------------
-
-
 class DirectorAgent(Executor):
     """Break the master script into Sora-ready scene prompts."""
 
@@ -350,12 +794,29 @@ class DirectorAgent(Executor):
         super().__init__(id="director_agent")
 
     @handler
-    async def handle(self, request: VideoWorkflowRequest, ctx: WorkflowContext[ScenePlanBatch]) -> None:
+    async def handle(
+        self, request: VideoWorkflowRequest, ctx: WorkflowContext[ScenePlanBatch]
+    ) -> None:
         await ctx.set_shared_state("request", request)
+        await _report_progress(
+            request,
+            "planning",
+            "Director reviewing storyboard script.",
+            progress=0.05,
+        )
         script_text = read_text(Path(request.script_path))
         drafts = parse_script(script_text)
         if not drafts:
-            raise RuntimeError("No scene headers found in the script. Ensure it follows **Scene N (...)** format.")
+            raise RuntimeError(
+                "No scene headers found in the script. Ensure it follows **Scene N (...)** format."
+            )
+        await _record_total_scenes(request, len(drafts))
+        await _report_progress(
+            request,
+            "planning",
+            f"Identified {len(drafts)} scene outline(s) from script.",
+            progress=0.1,
+        )
 
         prompt_dir = Path(request.prompt_dir)
         prompt_dir.mkdir(parents=True, exist_ok=True)
@@ -366,7 +827,9 @@ class DirectorAgent(Executor):
             description = "\n".join(draft.description_lines)
             slug = slugify(f"{draft.scene_number:02d}-{draft.title}")
             prompt_path = prompt_dir / f"scene_{idx:02d}_{slug}.txt"
-            prompt_text = build_prompt_text(draft.title, description, duration, request.resolution)
+            prompt_text = build_prompt_text(
+                draft.title, description, duration, request.resolution
+            )
             prompt_path.write_text(prompt_text + "\n", encoding="utf-8")
 
             plans.append(
@@ -381,7 +844,15 @@ class DirectorAgent(Executor):
             )
 
         tmp_dir = Path(request.tmp_dir)
-        scene_images = prepare_scene_start_images(Path(request.scene_image_dir), tmp_dir, len(plans))
+        scene_images = prepare_scene_start_images(
+            Path(request.scene_image_dir), tmp_dir, len(plans)
+        )
+        await _report_progress(
+            request,
+            "planning",
+            f"Prepared {len(plans)} prompt file(s) and start screens.",
+            progress=0.2,
+        )
         total_assigned = sum(plan.duration_seconds for plan in plans)
         await ctx.set_shared_state("scene_manifest", plans)
         await ctx.set_shared_state("scene_images", scene_images)
@@ -400,12 +871,20 @@ class Sora2Agent(Executor):
         super().__init__(id="sora2_agent")
 
     @handler
-    async def handle(self, batch: ScenePlanBatch, ctx: WorkflowContext[SceneRenderBatch]) -> None:
+    async def handle(
+        self, batch: ScenePlanBatch, ctx: WorkflowContext[SceneRenderBatch]
+    ) -> None:
         request: VideoWorkflowRequest = await ctx.get_shared_state("request")  # type: ignore
         scene_images: Sequence[str] = await ctx.get_shared_state("scene_images")  # type: ignore
         scenes_dir = Path(request.scenes_dir)
         scenes_dir.mkdir(parents=True, exist_ok=True)
         semaphore = asyncio.Semaphore(max(1, request.thread_count))
+        await _report_progress(
+            request,
+            "rendering",
+            f"Rendering {len(batch.plans)} scene(s) with up to {request.thread_count} concurrent Sora jobs.",
+            progress=0.25,
+        )
 
         async def render_scene(plan: ScenePlan) -> SceneRender:
             async with semaphore:
@@ -416,10 +895,17 @@ class Sora2Agent(Executor):
         for task in asyncio.as_completed(tasks):
             render = await task
             renders.append(render)
-            await ctx.yield_output(f"Sora completed {render.label} -> {render.video_path}")
+            await _record_scene_completion(request, render)
+            await ctx.yield_output(
+                f"Sora completed {render.label} -> {render.video_path}"
+            )
 
         renders.sort(key=lambda item: item.order)
-        await ctx.send_message(SceneRenderBatch(renders=renders, assigned_total_seconds=batch.assigned_total_seconds))
+        await ctx.send_message(
+            SceneRenderBatch(
+                renders=renders, assigned_total_seconds=batch.assigned_total_seconds
+            )
+        )
 
     async def _invoke_sora(
         self,
@@ -433,6 +919,11 @@ class Sora2Agent(Executor):
         client_path = Path(request.sora_client_path)
         if not client_path.is_file():
             raise FileNotFoundError(f"sora-openai-client.py not found at {client_path}")
+        await _report_progress(
+            request,
+            "rendering",
+            f"Starting render for {plan.label}.",
+        )
         env = os.environ.copy()
         env.update(
             {
@@ -461,10 +952,7 @@ class Sora2Agent(Executor):
         stdout, stderr = await run_subprocess(cmd, cwd=ROOT, env=env)
         client_log_path = video_path.with_suffix(".client.log")
         client_log_path.write_text(
-            "STDOUT:\n"
-            f"{stdout}\n"
-            "STDERR:\n"
-            f"{stderr}\n",
+            f"STDOUT:\n{stdout}\nSTDERR:\n{stderr}\n",
             encoding="utf-8",
         )
 
@@ -493,13 +981,18 @@ class ComposerAgent(Executor):
         super().__init__(id="composer_agent")
 
     @handler
-    async def handle(self, batch: SceneRenderBatch, ctx: WorkflowContext[None, str]) -> None:  # type: ignore
+    async def handle(
+        self, batch: SceneRenderBatch, ctx: WorkflowContext[None, str]
+    ) -> None:  # type: ignore
         request: VideoWorkflowRequest = await ctx.get_shared_state("request")  # type: ignore
         final_video = Path(request.final_video_path)
         final_video.parent.mkdir(parents=True, exist_ok=True)
         tmp_dir = Path(request.tmp_dir)
         tmp_dir.mkdir(parents=True, exist_ok=True)
         concat_list = tmp_dir / "concat.txt"
+        await _mark_composing(
+            request, "Preparing final composition with ffmpeg concat."
+        )
 
         with open(concat_list, "w", encoding="utf-8") as fh:
             for render in batch.renders:
@@ -528,6 +1021,7 @@ class ComposerAgent(Executor):
         )
         manifest_path = final_video.with_suffix(".json")
         manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        await _mark_completed(request, str(final_video), manifest)
 
         await ctx.yield_output(f"Composer saved final video to {final_video}")
         await ctx.yield_output(f"Manifest stored at {manifest_path}")
@@ -567,22 +1061,38 @@ async def _run_once(request: VideoWorkflowRequest) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Three-agent Azure Sora workflow runner.")
-    parser.add_argument("--script-path", default=str(SCRIPT_PATH), help="Path to video script (default: Chapters/video_script.txt).")
-    parser.add_argument("--threads", type=int, default=3, help="Parallel Sora jobs (default 3).")
+    parser = argparse.ArgumentParser(
+        description="Three-agent Azure Sora workflow runner."
+    )
+    parser.add_argument(
+        "--script-path",
+        default=str(SCRIPT_PATH),
+        help="Path to video script (default: Chapters/video_script.txt).",
+    )
+    parser.add_argument(
+        "--threads", type=int, default=3, help="Parallel Sora jobs (default 3)."
+    )
     parser.add_argument(
         "--resolution",
         default=DEFAULT_SORA_RESOLUTION,
         help=f"Clip resolution passed to Sora (must remain {DEFAULT_SORA_RESOLUTION}).",
     )
-    parser.add_argument("--final-video", default=str(FINAL_VIDEO_PATH), help="Output MP4 path.")
-    parser.add_argument("--devui", action="store_true", help="Launch Agent Framework DevUI.")
-    parser.add_argument("--devui-port", type=int, default=8091, help="Port for DevUI (default 8091).")
+    parser.add_argument(
+        "--final-video", default=str(FINAL_VIDEO_PATH), help="Output MP4 path."
+    )
+    parser.add_argument(
+        "--devui", action="store_true", help="Launch Agent Framework DevUI."
+    )
+    parser.add_argument(
+        "--devui-port", type=int, default=8091, help="Port for DevUI (default 8091)."
+    )
     args = parser.parse_args()
 
     cli_resolution = (args.resolution or "").strip() or DEFAULT_SORA_RESOLUTION
     if cli_resolution != DEFAULT_SORA_RESOLUTION:
-        parser.error(f"--resolution must be {DEFAULT_SORA_RESOLUTION} to align with portrait workflow assets.")
+        parser.error(
+            f"--resolution must be {DEFAULT_SORA_RESOLUTION} to align with portrait workflow assets."
+        )
 
     request = VideoWorkflowRequest(
         script_path=args.script_path,
