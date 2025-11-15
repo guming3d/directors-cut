@@ -41,7 +41,7 @@ try:
 except AttributeError:  # pragma: no cover - Pillow < 10 fallback
     SCENE_IMAGE_RESAMPLE = Image.LANCZOS
 
-ALLOWED_DURATIONS = (4, 8, 12)
+SORA_CLIP_DURATION_SECONDS = 4
 HEADER_PATTERN = re.compile(r"^\*\*\s*(Scene\s+(\d+)[^*]*)\*\*$", re.IGNORECASE)
 
 
@@ -625,20 +625,6 @@ def parse_script(script_text: str) -> list[SceneDraft]:
     return drafts
 
 
-def estimate_duration_from_description(lines: Sequence[str]) -> int:
-    """Choose 4/8/12 seconds based on description density."""
-
-    text = " ".join(lines)
-    word_count = len(re.findall(r"\w+", text))
-    line_count = len([line for line in lines if line.strip()])
-
-    if word_count >= 150 or line_count >= 6:
-        return 12
-    if word_count >= 70 or line_count >= 3:
-        return 8
-    return 4
-
-
 def slugify(value: str) -> str:
     slug = re.sub(r"[^a-zA-Z0-9]+", "-", value.strip().lower()).strip("-")
     return slug or "scene"
@@ -652,7 +638,7 @@ def build_prompt_text(
     )
     return (
         f"Scene title: {title}\n"
-        f"Clip duration: {duration} seconds (limit choices: {ALLOWED_DURATIONS}).\n"
+        f"Clip duration: {duration} seconds (fixed length).\n"
         f"Output resolution: {resolution} portrait.\n"
         "Character continuity: keep the same heroine (Brown hair, casual flight outfit) and hero (casual outfit) across clips.\n"
         "Visual direction:\n"
@@ -823,7 +809,7 @@ class DirectorAgent(Executor):
 
         plans: list[ScenePlan] = []
         for idx, draft in enumerate(drafts, start=1):
-            duration = estimate_duration_from_description(draft.description_lines)
+            duration = SORA_CLIP_DURATION_SECONDS
             description = "\n".join(draft.description_lines)
             slug = slugify(f"{draft.scene_number:02d}-{draft.title}")
             prompt_path = prompt_dir / f"scene_{idx:02d}_{slug}.txt"
