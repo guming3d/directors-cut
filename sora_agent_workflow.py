@@ -2,23 +2,27 @@
 
 import argparse
 import asyncio
+import base64
+import io
 import json
 import logging
 import os
 import re
+import shutil
 import sys
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Sequence, Optional
+from typing import Any, Literal, Optional, Sequence
 
 from agent_framework import Executor, WorkflowBuilder, WorkflowContext, handler
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
-from pydantic import BaseModel, Field
+from openai import AzureOpenAI
+from pydantic import BaseModel, ConfigDict, Field
 
 # -------------------------
 # Paths & constants
@@ -32,9 +36,11 @@ SCENES_DIR = OUTPUT_DIR / "scenes"
 FINAL_VIDEO_PATH = OUTPUT_DIR / "sora_story_compilation.mp4"
 SORA_CLIENT = ROOT / "sora-openai-client.py"
 TMP_DIR = OUTPUT_DIR / "tmp"
+SINGLE_VIDEO_JOBS_DIR = OUTPUT_DIR / "single_videos"
 DEFAULT_SORA_RESOLUTION = "720x1280"
 SCENE_IMAGE_DIR = ROOT / "scene_start_screen"
 SCENE_IMAGE_PATTERN = re.compile(r"scene0*(\d+)\.(?:png|jpe?g)$", re.IGNORECASE)
+DATA_URL_PATTERN = re.compile(r"^data:(?P<mime>[\w/+.-]+);base64,(?P<data>.+)$", re.IGNORECASE)
 SCENE_IMAGE_SIZE = (720, 1280)
 try:
     SCENE_IMAGE_RESAMPLE = Image.Resampling.LANCZOS  # type: ignore[attr-defined]
@@ -43,6 +49,19 @@ except AttributeError:  # pragma: no cover - Pillow < 10 fallback
 
 SORA_CLIP_DURATION_SECONDS = 4
 HEADER_PATTERN = re.compile(r"^\*\*\s*(Scene\s+(\d+)[^*]*)\*\*$", re.IGNORECASE)
+SORA_PROMPT_GUIDE_URL = "https://cookbook.openai.com/examples/sora/sora2_prompting_guide"
+RESOLUTION_PATTERN = re.compile(r"^\d+x\d+$")
+
+DIRECTOR_REFINEMENT_DEPLOYMENT = (
+    os.getenv("DIRECTOR_REFINEMENT_DEPLOYMENT")
+    or os.getenv("AZURE_OPENAI_GPT41_DEPLOYMENT")
+    or os.getenv("AZURE_OPENAI_RESPONSES_DEPLOYMENT")
+    or os.getenv("AZURE_OPENAI_DEPLOYMENT")
+)
+AZURE_TEXT_ENDPOINT = (os.getenv("AZURE_OPENAI_ENDPOINT") or os.getenv("ENDPOINT_URL") or "").rstrip("/")
+AZURE_TEXT_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
+AZURE_TEXT_API_VERSION = os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-15-preview")
+_TEXT_CLIENT: AzureOpenAI | None = None
 
 
 def _configure_logging() -> logging.Logger:
@@ -73,9 +92,165 @@ def _configure_logging() -> logging.Logger:
 logger = _configure_logging()
 
 
+def _azure_text_client() -> AzureOpenAI | None:
+    """Create or reuse a shared Azure OpenAI client for GPT-4.1 refinement."""
+
+    if not DIRECTOR_REFINEMENT_DEPLOYMENT:
+        return None
+    if not AZURE_TEXT_ENDPOINT or not AZURE_TEXT_API_KEY:
+        logger.debug("Azure OpenAI credentials not configured; skipping prompt refinement client.")
+        return None
+
+    global _TEXT_CLIENT  # type: ignore[assignment]
+    try:
+        client = _TEXT_CLIENT
+    except NameError:
+        client = None
+
+    if client is None:
+        client = AzureOpenAI(
+            api_key=AZURE_TEXT_API_KEY,
+            azure_endpoint=AZURE_TEXT_ENDPOINT,
+            api_version=AZURE_TEXT_API_VERSION,
+        )
+        _TEXT_CLIENT = client  # type: ignore[assignment]
+    return client
+
+
+def _extract_response_text(response: Any) -> str:
+    """Normalize Azure Responses API output into plain text."""
+
+    output_text: Optional[str] = getattr(response, "output_text", None)
+    if isinstance(output_text, str) and output_text:
+        return output_text
+
+    chunks: list[str] = []
+    output = getattr(response, "output", None)
+    if output:
+        for item in output:
+            content = getattr(item, "content", None)
+            if not content:
+                continue
+            for piece in content:
+                text = getattr(piece, "text", None)
+                if isinstance(text, str):
+                    chunks.append(text)
+
+    if not chunks:
+        data = getattr(response, "data", None)
+        if data:
+            for datum in data:
+                content = getattr(datum, "content", None)
+                if not content:
+                    continue
+                for piece in content:
+                    text = getattr(piece, "text", None)
+                    if isinstance(text, str):
+                        chunks.append(text)
+
+    return "".join(chunks)
+
+
+def _static_asset_url(path: Optional[str]) -> Optional[str]:
+    if not path:
+        return None
+    file_path = Path(path)
+    try:
+        rel = file_path.relative_to(OUTPUT_DIR)
+    except ValueError:
+        return None
+    return f"{STATIC_URL_PREFIX}/{rel.as_posix()}"
+
+
+def _decode_image_payload(upload: EncodedImagePayload) -> tuple[Optional[str], bytes]:
+    data_url = upload.data_url.strip()
+    match = DATA_URL_PATTERN.match(data_url)
+    if not match:
+        raise ValueError("Unsupported image encoding; expected data URL with base64 content.")
+    encoded = match.group("data")
+    try:
+        data = base64.b64decode(encoded, validate=True)
+    except (base64.binascii.Error, ValueError) as exc:  # type: ignore[attr-defined]
+        raise ValueError("Failed to decode base64 image content.") from exc
+    mime = match.group("mime") or upload.content_type
+    return mime, data
+
+
+def _save_payload_as_png(upload: EncodedImagePayload, dest: Path) -> Path:
+    mime, data = _decode_image_payload(upload)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with Image.open(io.BytesIO(data)) as img:
+            mode = "RGBA" if "A" in img.getbands() else "RGB"
+            converted = img.convert(mode)
+            converted.save(dest, format="PNG")
+    except Exception:
+        # Fallback to raw bytes if Pillow cannot parse (should be rare)
+        dest.write_bytes(data)
+    logger.debug("Saved image upload %s (%s) -> %s", upload.filename, mime, dest)
+    return dest
+
+
+def _persist_scene_image_uploads(dest_dir: Path, uploads: Sequence[EncodedImagePayload]) -> None:
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    for idx, upload in enumerate(uploads, start=1):
+        filename = dest_dir / f"scene{idx}.png"
+        _save_payload_as_png(upload, filename)
+
+
+def _resolve_scene_image_dir(
+    job_dir: Path,
+    uploads: Sequence[EncodedImagePayload] | None,
+    override_dir: Optional[str],
+) -> Path:
+    if uploads:
+        dest_dir = job_dir / "scene_images"
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        base_dir = (
+            Path(override_dir).expanduser().resolve()
+            if override_dir
+            else SCENE_IMAGE_DIR
+        )
+        if base_dir.is_dir():
+            for item in base_dir.iterdir():
+                if item.is_file():
+                    shutil.copy2(item, dest_dir / item.name)
+        elif override_dir:
+            logger.warning(
+                "Scene image override directory %s not found; using uploads only.",
+                override_dir,
+            )
+        _persist_scene_image_uploads(dest_dir, uploads)
+        return dest_dir
+
+    if override_dir:
+        resolved = Path(override_dir).expanduser().resolve()
+        if not resolved.is_dir():
+            raise FileNotFoundError(
+                f"Scene image directory override not found: {resolved}"
+            )
+        return resolved
+
+    return SCENE_IMAGE_DIR
+
+
 # -------------------------
 # Data models
 # -------------------------
+
+
+class EncodedImagePayload(BaseModel):
+    """Base64-encoded image sent from the frontend."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    filename: str
+    data_url: str = Field(
+        ..., alias="dataUrl", description="data URL string containing base64 image content"
+    )
+    content_type: Optional[str] = Field(default=None, alias="contentType")
+
+
 class VideoWorkflowRequest(BaseModel):
     """Configuration for the multi-agent video workflow."""
 
@@ -297,16 +472,6 @@ class WorkflowJobStore:
             job.completed_at = _utc_now()
             job.add_message("failed", error)
 
-    def _static_url(self, path: Optional[str]) -> Optional[str]:
-        if not path:
-            return None
-        file_path = Path(path)
-        try:
-            rel = file_path.relative_to(OUTPUT_DIR)
-        except ValueError:
-            return None
-        return f"{STATIC_URL_PREFIX}/{rel.as_posix()}"
-
     def _snapshot(self, job: WorkflowJobState) -> JobStatusResponse:
         messages = [
             JobMessageModel(timestamp=item.timestamp, stage=item.stage, text=item.text)
@@ -319,7 +484,7 @@ class WorkflowJobStore:
                 duration_seconds=scene.duration_seconds,
                 prompt_path=scene.prompt_path,
                 video_path=scene.video_path,
-                video_url=self._static_url(scene.video_path),
+                video_url=_static_asset_url(scene.video_path),
                 log_path=scene.log_path,
                 client_log_path=scene.client_log_path,
             )
@@ -334,7 +499,7 @@ class WorkflowJobStore:
             completed_at=job.completed_at,
             error=job.error,
             final_video_path=job.final_video_path,
-            final_video_url=self._static_url(job.final_video_path),
+            final_video_url=_static_asset_url(job.final_video_path),
             manifest=job.manifest,
             messages=messages,
             scenes=scenes,
@@ -356,11 +521,184 @@ class WorkflowJobStore:
                 )
             ]
 
+    async def delete_job(self, job_id: str) -> WorkflowJobState:
+        async with self._lock:
+            job = self._require(job_id)
+            if job.status == "running":
+                raise ValueError("Cannot delete a workflow while it is running.")
+            return self._jobs.pop(job_id)
+
 
 JOB_STORE = WorkflowJobStore()
 
 
+@dataclass
+class SingleVideoJobState:
+    job_id: str
+    prompt: str
+    resolution: str
+    duration: int
+    download_variant: str
+    status: str = "queued"
+    progress: float = 0.0
+    started_at: datetime = field(default_factory=_utc_now)
+    completed_at: Optional[datetime] = None
+    error: Optional[str] = None
+    video_path: Optional[str] = None
+    log_path: Optional[str] = None
+    client_log_path: Optional[str] = None
+    messages: list[ProgressMessage] = field(default_factory=list)
+
+    def add_message(self, stage: str, text: str) -> None:
+        self.messages.append(ProgressMessage(timestamp=_utc_now(), stage=stage, text=text))
+
+
+class SingleVideoJobResponse(BaseModel):
+    job_id: str
+    status: str
+    progress: float
+    prompt: str
+    resolution: str
+    duration: int
+    download_variant: str
+    started_at: datetime
+    completed_at: Optional[datetime]
+    error: Optional[str]
+    video_path: Optional[str]
+    video_url: Optional[str]
+    log_path: Optional[str]
+    log_url: Optional[str]
+    client_log_path: Optional[str]
+    messages: list[JobMessageModel]
+
+
+class SingleVideoJobStore:
+    def __init__(self) -> None:
+        self._jobs: dict[str, SingleVideoJobState] = {}
+        self._lock = asyncio.Lock()
+
+    def _require(self, job_id: str) -> SingleVideoJobState:
+        job = self._jobs.get(job_id)
+        if job is None:
+            raise KeyError(job_id)
+        return job
+
+    async def create_job(
+        self,
+        job_id: str,
+        prompt: str,
+        resolution: str,
+        duration: int,
+        download_variant: str,
+    ) -> None:
+        async with self._lock:
+            state = SingleVideoJobState(
+                job_id=job_id,
+                prompt=prompt,
+                resolution=resolution,
+                duration=duration,
+                download_variant=download_variant,
+            )
+            state.add_message("queued", "Job queued.")
+            self._jobs[job_id] = state
+
+    async def mark_running(self, job_id: str) -> None:
+        async with self._lock:
+            job = self._require(job_id)
+            job.status = "running"
+            job.progress = max(job.progress, 0.05)
+            job.add_message("running", "Submitting video generation request to Sora2.")
+
+    async def update_progress(self, job_id: str, progress: float, message: str | None = None) -> None:
+        async with self._lock:
+            job = self._require(job_id)
+            job.progress = max(job.progress, min(max(progress, 0.0), 1.0))
+            if message:
+                job.add_message("running", message)
+
+    async def set_artifacts(
+        self,
+        job_id: str,
+        video_path: Optional[str],
+        log_path: Optional[str],
+        client_log_path: Optional[str],
+    ) -> None:
+        async with self._lock:
+            job = self._require(job_id)
+            job.video_path = video_path
+            job.log_path = log_path
+            job.client_log_path = client_log_path
+
+    async def mark_completed(self, job_id: str) -> None:
+        async with self._lock:
+            job = self._require(job_id)
+            job.status = "completed"
+            job.progress = 1.0
+            job.completed_at = _utc_now()
+            job.add_message("completed", "Video generation finished.")
+
+    async def mark_failed(self, job_id: str, error: str) -> None:
+        async with self._lock:
+            job = self._require(job_id)
+            job.status = "failed"
+            job.error = error
+            job.completed_at = _utc_now()
+            job.add_message("failed", error)
+
+    async def snapshot(self, job_id: str) -> SingleVideoJobResponse:
+        async with self._lock:
+            job = self._require(job_id)
+            return self._snapshot(job)
+
+    async def list_statuses(self) -> list[SingleVideoJobResponse]:
+        async with self._lock:
+            return [
+                self._snapshot(job)
+                for job in sorted(
+                    self._jobs.values(),
+                    key=lambda item: item.started_at,
+                    reverse=True,
+                )
+            ]
+
+    async def delete_job(self, job_id: str) -> SingleVideoJobState:
+        async with self._lock:
+            job = self._require(job_id)
+            if job.status == "running":
+                raise ValueError("Cannot delete a single-video job while it is running.")
+            return self._jobs.pop(job_id)
+
+    def _snapshot(self, job: SingleVideoJobState) -> SingleVideoJobResponse:
+        messages = [
+            JobMessageModel(timestamp=item.timestamp, stage=item.stage, text=item.text)
+            for item in job.messages
+        ]
+        return SingleVideoJobResponse(
+            job_id=job.job_id,
+            status=job.status,
+            progress=job.progress,
+            prompt=job.prompt,
+            resolution=job.resolution,
+            duration=job.duration,
+            download_variant=job.download_variant,
+            started_at=job.started_at,
+            completed_at=job.completed_at,
+            error=job.error,
+            video_path=job.video_path,
+            video_url=_static_asset_url(job.video_path),
+            log_path=job.log_path,
+            log_url=_static_asset_url(job.log_path),
+            client_log_path=job.client_log_path,
+            messages=messages,
+        )
+
+
+SINGLE_VIDEO_STORE = SingleVideoJobStore()
+
+
 class StartWorkflowPayload(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     script: str = Field(
         ..., description="Storyboard script content for the Director agent to process."
     )
@@ -378,6 +716,34 @@ class StartWorkflowPayload(BaseModel):
     download_variant: Optional[str] = Field(
         default=None,
         description="Optional override for the VIDEO_DOWNLOAD_VARIANT sent to the Sora client.",
+    )
+    scene_images: Optional[list[EncodedImagePayload]] = Field(
+        default=None,
+        alias="sceneImages",
+        description="Optional list of uploaded scene start screen images (data URLs).",
+    )
+
+
+class SingleVideoPayload(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    prompt: str = Field(..., description="Prompt text for a single Sora2 video generation.")
+    resolution: str = Field(
+        default=DEFAULT_SORA_RESOLUTION,
+        description="Output resolution (e.g. 720x1280).",
+    )
+    duration: Literal[4, 8, 12] = Field(
+        default=8, description="Video duration in seconds (allowed: 4, 8, 12)."
+    )
+    download_variant: Optional[str] = Field(
+        default=None,
+        alias="downloadVariant",
+        description="Optional override for VIDEO_DOWNLOAD_VARIANT when downloading the asset.",
+    )
+    reference_image: Optional[EncodedImagePayload] = Field(
+        default=None,
+        alias="referenceImage",
+        description="Optional input reference image encoded as a base64 data URL.",
     )
 
 
@@ -415,11 +781,14 @@ def _prepare_request_for_job(job_id: str, payload: StartWorkflowPayload) -> Vide
 
     thread_count = payload.threads or int(os.getenv("SORA_WORKFLOW_THREADS", "3"))
     download_variant = payload.download_variant or os.getenv("VIDEO_DOWNLOAD_VARIANT", "video")
-    scene_image_dir = (
-        Path(payload.scene_image_dir).expanduser().resolve()
-        if payload.scene_image_dir
-        else SCENE_IMAGE_DIR
-    )
+    try:
+        scene_image_dir_path = _resolve_scene_image_dir(
+            job_dir,
+            payload.scene_images or [],
+            payload.scene_image_dir,
+        )
+    except FileNotFoundError as exc:
+        raise ValueError(str(exc)) from exc
 
     request = VideoWorkflowRequest(
         script_path=str(script_path),
@@ -429,13 +798,49 @@ def _prepare_request_for_job(job_id: str, payload: StartWorkflowPayload) -> Vide
         tmp_dir=str(tmp_dir),
         final_video_path=str(final_video),
         sora_client_path=str(SORA_CLIENT),
-        scene_image_dir=str(scene_image_dir),
+        scene_image_dir=str(scene_image_dir_path),
         resolution=DEFAULT_SORA_RESOLUTION,
         thread_count=thread_count,
         download_variant=download_variant,
         job_id=job_id,
     )
     return request
+
+
+def _prepare_single_video_job(job_id: str, payload: SingleVideoPayload) -> SingleVideoJobConfig:
+    prompt = (payload.prompt or "").strip()
+    if not prompt:
+        raise ValueError("Prompt text is required.")
+
+    resolution = (payload.resolution or DEFAULT_SORA_RESOLUTION).strip()
+    if not RESOLUTION_PATTERN.match(resolution):
+        raise ValueError("Resolution must be in WIDTHxHEIGHT format, e.g. 720x1280.")
+
+    duration = int(payload.duration)
+    download_variant = payload.download_variant or os.getenv("VIDEO_DOWNLOAD_VARIANT", "video")
+
+    job_dir = SINGLE_VIDEO_JOBS_DIR / job_id
+    job_dir.mkdir(parents=True, exist_ok=True)
+    prompt_path = job_dir / "prompt.txt"
+    prompt_path.write_text(prompt + "\n", encoding="utf-8")
+
+    reference_path: Optional[Path] = None
+    if payload.reference_image:
+        reference_path = _save_payload_as_png(payload.reference_image, job_dir / "reference.png")
+
+    video_path = job_dir / "sora_single.mp4"
+
+    return SingleVideoJobConfig(
+        job_id=job_id,
+        prompt_path=prompt_path,
+        prompt_text=prompt,
+        resolution=resolution,
+        duration=duration,
+        download_variant=download_variant,
+        video_path=video_path,
+        reference_image_path=reference_path,
+        job_dir=job_dir,
+    )
 
 
 async def _run_workflow_job(job_id: str, request: VideoWorkflowRequest) -> None:
@@ -445,6 +850,60 @@ async def _run_workflow_job(job_id: str, request: VideoWorkflowRequest) -> None:
     except Exception as exc:  # pragma: no cover - defensive logging
         logger.exception("Workflow %s failed: %s", job_id, exc)
         await JOB_STORE.mark_failed(job_id, str(exc))
+
+
+async def _run_single_video_job(config: SingleVideoJobConfig) -> None:
+    job_id = config.job_id
+    try:
+        await SINGLE_VIDEO_STORE.mark_running(job_id)
+        await SINGLE_VIDEO_STORE.update_progress(job_id, 0.1, "Render request submitted.")
+
+        env = os.environ.copy()
+        env.update(
+            {
+                "VIDEO_OUTPUT_PATH": str(config.video_path),
+                "VIDEO_DOWNLOAD_VARIANT": config.download_variant,
+            }
+        )
+
+        cmd = [
+            sys.executable,
+            str(SORA_CLIENT),
+            "--prompt-file",
+            str(config.prompt_path),
+            "--resolution",
+            config.resolution,
+            "--duration",
+            str(config.duration),
+        ]
+        if config.reference_image_path:
+            cmd.extend(["--input-image", str(config.reference_image_path)])
+
+        stdout, stderr = await run_subprocess(cmd, cwd=ROOT, env=env)
+        await SINGLE_VIDEO_STORE.update_progress(job_id, 0.75, "Download completed, finalizing artifacts.")
+
+        client_log_path = config.video_path.with_suffix(".client.log")
+        client_log_path.write_text(
+            f"STDOUT:\n{stdout}\nSTDERR:\n{stderr}\n",
+            encoding="utf-8",
+        )
+
+        if not config.video_path.is_file():
+            raise FileNotFoundError(
+                "Sora client did not produce the expected video file. Check Azure credentials and VIDEO_OUTPUT_PATH."
+            )
+
+        sora_log_path = config.video_path.with_suffix(".json")
+        await SINGLE_VIDEO_STORE.set_artifacts(
+            job_id,
+            str(config.video_path),
+            str(sora_log_path) if sora_log_path.is_file() else None,
+            str(client_log_path),
+        )
+        await SINGLE_VIDEO_STORE.mark_completed(job_id)
+    except Exception as exc:  # pragma: no cover - defensive logging
+        logger.exception("Single video job %s failed: %s", job_id, exc)
+        await SINGLE_VIDEO_STORE.mark_failed(job_id, str(exc))
 
 
 def _allowed_origins() -> list[str]:
@@ -505,6 +964,63 @@ async def get_workflow(job_id: str) -> JobStatusResponse:
         return await JOB_STORE.get_status(job_id)
     except KeyError as exc:  # pragma: no cover - FastAPI translates to HTTP response
         raise HTTPException(status_code=404, detail=f"Unknown job: {job_id}") from exc
+
+
+@fastapi_app.delete("/api/workflows/{job_id}")
+async def delete_workflow(job_id: str) -> dict[str, str]:
+    try:
+        await JOB_STORE.delete_job(job_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Unknown job: {job_id}") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    shutil.rmtree(_job_root(job_id), ignore_errors=True)
+    return {"status": "deleted"}
+
+
+@fastapi_app.post("/api/single-videos", response_model=SingleVideoJobResponse)
+async def start_single_video(payload: SingleVideoPayload) -> SingleVideoJobResponse:
+    job_id = uuid.uuid4().hex
+    try:
+        config = _prepare_single_video_job(job_id, payload)
+    except ValueError as exc:
+        shutil.rmtree(SINGLE_VIDEO_JOBS_DIR / job_id, ignore_errors=True)
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    await SINGLE_VIDEO_STORE.create_job(
+        job_id,
+        config.prompt_text,
+        config.resolution,
+        config.duration,
+        config.download_variant,
+    )
+    asyncio.create_task(_run_single_video_job(config))
+    return await SINGLE_VIDEO_STORE.snapshot(job_id)
+
+
+@fastapi_app.get("/api/single-videos", response_model=list[SingleVideoJobResponse])
+async def list_single_videos() -> list[SingleVideoJobResponse]:
+    return await SINGLE_VIDEO_STORE.list_statuses()
+
+
+@fastapi_app.get("/api/single-videos/{job_id}", response_model=SingleVideoJobResponse)
+async def get_single_video(job_id: str) -> SingleVideoJobResponse:
+    try:
+        return await SINGLE_VIDEO_STORE.snapshot(job_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Unknown job: {job_id}") from exc
+
+
+@fastapi_app.delete("/api/single-videos/{job_id}")
+async def delete_single_video(job_id: str) -> dict[str, str]:
+    try:
+        await SINGLE_VIDEO_STORE.delete_job(job_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Unknown job: {job_id}") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    shutil.rmtree(SINGLE_VIDEO_JOBS_DIR / job_id, ignore_errors=True)
+    return {"status": "deleted"}
 
 
 async def _report_progress(
@@ -583,6 +1099,19 @@ class SceneRenderBatch:
     assigned_total_seconds: int
 
 
+@dataclass
+class SingleVideoJobConfig:
+    job_id: str
+    prompt_path: Path
+    prompt_text: str
+    resolution: str
+    duration: int
+    download_variant: str
+    video_path: Path
+    reference_image_path: Optional[Path]
+    job_dir: Path
+
+
 # -------------------------
 # Helpers
 # -------------------------
@@ -648,6 +1177,70 @@ def build_prompt_text(
     )
 
 
+async def refine_scene_description(title: str, description: str) -> str:
+    normalized = description.strip()
+    if not normalized:
+        return description
+
+    client = _azure_text_client()
+    if client is None:
+        return description
+
+    system_prompt = (
+        "You are an expert cinematic prompt engineer for Azure OpenAI Sora2. "
+        f"Incorporate the best practices from {SORA_PROMPT_GUIDE_URL} to polish scene descriptions. "
+        "Produce concise bullet-point guidance that covers camera direction, subject detail, motion, and audio cues suitable for a 4-second clip."
+    )
+    user_prompt = (
+        f"Scene title: {title}\n"
+        "Clip length: 4 seconds.\n"
+        "Original storyboard notes:\n"
+        f"{normalized}\n\n"
+        "Rewrite the notes into 4-6 focused bullet points optimized for Sora2."
+    )
+
+    max_tokens_str = os.getenv("DIRECTOR_REFINEMENT_MAX_TOKENS", "900")
+    try:
+        max_tokens = int(max_tokens_str)
+    except ValueError:
+        max_tokens = 900
+
+    def _call() -> str:
+        response = client.responses.create(
+            model=DIRECTOR_REFINEMENT_DEPLOYMENT,
+            input=[
+                {
+                    "role": "system",
+                    "content": [{"type": "text", "text": system_prompt}],
+                },
+                {
+                    "role": "user",
+                    "content": [{"type": "text", "text": user_prompt}],
+                },
+            ],
+            max_output_tokens=max_tokens,
+            temperature=0.4,
+        )
+        return _extract_response_text(response)
+
+    try:
+        refined = await asyncio.to_thread(_call)
+    except Exception as exc:  # pragma: no cover - defensive fallback
+        logger.warning("Prompt refinement failed for %s: %s", title, exc)
+        return description
+
+    lines = [line.strip() for line in refined.splitlines() if line.strip()]
+    if not lines:
+        return description
+
+    cleaned: list[str] = []
+    for line in lines:
+        stripped = line.lstrip("-•0123456789. ").strip()
+        cleaned.append(stripped or line)
+
+    return "\n".join(cleaned)
+
+
 def escape_for_concat(path: Path) -> str:
     escaped = path.as_posix().replace("'", "'\\''")
     return f"file '{escaped}'"
@@ -705,18 +1298,12 @@ def prepare_scene_start_images(
 
     expected = set(range(1, scene_count + 1))
     available = set(matches)
-    if expected != available:
-        missing = sorted(expected - available)
-        extra = sorted(available - expected)
-        issues: list[str] = []
-        if missing:
-            issues.append("missing " + ", ".join(f"scene{idx}.png" for idx in missing))
-        if extra:
-            issues.append("unexpected " + ", ".join(f"scene{idx}.png" for idx in extra))
+    missing = sorted(expected - available)
+    if missing:
         raise RuntimeError(
-            "Scene/image count mismatch: "
-            + "; ".join(issues)
-            + f". Ensure there is exactly one file per scene in {scene_dir}."
+            "Scene/image count mismatch: missing "
+            + ", ".join(f"scene{idx}.png" for idx in missing)
+            + f". Ensure there is at least one start image per scene in {scene_dir}."
         )
 
     prepared_dir = tmp_dir / "scene_start_images"
@@ -813,8 +1400,9 @@ class DirectorAgent(Executor):
             description = "\n".join(draft.description_lines)
             slug = slugify(f"{draft.scene_number:02d}-{draft.title}")
             prompt_path = prompt_dir / f"scene_{idx:02d}_{slug}.txt"
+            refined_description = await refine_scene_description(draft.title, description)
             prompt_text = build_prompt_text(
-                draft.title, description, duration, request.resolution
+                draft.title, refined_description, duration, request.resolution
             )
             prompt_path.write_text(prompt_text + "\n", encoding="utf-8")
 
@@ -823,7 +1411,7 @@ class DirectorAgent(Executor):
                     order=idx,
                     label=f"Scene {draft.scene_number}: {draft.title}",
                     duration_seconds=duration,
-                    description=description,
+                    description=refined_description,
                     prompt_path=str(prompt_path),
                     prompt_text=prompt_text,
                 )
