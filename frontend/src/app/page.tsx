@@ -36,6 +36,7 @@ type SceneStatus = {
 type JobStatus = {
   job_id: string;
   status: string;
+  resolution: string;
   stage: string | null;
   progress: number;
   started_at: string;
@@ -187,6 +188,8 @@ export default function Home() {
 
   // Combined workflow state
   const [script, setScript] = useState("");
+  const [useSceneImages, setUseSceneImages] = useState(true);
+  const [combinedResolution, setCombinedResolution] = useState<(typeof resolutionOptions)[number]>(resolutionOptions[0]);
   const [sceneImageFiles, setSceneImageFiles] = useState<File[]>([]);
   const [sceneImagePreviews, setSceneImagePreviews] = useState<string[]>([]);
   const [jobs, setJobs] = useState<JobStatus[]>([]);
@@ -399,6 +402,11 @@ export default function Home() {
   const singleStatusToken = getStatusToken(singleJob?.status);
 
   const handleSceneImagesChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    if (!useSceneImages) {
+      setSceneImageFiles([]);
+      setSceneImagePreviews([]);
+      return;
+    }
     const files = event.target.files ? Array.from(event.target.files) : [];
     setSceneImageFiles(files);
     if (!files.length) {
@@ -444,7 +452,9 @@ export default function Home() {
     setCombinedError(null);
     try {
       const payload: Record<string, unknown> = { script: trimmed };
-      if (sceneImageFiles.length) {
+      payload.useSceneImages = useSceneImages;
+      payload.resolution = combinedResolution;
+      if (useSceneImages && sceneImageFiles.length) {
         const uploads = await Promise.all(
           sceneImageFiles.map(async (file) => ({
             filename: file.name,
@@ -530,6 +540,15 @@ export default function Home() {
     }
   };
 
+  const handleSceneImagesToggle = (event: ChangeEvent<HTMLInputElement>) => {
+    const next = event.target.checked;
+    setUseSceneImages(next);
+    if (!next) {
+      setSceneImageFiles([]);
+      setSceneImagePreviews([]);
+    }
+  };
+
   const toggleCombinedSelection = (jobId: string) => {
     setSelectedCombinedJobs((prev) => {
       const next = new Set(prev);
@@ -604,9 +623,6 @@ export default function Home() {
     }
   };
 
-  const headerJobId = activeTab === "combined" ? job?.job_id : singleJob?.job_id;
-  const headerStartedAt = activeTab === "combined" ? job?.started_at : singleJob?.started_at;
-
   return (
     <div className="relative min-h-screen overflow-hidden bg-[#f6f5f2] text-slate-800">
       <div className="pointer-events-none absolute inset-0">
@@ -614,70 +630,54 @@ export default function Home() {
         <div className="absolute right-[-12%] top-24 h-80 w-80 rounded-full bg-gradient-to-br from-sky-100/60 via-white/40 to-transparent blur-3xl" />
         <div className="absolute bottom-[-18%] left-[18%] h-96 w-96 rounded-[260px] bg-gradient-to-br from-violet-100/70 via-white/60 to-transparent blur-3xl" />
       </div>
-      <div className="mx-auto flex max-w-6xl flex-col gap-8 px-6 pb-20 pt-16">
-        <header className="relative overflow-hidden rounded-3xl border border-slate-200/80 bg-white/90 px-8 py-10 shadow-[0_45px_120px_-80px_rgba(20,32,62,0.6)] backdrop-blur">
-          <div className="pointer-events-none absolute inset-y-0 right-0 hidden w-1/2 translate-x-10 bg-[radial-gradient(circle_at_top,_rgba(99,102,241,0.12),transparent_60%)] md:block" />
-          <div className="relative flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex items-center gap-5">
-              <Image
-                src="/sora2_logo.jpg"
-                alt="Sora Agent Workflow logo"
-                width={64}
-                height={64}
-                className="h-16 w-16 rounded-2xl border border-slate-200/80 object-cover shadow-sm"
-                priority
-              />
-              <div>
-                <span className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">
-                  Sora Agent Workflow by Azure Sora2
-                </span>
-                <h1 className="mt-2 text-3xl font-semibold text-slate-900 lg:text-4xl">
-                  Script to Video AI Composer
-                </h1>
-                <p className="mt-3 max-w-xl text-sm leading-relaxed text-slate-600">
-                  Launch story-driven renders or quick single-shot clips with a refined interface for tracking progress and assets.
-                </p>
-              </div>
+
+      <header className="relative z-10 border-b border-slate-200/70 bg-white/85 backdrop-blur">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-6 py-4">
+          <div className="flex items-center gap-3">
+            <Image
+              src="/sora2_logo.jpg"
+              alt="Sora Agent Workflow logo"
+              width={48}
+              height={48}
+              className="h-12 w-12 rounded-xl border border-slate-200/80 object-cover shadow-sm"
+              priority
+            />
+            <div>
+              <span className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-500">
+                Sora Agent Workflow by Azure Sora2
+              </span>
+              <h1 className="mt-1 text-2xl font-semibold text-slate-900">Script to Video AI Composer</h1>
             </div>
-            {headerJobId ? (
-              <div className="rounded-2xl border border-slate-200 bg-white/70 p-5 text-right shadow-sm">
-                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  {activeTab === "combined" ? "Current Workflow" : "Current Single Video"}
-                </div>
-                <div className="mt-2 font-mono text-sm text-slate-800">{headerJobId}</div>
-                <div className="mt-1 text-xs text-slate-500">
-                  Started {formatTimeDistance(headerStartedAt ?? null)}
-                </div>
-              </div>
-            ) : (
-              <div className="rounded-2xl border border-dashed border-slate-200 bg-white/40 p-5 text-sm text-slate-500">
-                Start a job to track its progress here.
-              </div>
-            )}
           </div>
-        </header>
-
-        <div className="flex flex-wrap gap-3 rounded-2xl border border-slate-200 bg-white/70 p-2 backdrop-blur">
-          {TABS.map(({ id, label }) => {
-            const isActive = activeTab === id;
-            return (
-              <button
-                key={id}
-                type="button"
-                onClick={() => setActiveTab(id)}
-                className={`flex-1 rounded-xl px-4 py-2 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 ${
-                  isActive
-                    ? "bg-slate-900 text-white shadow"
-                    : "bg-transparent text-slate-600 hover:bg-slate-100"
-                }`}
-              >
-                {label}
-              </button>
-            );
-          })}
+          <p className="hidden basis-full text-xs text-slate-500 sm:block">
+            Launch story-driven renders or quick single-shot clips with a refined interface for tracking progress and assets.
+          </p>
         </div>
+      </header>
 
-        {activeTab === "combined" ? (
+      <main className="relative z-0 mx-auto max-w-6xl px-6 pb-20 pt-12">
+        <div className="flex flex-col gap-8">
+          <div className="flex flex-wrap gap-3 rounded-2xl border border-slate-200 bg-white/80 p-2 shadow-sm backdrop-blur">
+            {TABS.map(({ id, label }) => {
+              const isActive = activeTab === id;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setActiveTab(id)}
+                  className={`flex-1 rounded-xl px-4 py-2 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 ${
+                    isActive
+                      ? "bg-slate-900 text-white shadow"
+                      : "bg-transparent text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+
+          {activeTab === "combined" ? (
           <>
             {combinedError && (
               <div className="flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50/90 px-4 py-3 text-sm text-rose-700 shadow-sm">
@@ -706,19 +706,52 @@ export default function Home() {
                       onChange={(event) => setScript(event.target.value)}
                     />
 
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <label className="text-sm font-semibold text-slate-800">Resolution</label>
+                        <select
+                          value={combinedResolution}
+                          onChange={(event) =>
+                            setCombinedResolution(event.target.value as (typeof resolutionOptions)[number])
+                          }
+                          className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-indigo-300 focus:outline-none focus:ring-4 focus:ring-indigo-200/80"
+                        >
+                          {resolutionOptions.map((option) => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
                     <div className="space-y-3">
                       <label className="text-sm font-semibold text-slate-800">Scene start images (optional)</label>
+                      <label className="flex items-center gap-2 text-xs font-medium text-slate-600">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 rounded border border-slate-300 text-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                          checked={useSceneImages}
+                          onChange={handleSceneImagesToggle}
+                        />
+                        Use scene start images for each clip
+                      </label>
                       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                         <input
                           type="file"
                           accept="image/png,image/jpeg"
                           multiple
                           onChange={handleSceneImagesChange}
-                          className="max-w-xs text-xs text-slate-600"
+                          disabled={!useSceneImages}
+                          className="max-w-xs text-xs text-slate-600 disabled:cursor-not-allowed disabled:text-slate-400"
                         />
-                        <span className="text-xs text-slate-500">
-                          Provide images to override defaults from <code className="font-mono text-[11px]">scene_start_screen/</code>.
-                        </span>
+                        {useSceneImages ? (
+                          <span className="text-xs text-slate-500">
+                            Provide images to override defaults from <code className="font-mono text-[11px]">scene_start_screen/</code>.
+                          </span>
+                        ) : (
+                          <span className="text-xs text-slate-400">Scene images disabled for this run.</span>
+                        )}
                       </div>
                       {sceneImagePreviews.length > 0 && (
                         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -802,7 +835,7 @@ export default function Home() {
                       )}
                     </div>
 
-                    <dl className="mt-6 grid gap-4 text-sm text-slate-600 sm:grid-cols-2">
+                    <dl className="mt-6 grid gap-4 text-sm text-slate-600 sm:grid-cols-3">
                       <div>
                         <dt className="text-xs uppercase tracking-wide text-slate-500">Started</dt>
                         <dd className="mt-1 text-slate-700">{formatTimeDistance(job.started_at)}</dd>
@@ -812,6 +845,10 @@ export default function Home() {
                         <dd className="mt-1 text-slate-700">
                           {job.completed_at ? formatTimeDistance(job.completed_at) : "—"}
                         </dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs uppercase tracking-wide text-slate-500">Resolution</dt>
+                        <dd className="mt-1 text-slate-700">{job.resolution}</dd>
                       </div>
                     </dl>
 
@@ -958,7 +995,10 @@ export default function Home() {
                               />
                               <button
                                 type="button"
-                                onClick={() => setActiveJobId(item.job_id)}
+                                onClick={() => {
+                                  setActiveJobId(item.job_id);
+                                  setJob(item);
+                                }}
                                 className="flex-1 text-left"
                               >
                                 <div className="flex items-center justify-between">
@@ -970,7 +1010,7 @@ export default function Home() {
                                   </span>
                                 </div>
                                 <div className="mt-1 text-[11px] text-slate-500">
-                                  {stageLabel(item.stage)} · {formatTimeDistance(item.started_at)}
+                                  {item.resolution} · {stageLabel(item.stage)} · {formatTimeDistance(item.started_at)}
                                 </div>
                               </button>
                             </div>
@@ -1138,7 +1178,7 @@ export default function Home() {
                       )}
                     </div>
 
-                    <dl className="mt-6 grid gap-4 text-sm text-slate-600 sm:grid-cols-2">
+                    <dl className="mt-6 grid gap-4 text-sm text-slate-600 sm:grid-cols-2 md:grid-cols-4">
                       <div>
                         <dt className="text-xs uppercase tracking-wide text-slate-500">Started</dt>
                         <dd className="mt-1 text-slate-700">{formatTimeDistance(singleJob.started_at)}</dd>
@@ -1148,6 +1188,14 @@ export default function Home() {
                         <dd className="mt-1 text-slate-700">
                           {singleJob.completed_at ? formatTimeDistance(singleJob.completed_at) : "—"}
                         </dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs uppercase tracking-wide text-slate-500">Resolution</dt>
+                        <dd className="mt-1 text-slate-700">{singleJob.resolution}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs uppercase tracking-wide text-slate-500">Duration</dt>
+                        <dd className="mt-1 text-slate-700">{singleJob.duration}s</dd>
                       </div>
                     </dl>
 
@@ -1254,7 +1302,10 @@ export default function Home() {
                               />
                               <button
                                 type="button"
-                                onClick={() => setActiveSingleJobId(item.job_id)}
+                                onClick={() => {
+                                  setActiveSingleJobId(item.job_id);
+                                  setSingleJob(item);
+                                }}
                                 className="flex-1 text-left"
                               >
                                 <div className="flex items-center justify-between">
@@ -1281,6 +1332,7 @@ export default function Home() {
           </>
         )}
       </div>
-    </div>
+    </main>
+  </div>
   );
 }

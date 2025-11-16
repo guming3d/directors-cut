@@ -16,6 +16,10 @@ export const metadata: Metadata = {
   title: "Sora Agent Workflow Dashboard",
   description:
     "Launch Sora multi-agent video workflows and monitor progress in real time.",
+  icons: {
+    icon: "/sora2_logo.jpg",
+    shortcut: "/sora2_logo.jpg",
+  },
 };
 
 export default function RootLayout({
