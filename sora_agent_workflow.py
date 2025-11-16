@@ -162,6 +162,18 @@ def _static_asset_url(path: Optional[str]) -> Optional[str]:
     return f"{STATIC_URL_PREFIX}/{rel.as_posix()}"
 
 
+class EncodedImagePayload(BaseModel):
+    """Base64-encoded image sent from the frontend."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    filename: str
+    data_url: str = Field(
+        ..., alias="dataUrl", description="data URL string containing base64 image content"
+    )
+    content_type: Optional[str] = Field(default=None, alias="contentType")
+
+
 def _decode_image_payload(upload: EncodedImagePayload) -> tuple[Optional[str], bytes]:
     data_url = upload.data_url.strip()
     match = DATA_URL_PATTERN.match(data_url)
@@ -239,18 +251,6 @@ def _resolve_scene_image_dir(
 # -------------------------
 
 
-class EncodedImagePayload(BaseModel):
-    """Base64-encoded image sent from the frontend."""
-
-    model_config = ConfigDict(populate_by_name=True, extra="ignore")
-
-    filename: str
-    data_url: str = Field(
-        ..., alias="dataUrl", description="data URL string containing base64 image content"
-    )
-    content_type: Optional[str] = Field(default=None, alias="contentType")
-
-
 class VideoWorkflowRequest(BaseModel):
     """Configuration for the multi-agent video workflow."""
 
@@ -278,9 +278,13 @@ class VideoWorkflowRequest(BaseModel):
         default=str(SCENE_IMAGE_DIR),
         description="Directory containing scene start screen images (scene1.png, scene2.png, ...).",
     )
+    use_scene_images: bool = Field(
+        default=True,
+        description="Whether to include scene start screen images when rendering Sora clips.",
+    )
     resolution: str = Field(
         default=DEFAULT_SORA_RESOLUTION,
-        description="Clip resolution (fixed 720x1280 portrait).",
+        description="Clip resolution string, e.g. 720x1280.",
     )
     thread_count: int = Field(
         default=int(os.getenv("SORA_WORKFLOW_THREADS", "3")),
@@ -329,6 +333,7 @@ class WorkflowJobState:
     status: str = "queued"
     stage: Optional[str] = None
     progress: float = 0.0
+    resolution: str = DEFAULT_SORA_RESOLUTION
     started_at: datetime = field(default_factory=_utc_now)
     completed_at: Optional[datetime] = None
     error: Optional[str] = None
@@ -365,6 +370,7 @@ class JobStatusResponse(BaseModel):
     status: str
     stage: Optional[str]
     progress: float
+    resolution: str
     started_at: datetime
     completed_at: Optional[datetime]
     error: Optional[str]
@@ -419,6 +425,11 @@ class WorkflowJobStore:
         async with self._lock:
             job = self._require(job_id)
             job.total_scenes = max(total, 0)
+
+    async def set_resolution(self, job_id: str, resolution: str) -> None:
+        async with self._lock:
+            job = self._require(job_id)
+            job.resolution = resolution
 
     async def record_scene_completion(self, job_id: str, render: "SceneRender") -> None:
         async with self._lock:
@@ -495,6 +506,7 @@ class WorkflowJobStore:
             status=job.status,
             stage=job.stage,
             progress=job.progress,
+            resolution=job.resolution,
             started_at=job.started_at,
             completed_at=job.completed_at,
             error=job.error,
@@ -551,6 +563,19 @@ class SingleVideoJobState:
 
     def add_message(self, stage: str, text: str) -> None:
         self.messages.append(ProgressMessage(timestamp=_utc_now(), stage=stage, text=text))
+
+
+@dataclass
+class SingleVideoJobConfig:
+    job_id: str
+    prompt_path: Path
+    prompt_text: str
+    resolution: str
+    duration: int
+    download_variant: str
+    video_path: Path
+    reference_image_path: Optional[Path]
+    job_dir: Path
 
 
 class SingleVideoJobResponse(BaseModel):
@@ -707,11 +732,16 @@ class StartWorkflowPayload(BaseModel):
     )
     resolution: Optional[str] = Field(
         default=None,
-        description=f"Optional override for render resolution (must remain {DEFAULT_SORA_RESOLUTION}).",
+        description="Optional override for render resolution in WIDTHxHEIGHT format.",
     )
     scene_image_dir: Optional[str] = Field(
         default=None,
         description="Optional override for the directory containing scene start screen images.",
+    )
+    use_scene_images: Optional[bool] = Field(
+        default=None,
+        alias="useSceneImages",
+        description="Set to false to skip providing scene start screen images.",
     )
     download_variant: Optional[str] = Field(
         default=None,
@@ -774,21 +804,31 @@ def _prepare_request_for_job(job_id: str, payload: StartWorkflowPayload) -> Vide
     script_path = job_dir / "script.txt"
     script_path.write_text(_normalize_script_text(payload.script), encoding="utf-8")
 
-    if payload.resolution and payload.resolution != DEFAULT_SORA_RESOLUTION:
+    resolution = (payload.resolution or DEFAULT_SORA_RESOLUTION).strip()
+    if not RESOLUTION_PATTERN.match(resolution):
         raise ValueError(
-            f"Resolution must remain {DEFAULT_SORA_RESOLUTION} to align with prepared assets."
+            "Resolution must be in WIDTHxHEIGHT format, e.g. 720x1280."
         )
+
+    use_scene_images = payload.use_scene_images
+    if use_scene_images is None:
+        use_scene_images = True
 
     thread_count = payload.threads or int(os.getenv("SORA_WORKFLOW_THREADS", "3"))
     download_variant = payload.download_variant or os.getenv("VIDEO_DOWNLOAD_VARIANT", "video")
-    try:
-        scene_image_dir_path = _resolve_scene_image_dir(
-            job_dir,
-            payload.scene_images or [],
-            payload.scene_image_dir,
-        )
-    except FileNotFoundError as exc:
-        raise ValueError(str(exc)) from exc
+    uploads = payload.scene_images or []
+    scene_image_override = payload.scene_image_dir
+
+    scene_image_dir_path = SCENE_IMAGE_DIR
+    if use_scene_images:
+        try:
+            scene_image_dir_path = _resolve_scene_image_dir(
+                job_dir,
+                uploads,
+                scene_image_override,
+            )
+        except FileNotFoundError as exc:
+            raise ValueError(str(exc)) from exc
 
     request = VideoWorkflowRequest(
         script_path=str(script_path),
@@ -799,7 +839,8 @@ def _prepare_request_for_job(job_id: str, payload: StartWorkflowPayload) -> Vide
         final_video_path=str(final_video),
         sora_client_path=str(SORA_CLIENT),
         scene_image_dir=str(scene_image_dir_path),
-        resolution=DEFAULT_SORA_RESOLUTION,
+        use_scene_images=use_scene_images,
+        resolution=resolution,
         thread_count=thread_count,
         download_variant=download_variant,
         job_id=job_id,
@@ -944,6 +985,7 @@ async def start_workflow(payload: StartWorkflowPayload) -> JobStatusResponse:
     await JOB_STORE.create_job(job_id)
     try:
         request = _prepare_request_for_job(job_id, payload)
+        await JOB_STORE.set_resolution(job_id, request.resolution)
     except ValueError as exc:
         await JOB_STORE.mark_failed(job_id, str(exc))
         raise HTTPException(status_code=400, detail=str(exc))
@@ -1098,20 +1140,6 @@ class SceneRenderBatch:
     renders: list[SceneRender]
     assigned_total_seconds: int
 
-
-@dataclass
-class SingleVideoJobConfig:
-    job_id: str
-    prompt_path: Path
-    prompt_text: str
-    resolution: str
-    duration: int
-    download_variant: str
-    video_path: Path
-    reference_image_path: Optional[Path]
-    job_dir: Path
-
-
 # -------------------------
 # Helpers
 # -------------------------
@@ -1159,6 +1187,20 @@ def slugify(value: str) -> str:
     return slug or "scene"
 
 
+def _orientation_suffix(resolution: str) -> str:
+    try:
+        width_str, height_str = resolution.lower().split("x", 1)
+        width = int(width_str)
+        height = int(height_str)
+    except (ValueError, AttributeError):
+        return ""
+    if width > height:
+        return " (landscape orientation)"
+    if height > width:
+        return " (portrait orientation)"
+    return " (square aspect ratio)"
+
+
 def build_prompt_text(
     title: str, description: str, duration: int, resolution: str
 ) -> str:
@@ -1168,7 +1210,7 @@ def build_prompt_text(
     return (
         f"Scene title: {title}\n"
         f"Clip duration: {duration} seconds (fixed length).\n"
-        f"Output resolution: {resolution} portrait.\n"
+        f"Output resolution: {resolution}{_orientation_suffix(resolution)}.\n"
         "Character continuity: keep the same heroine (Brown hair, casual flight outfit) and hero (casual outfit) across clips.\n"
         "Visual direction:\n"
         f"{bullet_lines}\n"
@@ -1337,11 +1379,15 @@ async def run_subprocess(
 
 
 def summarize_manifest(
-    renders: list[SceneRender], final_video: Path, total_seconds: int
+    renders: list[SceneRender],
+    final_video: Path,
+    total_seconds: int,
+    request: VideoWorkflowRequest,
 ) -> dict[str, Any]:
     return {
         "final_video": str(final_video),
         "assigned_seconds": total_seconds,
+        "resolution": request.resolution,
         "scenes": [
             {
                 "order": render.order,
@@ -1415,18 +1461,27 @@ class DirectorAgent(Executor):
                     prompt_path=str(prompt_path),
                     prompt_text=prompt_text,
                 )
-            )
+        )
 
         tmp_dir = Path(request.tmp_dir)
-        scene_images = prepare_scene_start_images(
-            Path(request.scene_image_dir), tmp_dir, len(plans)
-        )
-        await _report_progress(
-            request,
-            "planning",
-            f"Prepared {len(plans)} prompt file(s) and start screens.",
-            progress=0.2,
-        )
+        if request.use_scene_images:
+            scene_images = prepare_scene_start_images(
+                Path(request.scene_image_dir), tmp_dir, len(plans)
+            )
+            await _report_progress(
+                request,
+                "planning",
+                f"Prepared {len(plans)} prompt file(s) and start screens.",
+                progress=0.2,
+            )
+        else:
+            scene_images = []
+            await _report_progress(
+                request,
+                "planning",
+                f"Prepared {len(plans)} prompt file(s); scene start images disabled.",
+                progress=0.2,
+            )
         total_assigned = sum(plan.duration_seconds for plan in plans)
         await ctx.set_shared_state("scene_manifest", plans)
         await ctx.set_shared_state("scene_images", scene_images)
@@ -1517,11 +1572,12 @@ class Sora2Agent(Executor):
         ]
 
         scene_index = plan.order - 1
-        if scene_index < 0 or scene_index >= len(scene_images):
-            raise RuntimeError(
-                f"Missing prepared start screen for {plan.label} (index {scene_index}). Verify plan/image alignment."
-            )
-        cmd.extend(["--input-image", scene_images[scene_index]])
+        if request.use_scene_images:
+            if scene_index < 0 or scene_index >= len(scene_images):
+                raise RuntimeError(
+                    f"Missing prepared start screen for {plan.label} (index {scene_index}). Verify plan/image alignment."
+                )
+            cmd.extend(["--input-image", scene_images[scene_index]])
 
         stdout, stderr = await run_subprocess(cmd, cwd=ROOT, env=env)
         client_log_path = video_path.with_suffix(".client.log")
@@ -1592,6 +1648,7 @@ class ComposerAgent(Executor):
             batch.renders,
             final_video,
             batch.assigned_total_seconds,
+            request,
         )
         manifest_path = final_video.with_suffix(".json")
         manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
