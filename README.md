@@ -76,6 +76,13 @@ npm run start
 4. Choose `Parallel` or `Sequence` mode before launching: sequence mode seeds the first scene with a single image and chains the remaining scenes via last-frame references for tighter continuity.
 5. Monitor progress in the dashboard: planning, rendering, and composing phases update in real time; remix individual scenes, pick the preferred version, and regenerate the final MP4 directly from the UI.
 
+## Azure Container Apps Deployment
+
+1. Populate `.env` (or `.env.example`) with your Azure subscription ID, target region, and preferred resource names. The sample values in `.env` already use a single container registry (`soraworkflowacr9321`) and matching Container App names you can reuse.
+2. Run `./deploy.sh` from the repo root to provision the resource group, registry, Container Apps environment, and both frontend/backend apps in the specified registry. The script builds the Docker images locally, pushes them to the registry, and wires secrets/CORS automatically.
+3. Use `./update.sh` to roll out new images. Supply `--component backend` or `--component frontend` to limit the update, or `--image-tag mytag` to pin a custom tag (defaults to the current Git SHA fallback timestamp).
+4. After deployment, the script prints the externally reachable FQDNs for both services so you can verify them inside the Azure portal or hit them directly.
+
 ## Troubleshooting
 
 - Missing clips or prompts usually indicate misformatted script headers; verify they follow `**Scene 1 (Title)**` syntax.
