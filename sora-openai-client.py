@@ -188,6 +188,8 @@ async def main() -> None:
                 "prompt": prompt_text,
                 "output_file": output_path,
                 "output_filename": os.path.basename(output_path),
+                "video_id": job_id,
+                "status": status,
             }
             if user_supplied_image and reference_path:
                 log_data["input_image"] = reference_path

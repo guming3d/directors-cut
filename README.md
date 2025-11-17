@@ -33,6 +33,9 @@ Key routes:
 - `POST /api/workflows` — start a new video job with a storyboard script
 - `GET /api/workflows` — list recent jobs with progress snapshots
 - `GET /api/workflows/{job_id}` — poll job status, including messages, scene metadata, and final MP4/JSON manifest links
+- `POST /api/workflows/{job_id}/scenes/{scene_order}/remix` — remix a completed scene by supplying a new prompt against the previous Azure video ID
+- `POST /api/workflows/{job_id}/scenes/{scene_order}/select` — choose which scene version should be used when composing the final cut
+- `POST /api/workflows/{job_id}/recompose` — regenerate the final video using the currently selected scene versions
 - `GET /static/...` — static hosting of generated assets (final video, scene clips, logs)
 
 Generated artifacts are stored under `output/<job_id>/`.
@@ -70,7 +73,8 @@ npm run start
 1. Start the FastAPI service (`uvicorn ...` command above).
 2. Ensure your Azure/OpenAI credentials and any required environment variables for `sora-openai-client.py` are set.
 3. Run the Next.js UI (`npm run dev`) and paste a storyboard script using `**Scene N (Title)**` style headings.
-4. Monitor progress in the dashboard: planning, rendering, and composing phases update in real time; final MP4 and per-scene clips stream directly in the browser.
+4. Choose `Parallel` or `Sequence` mode before launching: sequence mode seeds the first scene with a single image and chains the remaining scenes via last-frame references for tighter continuity.
+5. Monitor progress in the dashboard: planning, rendering, and composing phases update in real time; remix individual scenes, pick the preferred version, and regenerate the final MP4 directly from the UI.
 
 ## Troubleshooting
 

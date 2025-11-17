@@ -1,9 +1,9 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f6f5f2;
-  --foreground: #1f2337;
-  --surface: #ffffff;
+  --background: #f6f7fb;
+  --foreground: #1f2937;
+  --surface: rgba(255, 255, 255, 0.94);
 }
 
 @theme inline {
@@ -16,9 +16,9 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #f6f5f2;
-    --foreground: #1f2337;
-    --surface: #ffffff;
+    --background: #f6f7fb;
+    --foreground: #1f2937;
+    --surface: rgba(255, 255, 255, 0.94);
   }
 }
 
@@ -27,4 +27,5 @@ body {
   color: var(--foreground);
   font-family: var(--font-geist-sans), "Inter", "Helvetica Neue", Arial, sans-serif;
   line-height: 1.6;
+  color-scheme: light;
 }
