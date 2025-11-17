@@ -1,0 +1,13 @@
+.venv
+__pycache__
+*.pyc
+.git
+.gitignore
+output
+.env
+.env.*
+frontend/node_modules
+frontend/.next
+Chapters/*.bak
+*.log
+.DS_Store
