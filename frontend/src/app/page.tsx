@@ -119,13 +119,164 @@ const terminalStatuses = new Set(["completed", "failed"]);
 
 type TabId = "combined" | "single";
 
+type Language = "en" | "zh";
+
 const TABS: { id: TabId; label: string }[] = [
   { id: "combined", label: "Storyboard Workflow" },
   { id: "single", label: "Single Sora2 Video" },
 ];
+const LANGUAGE_OPTIONS: Language[] = ["en", "zh"];
 
 const durationOptions = ["4", "8", "12"] as const;
 const resolutionOptions = ["720x1280", "1280x720", "1920x1080"] as const;
+
+const AUTH_USERNAME = "user";
+const AUTH_PASSWORD = "sora2isgreat";
+const AUTH_STORAGE_KEY = "sora2-authenticated";
+
+const zhTranslations: Record<string, string> = {
+  "Across storyboard & single clips": "涵盖分镜与单条视频",
+  "Active workflows": "运行中的工作流",
+  "Accepted formats: PNG, JPG. Images remain local until submission.": "支持 PNG、JPG，文件在提交前仅存于本地。",
+  "API target:": "API 地址：",
+  "API ·": "API ·",
+  "Available scenes": "可用场景",
+  "Awaiting version refresh...": "正在刷新版本…",
+  "Chinese": "中文",
+  "Clip pending...": "片段准备中…",
+  "Completed jobs": "已完成的任务",
+  "Completed runs": "完成的运行",
+  "Completed": "已完成",
+  "Composing final video": "合成最终视频",
+  "Composition manifest:": "合成清单：",
+  "Delete Selected": "删除选中项",
+  "Delete workflows": "删除工作流",
+  "Download final video": "下载最终视频",
+  "Download logs": "下载日志",
+  "Duration (seconds)": "时长（秒）",
+  "Generation mode": "生成模式",
+  "Enable scene reference images": "启用场景参考图",
+  "Enter password": "输入密码",
+  "Enter prompt for remix": "输入重制提示词",
+  "Enter script or storyboard prompt": "输入剧本或分镜提示词",
+  "Enter username": "输入用户名",
+  "English": "英文",
+  "Failed to refresh single-video status. Confirm the backend is reachable.": "无法刷新单视频状态，请确认后端可访问。",
+  "Failed to refresh workflow status. Check that the FastAPI server is reachable.": "无法刷新工作流状态，请检查 FastAPI 服务是否可访问。",
+  "Failed": "失败",
+  "Final Video": "最终视频",
+  "Generate a clip to see it listed here.": "先生成一个片段即可在此查看。",
+  "Generate video": "生成视频",
+  "Generating video": "生成视频中",
+  "Hint: user / sora2isgreat": "提示：user / sora2isgreat",
+  "Idle": "空闲",
+  "In Progress": "进行中",
+  "Invalid username or password.": "用户名或密码不正确。",
+  "Initializing single job...": "正在初始化单视频任务…",
+  "Initializing workflow...": "正在初始化工作流…",
+  "Job Timeline": "任务时间线",
+  "Language": "语言",
+  "No scene references": "不使用参考图",
+  "Live jobs": "正在运行的任务",
+  "Log file": "日志文件",
+  "Mode:": "模式：",
+  "Monitor orchestrator agents, track scene deliveries, and keep your queue aligned with Sora best practices.": "监控调度代理、跟踪场景交付，并让队列遵循 Sora 最佳实践。",
+  "Orchestrate multi-scene storyboards, monitor scene renders, and review delivery timelines. The workspace syncs live with your FastAPI backend.": "编排多场景分镜，监控渲染并审阅交付时间线。该工作区与 FastAPI 后端实时同步。",
+  "Parallel": "并行",
+  "Paste your storyboard with scene headings.": "请按场景标题粘贴分镜。",
+  "Password": "密码",
+  "Plan scenes in parallel": "并行规划场景",
+  "Planning scenes": "规划场景",
+  "Preparing workflow": "准备工作流",
+  "Progress": "进度",
+  "Production Workspace": "制作工作区",
+  "Quick actions": "快捷操作",
+  "Queued": "排队中",
+  "Recent Single Jobs": "最近的单视频任务",
+  "Render scenes concurrently": "并行渲染场景",
+  "Chain scenes sequentially": "串行衔接场景",
+  "Refresh telemetry": "刷新监控数据",
+  "Remix prompt": "重制提示词",
+  "Remix Scene": "重制场景",
+  "Selecting...": "正在选择…",
+  "Rendering video clips": "渲染视频片段",
+  "Resolution": "分辨率",
+  "Scene images enabled": "已启用场景参考图",
+  "Scene reference": "场景参考图",
+  "Scene references": "场景参考图",
+  "Scene Renders": "场景渲染",
+  "Scene": "场景",
+  "seconds": "秒",
+  "Scenes this run": "本次场景数",
+  "Scenes this workflow": "当前工作流场景数",
+  "Current storyboard": "当前分镜",
+  "Script-to-Video Control Room": "脚本到视频操控室",
+  "Since session start": "自会话开始以来",
+  "Select workflows": "选择工作流",
+  "Selected": "已选择",
+  "Sequence": "串行",
+  "Sign in to continue": "登录以继续",
+  "Sign in": "登录",
+  "Sign out": "退出登录",
+  "Single clip console": "单条视频面板",
+  "Single Sora2 Video": "单个 Sora2 视频",
+  "Single queue": "单视频队列",
+  "Single video prompt": "单视频提示词",
+  "Single Video Status": "单视频状态",
+  "Sora Agent Production Dashboard": "Sora 代理制作看板",
+  "Sora Agent Workflow logo": "Sora 工作流徽标",
+  "Storyboard Script": "分镜脚本",
+  "Sora2 Studio": "Sora2 工作室",
+  "Start Workflow": "启动工作流",
+  "Starting Workflow...": "正在启动工作流…",
+  "Start single video": "启动单视频",
+  "Started": "开始时间",
+  "Storyboard Workflow": "分镜工作流",
+  "Storyboard workspace": "分镜工作区",
+  "The Director agent will refine prompts following Sora2 best practices.": "导演代理会按照 Sora2 最佳实践优化提示词。",
+  "Regenerate Final Video": "重新生成最终视频",
+  "Open MP4 in new tab": "在新标签页打开 MP4",
+  "Your browser does not support HTML5 video.": "您的浏览器不支持 HTML5 视频。",
+  "Submit reference image": "上传参考图",
+  "Submit remix": "提交重制",
+  "Tracked workstreams": "追踪的工作项",
+  "Upload reference stills": "上传参考画面",
+  "Use the provided username and password to access the dashboard.": "使用提供的用户名和密码登录控制面板。",
+  "Use this version": "使用该版本",
+  "Start your first workflow to see it listed here.": "启动第一个工作流后即可在此查看。",
+  "Uses previous video ID:": "继承上一段视频 ID：",
+  "Username": "用户名",
+  "Video ID:": "视频 ID：",
+  "Version video unavailable.": "版本视频暂不可用。",
+  "Versions": "版本列表",
+  "Describe how you want to remix this scene...": "描述你希望如何重制此场景…",
+  "Prompt:": "提示词：",
+  "Azure video ID:": "Azure 视频 ID：",
+  "Waiting to start": "等待开始",
+  "Workflow Status": "工作流状态",
+  "Workflow Runs": "工作流记录",
+  "Workflow Timeline": "工作流时间线",
+  "Workflow complete": "工作流完成",
+  "Workflow failed": "工作流失败",
+  "Workflow health": "工作流健康情况",
+  "Sequence mode accepts a single starting still, then reuses the last frame of each clip to guide the next scene for smoother continuity.": "串行模式使用单个起始画面，并复用上一段的最后一帧来引导下一个场景，实现更平滑的衔接。",
+  "running or queued": "运行或排队中",
+  "Video unavailable.": "视频暂不可用。",
+  "Unavailable": "不可用",
+  "Generated Video": "已生成视频",
+  "Video pending...": "视频生成中…",
+  "Generate Single Clip": "创建单条视频",
+  "Submit a single prompt directly to the Sora2 API. Optionally attach a still reference, select the render resolution, and choose a supported clip duration.": "将单条提示直接提交给 Sora2 API，可附加参考图、选择分辨率并设置片段时长。",
+  "Describe the scene, motion, cinematography, and mood for Sora2...": "描述场景、运动、镜头语言与情绪…",
+  "Duration": "时长",
+  "Generate Clip": "生成片段",
+  "Reference image (optional)": "参考图（可选）",
+  "Reference preview": "参考图预览",
+  "Sending Prompt...": "正在发送提示词…",
+  "s": "秒",
+};
+
+const translateValue = (language: Language, value: string) => (language === "zh" ? zhTranslations[value] ?? value : value);
 
 const readFileAsDataUrl = (file: File): Promise<string> =>
   new Promise((resolve, reject) => {
@@ -141,25 +292,28 @@ const readFileAsDataUrl = (file: File): Promise<string> =>
     reader.readAsDataURL(file);
   });
 
-const stageLabel = (stage: string | null) => {
-  if (!stage) return "Waiting to start";
-  switch (stage) {
+const stageLabel = (stage: string | null, language: Language) => {
+  if (!stage) return translateValue(language, "Waiting to start");
+  const normalized = stage.toLowerCase();
+  switch (normalized) {
     case "planning":
-      return "Planning scenes";
+      return translateValue(language, "Planning scenes");
     case "rendering":
-      return "Rendering video clips";
+      return translateValue(language, "Rendering video clips");
     case "composing":
-      return "Composing final video";
+      return translateValue(language, "Composing final video");
     case "initializing":
-      return "Preparing workflow";
+      return translateValue(language, "Preparing workflow");
     case "running":
-      return "Generating video";
+      return translateValue(language, "Generating video");
     case "completed":
-      return "Workflow complete";
+      return translateValue(language, "Workflow complete");
     case "failed":
-      return "Workflow failed";
+      return translateValue(language, "Workflow failed");
+    case "queued":
+      return translateValue(language, "Queued");
     default:
-      return stage.charAt(0).toUpperCase() + stage.slice(1);
+      return translateValue(language, normalized.charAt(0).toUpperCase() + normalized.slice(1));
   }
 };
 
@@ -185,23 +339,64 @@ const buildAssetUrl = (path: string | null | undefined) => {
   return `${API_BASE}${path}`;
 };
 
-const getStatusToken = (status: string | undefined) => {
+const getStatusToken = (status: string | undefined, language: Language) => {
   if (!status) {
     return {
-      label: "Idle",
+      label: translateValue(language, "Idle"),
       className: "border border-slate-200 bg-white text-slate-600",
     };
   }
-  return (
-    STATUS_TOKENS[status] ?? {
-      label: status.charAt(0).toUpperCase() + status.slice(1),
-      className: "border border-slate-200 bg-white text-slate-600",
-    }
-  );
+  const token = STATUS_TOKENS[status];
+  if (token) {
+    return { ...token, label: translateValue(language, token.label) };
+  }
+  return {
+    label: translateValue(language, status.charAt(0).toUpperCase() + status.slice(1)),
+    className: "border border-slate-200 bg-white text-slate-600",
+  };
 };
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<TabId>("combined");
+  const [language, setLanguage] = useState<Language>("en");
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [authError, setAuthError] = useState<string | null>(null);
+  const translate = useCallback((value: string) => translateValue(language, value), [language]);
+  const LanguageToggle = () => (
+    <div className="flex items-center gap-2">
+      <span className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-500">{translate("Language")}</span>
+      <div className="flex overflow-hidden rounded-full border border-slate-200">
+        {LANGUAGE_OPTIONS.map((locale) => {
+          const isActive = language === locale;
+          return (
+            <button
+              key={locale}
+              type="button"
+              onClick={() => setLanguage(locale)}
+              className={`px-3 py-1 text-xs font-semibold transition ${isActive ? "bg-slate-900 text-white" : "bg-white text-slate-600 hover:bg-slate-100"}`}
+            >
+              {translate(locale === "en" ? "English" : "Chinese")}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const storedLanguage = window.localStorage.getItem("sora2-language");
+    if (storedLanguage === "en" || storedLanguage === "zh") {
+      setLanguage(storedLanguage);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("sora2-language", language);
+  }, [language]);
 
   // Combined workflow state
   const [script, setScript] = useState("");
@@ -309,12 +504,21 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    if (!isAuthenticated) {
+      setJobs([]);
+      setJob(null);
+      setActiveJobId(null);
+      setSingleJobs([]);
+      setSingleJob(null);
+      setActiveSingleJobId(null);
+      return;
+    }
     void loadCombinedJobs();
     void loadSingleJobs();
-  }, [loadCombinedJobs, loadSingleJobs]);
+  }, [isAuthenticated, loadCombinedJobs, loadSingleJobs]);
 
   useEffect(() => {
-    if (!activeJobId) return;
+    if (!activeJobId || !isAuthenticated) return;
     let disposed = false;
     let timeout: ReturnType<typeof setTimeout> | undefined;
 
@@ -361,10 +565,10 @@ export default function Home() {
         clearTimeout(timeout);
       }
     };
-  }, [activeJobId]);
+  }, [activeJobId, isAuthenticated]);
 
   useEffect(() => {
-    if (!activeSingleJobId) return;
+    if (!activeSingleJobId || !isAuthenticated) return;
     let disposed = false;
     let interval: ReturnType<typeof setInterval> | undefined;
 
@@ -406,7 +610,7 @@ export default function Home() {
         clearInterval(interval);
       }
     };
-  }, [activeSingleJobId]);
+  }, [activeSingleJobId, isAuthenticated]);
 
   const combinedProgressPercent = useMemo(() => {
     if (!job) return 0;
@@ -422,10 +626,10 @@ export default function Home() {
 
   const finalVideoUrl = buildAssetUrl(job?.final_video_url);
   const canRecompose = Boolean(job?.scenes?.length && job?.status === "completed");
-  const currentStatusToken = getStatusToken(job?.status);
+  const currentStatusToken = getStatusToken(job?.status, language);
 
   const singleVideoUrl = buildAssetUrl(singleJob?.video_url);
-  const singleStatusToken = getStatusToken(singleJob?.status);
+  const singleStatusToken = getStatusToken(singleJob?.status, language);
 
   const combinedStats = useMemo(() => {
     const totalJobs = jobs.length;
@@ -463,6 +667,36 @@ export default function Home() {
   const refreshAllJobs = () => {
     void loadCombinedJobs();
     void loadSingleJobs();
+  };
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const stored = window.localStorage.getItem(AUTH_STORAGE_KEY);
+    if (stored === "true") {
+      setIsAuthenticated(true);
+    }
+  }, []);
+
+  const handleLogin = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (username.trim() === AUTH_USERNAME && password === AUTH_PASSWORD) {
+      setIsAuthenticated(true);
+      setAuthError(null);
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(AUTH_STORAGE_KEY, "true");
+      }
+    } else {
+      setAuthError("Invalid username or password.");
+    }
+  };
+
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem(AUTH_STORAGE_KEY);
+    }
+    setUsername("");
+    setPassword("");
   };
 
   const handleSceneImagesChange = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -763,6 +997,60 @@ export default function Home() {
     }
   };
 
+  if (!isAuthenticated) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-10 text-slate-900">
+        <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-8 shadow-[0_35px_120px_-65px_rgba(15,23,42,0.35)]">
+          <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-500">{translate("Sora2 Studio")}</p>
+            <LanguageToggle />
+          </div>
+          <div className="space-y-2 text-center">
+            <h1 className="text-2xl font-semibold text-slate-900">{translate("Sign in to continue")}</h1>
+            <p className="text-sm text-slate-500">{translate("Use the provided username and password to access the dashboard.")}</p>
+          </div>
+          <form className="mt-6 space-y-4" onSubmit={handleLogin}>
+            <div>
+              <label htmlFor="username" className="text-sm font-medium text-slate-700">
+                {translate("Username")}
+              </label>
+              <input
+                id="username"
+                type="text"
+                value={username}
+                onChange={(event) => setUsername(event.target.value)}
+                className="mt-1 w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none focus:ring-0"
+                placeholder={translate("Enter username")}
+                autoComplete="username"
+              />
+            </div>
+            <div>
+              <label htmlFor="password" className="text-sm font-medium text-slate-700">
+                {translate("Password")}
+              </label>
+              <input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                className="mt-1 w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none focus:ring-0"
+                placeholder={translate("Enter password")}
+                autoComplete="current-password"
+              />
+            </div>
+            {authError ? <p className="text-sm text-rose-600">{translate(authError)}</p> : null}
+            <button
+              type="submit"
+              className="w-full rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
+            >
+              {translate("Sign in")}
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="relative min-h-screen overflow-hidden bg-slate-50 text-slate-900">
       <div className="pointer-events-none absolute inset-0">
@@ -777,37 +1065,35 @@ export default function Home() {
             <div className="flex items-center gap-3">
               <Image
                 src="/sora2_logo.jpg"
-                alt="Sora Agent Workflow logo"
+                alt={translate("Sora Agent Workflow logo")}
                 width={56}
                 height={56}
                 className="h-14 w-14 rounded-2xl border border-slate-200 object-cover shadow-sm shadow-slate-300/50"
                 priority
               />
               <div>
-                <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-500">Sora2 Studio</p>
-                <h2 className="mt-1 text-xl font-semibold text-slate-900">Production Workspace</h2>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-500">{translate("Sora2 Studio")}</p>
+                <h2 className="mt-1 text-xl font-semibold text-slate-900">{translate("Production Workspace")}</h2>
               </div>
             </div>
-            <p className="text-sm text-slate-500">
-              Monitor orchestrator agents, track scene deliveries, and keep your queue aligned with Sora best practices.
-            </p>
+            <p className="text-sm text-slate-500">{translate("Monitor orchestrator agents, track scene deliveries, and keep your queue aligned with Sora best practices.")}</p>
             <div className="rounded-2xl border border-slate-200 bg-white p-4">
-              <p className="text-xs uppercase text-slate-500">Workflow health</p>
+              <p className="text-xs uppercase text-slate-500">{translate("Workflow health")}</p>
               <dl className="mt-4 space-y-3 text-sm text-slate-600">
                 <div className="flex items-center justify-between">
-                  <dt>Active workflows</dt>
+                  <dt>{translate("Active workflows")}</dt>
                   <dd className="text-lg font-semibold text-slate-900">{combinedStats.running}</dd>
                 </div>
                 <div className="flex items-center justify-between">
-                  <dt>Completed runs</dt>
+                  <dt>{translate("Completed runs")}</dt>
                   <dd className="text-lg font-semibold text-slate-900">{combinedStats.completed}</dd>
                 </div>
                 <div className="flex items-center justify-between">
-                  <dt>Scenes this run</dt>
+                  <dt>{translate("Scenes this run")}</dt>
                   <dd className="text-lg font-semibold text-slate-900">{activeScenes}</dd>
                 </div>
                 <div className="flex items-center justify-between">
-                  <dt>Single queue</dt>
+                  <dt>{translate("Single queue")}</dt>
                   <dd className="text-lg font-semibold text-slate-900">{singleStats.running}</dd>
                 </div>
               </dl>
@@ -815,7 +1101,7 @@ export default function Home() {
           </div>
 
           <div className={`${panelCardClass} space-y-4`}>
-            <p className="text-xs uppercase text-slate-500">Quick actions</p>
+            <p className="text-xs uppercase text-slate-500">{translate("Quick actions")}</p>
             <div className="flex flex-col gap-2 text-sm">
               <button
                 type="button"
@@ -824,7 +1110,7 @@ export default function Home() {
               >
                 <span className="flex items-center gap-2">
                   <DocumentTextIcon className="h-4 w-4 text-slate-600 transition group-hover:text-slate-500" />
-                  Storyboard workspace
+                  {translate("Storyboard workspace")}
                 </span>
                 <PaperAirplaneIcon className="h-5 w-5 text-slate-500 transition group-hover:translate-x-1 group-hover:text-slate-500" />
               </button>
@@ -835,7 +1121,7 @@ export default function Home() {
               >
                 <span className="flex items-center gap-2">
                   <PlayCircleIcon className="h-4 w-4 text-slate-600 transition group-hover:text-slate-500" />
-                  Single clip console
+                  {translate("Single clip console")}
                 </span>
                 <ArrowPathIcon className="h-5 w-5 text-slate-500 transition group-hover:animate-spin group-hover:text-slate-500" />
               </button>
@@ -846,7 +1132,7 @@ export default function Home() {
               >
                 <span className="flex items-center gap-2">
                   <ArrowPathIcon className="h-4 w-4 text-emerald-300 transition group-hover:animate-spin group-hover:text-emerald-200" />
-                  Refresh telemetry
+                  {translate("Refresh telemetry")}
                 </span>
                 <CheckCircleIcon className="h-5 w-5 text-slate-500 transition group-hover:text-emerald-200" />
               </button>
@@ -859,38 +1145,48 @@ export default function Home() {
             <div className="flex flex-wrap items-start justify-between gap-6">
               <div className="space-y-3">
                 <span className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-500">
-                  Script-to-Video Control Room
+                  {translate("Script-to-Video Control Room")}
                 </span>
-                <h1 className="text-3xl font-semibold text-slate-900">Sora Agent Production Dashboard</h1>
+                <h1 className="text-3xl font-semibold text-slate-900">{translate("Sora Agent Production Dashboard")}</h1>
                 <p className="max-w-2xl text-sm text-slate-500">
-                  Orchestrate multi-scene storyboards, monitor scene renders, and review delivery timelines. The workspace syncs live with your FastAPI backend.
+                  {translate("Orchestrate multi-scene storyboards, monitor scene renders, and review delivery timelines. The workspace syncs live with your FastAPI backend.")}
                 </p>
               </div>
-              <span className={`${pillButtonClass} whitespace-nowrap`}>API · <span className="font-mono text-[11px] text-slate-500">{displayApiBase || API_BASE}</span></span>
+              <div className="flex flex-wrap items-center gap-3">
+                <LanguageToggle />
+                <span className={`${pillButtonClass} whitespace-nowrap`}>{translate("API ·")} <span className="font-mono text-[11px] text-slate-500">{displayApiBase || API_BASE}</span></span>
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
+                >
+                  {translate("Sign out")}
+                </button>
+              </div>
             </div>
 
             <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                <p className="text-xs uppercase text-slate-500">Live jobs</p>
+                <p className="text-xs uppercase text-slate-500">{translate("Live jobs")}</p>
                 <div className="mt-2 flex items-baseline gap-2">
                   <span className="text-3xl font-semibold text-slate-900">{combinedStats.running + singleStats.running}</span>
-                  <span className="text-xs text-slate-500">running or queued</span>
+                  <span className="text-xs text-slate-500">{translate("running or queued")}</span>
                 </div>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                <p className="text-xs uppercase text-slate-500">Completed jobs</p>
+                <p className="text-xs uppercase text-slate-500">{translate("Completed jobs")}</p>
                 <div className="mt-2 text-3xl font-semibold text-slate-900">{combinedStats.completed + singleStats.completed}</div>
-                <p className="text-xs text-slate-500">Since session start</p>
+                <p className="text-xs text-slate-500">{translate("Since session start")}</p>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                <p className="text-xs uppercase text-slate-500">Scenes this workflow</p>
+                <p className="text-xs uppercase text-slate-500">{translate("Scenes this workflow")}</p>
                 <div className="mt-2 text-3xl font-semibold text-slate-900">{activeScenes}</div>
-                <p className="text-xs text-slate-500">Current storyboard</p>
+                <p className="text-xs text-slate-500">{translate("Current storyboard")}</p>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                <p className="text-xs uppercase text-slate-500">Tracked workstreams</p>
+                <p className="text-xs uppercase text-slate-500">{translate("Tracked workstreams")}</p>
                 <div className="mt-2 text-3xl font-semibold text-slate-900">{combinedStats.totalJobs + singleStats.totalJobs}</div>
-                <p className="text-xs text-slate-500">Across storyboard & single clips</p>
+                <p className="text-xs text-slate-500">{translate("Across storyboard & single clips")}</p>
               </div>
             </div>
           </header>
@@ -910,7 +1206,7 @@ export default function Home() {
                         : "bg-transparent text-slate-500 hover:bg-slate-100 hover:text-slate-900"
                     }`}
                   >
-                    {label}
+                    {translate(label)}
                   </button>
                 );
               })}
@@ -921,7 +1217,7 @@ export default function Home() {
                 {combinedError && (
                   <div className="flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 shadow-md shadow-rose-200/40">
                     <ExclamationTriangleIcon className="h-5 w-5 flex-none text-rose-700" />
-                    <span>{combinedError}</span>
+                    <span>{translate(combinedError)}</span>
                   </div>
                 )}
 
@@ -931,24 +1227,25 @@ export default function Home() {
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2 text-lg font-semibold text-slate-900">
                           <DocumentTextIcon className="h-5 w-5 text-slate-600" />
-                          Storyboard Script
+                          {translate("Storyboard Script")}
                         </div>
                       </div>
                       <p className="mt-2 text-sm text-slate-500">
-                        Paste your storyboard with <span className="font-mono text-xs text-slate-600">**Scene 1 (Title)**</span> headings. The Director agent will refine prompts following Sora2 best practices.
+                        {translate("Paste your storyboard with scene headings.")}{" "}
+                        <span className="font-mono text-xs text-slate-600">**Scene 1 (Title)**</span>{" "}
+                        {translate("The Director agent will refine prompts following Sora2 best practices.")}
                       </p>
                       <form className="mt-5 space-y-5" onSubmit={handleCombinedSubmit}>
                         <textarea
                           className="min-h-[260px] w-full resize-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-[0_30px_100px_-80px_rgba(15,23,42,0.12)] placeholder:text-slate-500 transition focus:border-slate-400 focus:outline-none focus:ring-4 focus:ring-slate-200"
-                          placeholder="**Scene 1 (Sunrise Over the City)**
-The camera glides through..."
+                          placeholder={translate("Enter script or storyboard prompt")}
                           value={script}
                           onChange={(event) => setScript(event.target.value)}
                         />
 
                         <div className="grid gap-4 sm:grid-cols-2">
                           <div className="space-y-2">
-                            <label className="text-sm font-semibold text-slate-600">Resolution</label>
+                            <label className="text-sm font-semibold text-slate-600">{translate("Resolution")}</label>
                             <select
                               value={combinedResolution}
                               onChange={(event) => setCombinedResolution(event.target.value as (typeof resolutionOptions)[number])}
@@ -962,7 +1259,7 @@ The camera glides through..."
                             </select>
                           </div>
                           <div className="space-y-2">
-                            <span className="text-sm font-semibold text-slate-600">Scene references</span>
+                            <span className="text-sm font-semibold text-slate-600">{translate("Scene references")}</span>
                             <button
                               type="button"
                               onClick={() => setUseSceneImages((value) => !value)}
@@ -983,17 +1280,17 @@ The camera glides through..."
                                   }`}
                                 />
                               </span>
-                              {useSceneImages ? "Scene images enabled" : "No scene references"}
+                              {useSceneImages ? translate("Scene images enabled") : translate("No scene references")}
                             </button>
                           </div>
                         </div>
 
                         <div className="space-y-2">
-                          <label className="text-sm font-semibold text-slate-600">Generation mode</label>
+                          <label className="text-sm font-semibold text-slate-600">{translate("Generation mode")}</label>
                           <div className="flex flex-wrap gap-3">
                             {[
-                              { id: "parallel" as const, label: "Parallel", description: "Render scenes concurrently" },
-                              { id: "sequence" as const, label: "Sequence", description: "Chain scenes sequentially" },
+                              { id: "parallel" as const, label: translate("Parallel"), description: translate("Render scenes concurrently") },
+                              { id: "sequence" as const, label: translate("Sequence"), description: translate("Chain scenes sequentially") },
                             ].map((mode) => {
                               const isActive = generationMode === mode.id;
                               return (
@@ -1016,13 +1313,13 @@ The camera glides through..."
                             })}
                           </div>
                           <p className="text-xs text-slate-500">
-                            Sequence mode accepts a single starting still, then reuses the last frame of each clip to guide the next scene for smoother continuity.
+                            {translate("Sequence mode accepts a single starting still, then reuses the last frame of each clip to guide the next scene for smoother continuity.")}
                           </p>
                         </div>
 
                         {useSceneImages ? (
                           <div className="space-y-3">
-                            <label className="text-sm font-semibold text-slate-600">Upload reference stills</label>
+                            <label className="text-sm font-semibold text-slate-600">{translate("Upload reference stills")}</label>
                             <input
                               type="file"
                               accept="image/png,image/jpeg"
@@ -1039,7 +1336,7 @@ The camera glides through..."
                                   >
                                     <Image
                                       src={preview}
-                                      alt={`Scene reference ${index + 1}`}
+                                      alt={`${translate("Scene reference")} ${index + 1}`}
                                       width={160}
                                       height={160}
                                       unoptimized
@@ -1049,7 +1346,7 @@ The camera glides through..."
                                 ))}
                               </div>
                             ) : (
-                              <p className="text-xs text-slate-500">Accepted formats: PNG, JPG. Images remain local until submission.</p>
+                              <p className="text-xs text-slate-500">{translate("Accepted formats: PNG, JPG. Images remain local until submission.")}</p>
                             )}
                           </div>
                         ) : null}
@@ -1063,17 +1360,17 @@ The camera glides through..."
                             {isSubmittingCombined ? (
                               <>
                                 <ArrowPathIcon className="h-5 w-5 animate-spin" />
-                                Starting Workflow...
+                                {translate("Starting Workflow...")}
                               </>
                             ) : (
                               <>
                                 <PaperAirplaneIcon className="h-5 w-5" />
-                                Start Workflow
+                                {translate("Start Workflow")}
                               </>
                             )}
                           </button>
                           <p className="text-xs text-slate-500">
-                            API target: <span className="font-mono text-[11px] text-slate-500">{API_BASE}/api/workflows</span>
+                            {translate("API target:")} <span className="font-mono text-[11px] text-slate-500">{API_BASE}/api/workflows</span>
                           </p>
                         </div>
                       </form>
@@ -1085,11 +1382,11 @@ The camera glides through..."
                           <div>
                             <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
                               <FilmIcon className="h-5 w-5 text-slate-600" />
-                              Workflow Status
+                              {translate("Workflow Status")}
                             </h2>
-                            <p className="mt-1 text-sm text-slate-500">{stageLabel(job.stage)}</p>
+                            <p className="mt-1 text-sm text-slate-500">{stageLabel(job.stage, language)}</p>
                             <p className="text-xs uppercase tracking-wide text-slate-400">
-                              Mode: {job.generation_mode === "sequence" ? "Sequence" : "Parallel"}
+                              {translate("Mode:")} {translate(job.generation_mode === "sequence" ? "Sequence" : "Parallel")}
                             </p>
                           </div>
                           <span className={`${pillButtonClass} ${currentStatusToken.className}`}>{currentStatusToken.label}</span>
@@ -1097,7 +1394,7 @@ The camera glides through..."
 
                         <div className="mt-6 space-y-3">
                           <div className="flex items-center justify-between text-xs text-slate-500">
-                            <span>Progress</span>
+                            <span>{translate("Progress")}</span>
                             <span>{combinedProgressPercent}%</span>
                           </div>
                           <div className="h-2.5 overflow-hidden rounded-full border border-slate-200 bg-white">
@@ -1116,15 +1413,15 @@ The camera glides through..."
 
                         <dl className="mt-6 grid gap-4 text-sm text-slate-600 sm:grid-cols-3">
                           <div>
-                            <dt className="text-xs uppercase tracking-wide text-slate-500">Started</dt>
+                            <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Started")}</dt>
                             <dd className="mt-1 text-slate-600">{formatTimeDistance(job.started_at)}</dd>
                           </div>
                           <div>
-                            <dt className="text-xs uppercase tracking-wide text-slate-500">Completed</dt>
+                            <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Completed")}</dt>
                             <dd className="mt-1 text-slate-600">{job.completed_at ? formatTimeDistance(job.completed_at) : "—"}</dd>
                           </div>
                           <div>
-                            <dt className="text-xs uppercase tracking-wide text-slate-500">Resolution</dt>
+                            <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Resolution")}</dt>
                             <dd className="mt-1 text-slate-600">{job.resolution}</dd>
                           </div>
                         </dl>
@@ -1132,7 +1429,7 @@ The camera glides through..."
                         {finalVideoUrl && (
                           <div className="mt-8 space-y-3">
                             <div className="flex items-center justify-between gap-3">
-                              <h3 className="text-sm font-semibold text-slate-600">Final Video</h3>
+                              <h3 className="text-sm font-semibold text-slate-600">{translate("Final Video")}</h3>
                               <button
                                 type="button"
                                 onClick={handleRecompose}
@@ -1140,7 +1437,7 @@ The camera glides through..."
                                 className="inline-flex items-center gap-2 rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-400 disabled:cursor-not-allowed disabled:opacity-60"
                               >
                                 {isRecomposing ? <ArrowPathIcon className="h-4 w-4 animate-spin" /> : <ArrowPathIcon className="h-4 w-4" />}
-                                Regenerate Final Video
+                                {translate("Regenerate Final Video")}
                               </button>
                             </div>
                             <video
@@ -1148,7 +1445,7 @@ The camera glides through..."
                               className="max-h-[420px] w-full rounded-2xl border border-slate-200 bg-black/60"
                               src={finalVideoUrl}
                             >
-                              Your browser does not support HTML5 video.
+                              {translate("Your browser does not support HTML5 video.")}
                             </video>
                             <a
                               href={finalVideoUrl}
@@ -1157,7 +1454,7 @@ The camera glides through..."
                               className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-slate-900"
                             >
                               <PlayCircleIcon className="h-4 w-4" />
-                              Open MP4 in new tab
+                              {translate("Open MP4 in new tab")}
                             </a>
                           </div>
                         )}
@@ -1168,7 +1465,7 @@ The camera glides through..."
                       <div className={`${panelCardClass}`}>
                         <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
                           <PlayCircleIcon className="h-5 w-5 text-slate-600" />
-                          Scene Renders
+                          {translate("Scene Renders")}
                         </h2>
                         <div className="mt-5 grid gap-5 md:grid-cols-2">
                           {job.scenes.map((scene) => {
@@ -1183,10 +1480,12 @@ The camera glides through..."
                                 <div className="flex items-start justify-between gap-2">
                                   <div>
                                     <h3 className="text-sm font-semibold text-slate-900">{scene.label}</h3>
-                                    <p className="text-xs text-slate-500">{scene.duration_seconds} seconds</p>
+                                    <p className="text-xs text-slate-500">
+                                      {scene.duration_seconds} {translate("seconds")}
+                                    </p>
                                   </div>
                                   <span className="rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] uppercase tracking-wide text-slate-600">
-                                    Scene {scene.order}
+                                    {translate("Scene")} {scene.order}
                                   </span>
                                 </div>
                                 {sceneVideoUrl ? (
@@ -1196,20 +1495,22 @@ The camera glides through..."
                                     className="mt-3 max-h-56 w-full rounded-xl border border-slate-200 bg-black/60"
                                     src={sceneVideoUrl}
                                   >
-                                    Video unavailable.
+                                    {translate("Video unavailable.")}
                                   </video>
                                 ) : (
                                   <div className="mt-3 flex h-40 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-100 text-xs text-slate-500">
-                                    Clip pending...
+                                    {translate("Clip pending...")}
                                   </div>
                                 )}
                                 <p className="mt-2 text-[11px] text-slate-500">
-                                  Video ID: {selectedVersion?.video_id ?? "Unavailable"}
+                                  {translate("Video ID:")} {selectedVersion?.video_id ?? translate("Unavailable")}
                                 </p>
 
                                 {versions.length ? (
                                   <div className="mt-4 space-y-3">
-                                    <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Versions</h4>
+                                    <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                      {translate("Versions")}
+                                    </h4>
                                     {versions.map((version) => {
                                       const versionVideoUrl = buildAssetUrl(version.video_url);
                                       const isActive = version.version_id === scene.selected_version_id;
@@ -1240,7 +1541,11 @@ The camera glides through..."
                                                   : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 disabled:opacity-60"
                                               }`}
                                             >
-                                              {isActive ? "Selected" : isBusy ? "Selecting..." : "Use this version"}
+                                              {isActive
+                                                ? translate("Selected")
+                                                : isBusy
+                                                  ? translate("Selecting...")
+                                                  : translate("Use this version")}
                                             </button>
                                           </div>
                                           {versionVideoUrl ? (
@@ -1250,16 +1555,16 @@ The camera glides through..."
                                               className="mt-2 max-h-40 w-full rounded-xl border border-slate-200 bg-black/60"
                                               src={versionVideoUrl}
                                             >
-                                              Version video unavailable.
+                                              {translate("Version video unavailable.")}
                                             </video>
                                           ) : null}
                                           {version.prompt ? (
                                             <p className="mt-2 text-xs text-slate-600">
-                                              Prompt: <span className="font-mono text-[11px] text-slate-500">{version.prompt}</span>
+                                              {translate("Prompt:")} <span className="font-mono text-[11px] text-slate-500">{version.prompt}</span>
                                             </p>
                                           ) : null}
                                           {version.video_id ? (
-                                            <p className="text-[11px] text-slate-400">Azure video ID: {version.video_id}</p>
+                                            <p className="text-[11px] text-slate-400">{translate("Azure video ID:")} {version.video_id}</p>
                                           ) : null}
                                         </div>
                                       );
@@ -1269,18 +1574,20 @@ The camera glides through..."
 
                                 <form className="mt-4 space-y-2" onSubmit={(event) => handleRemixSubmit(event, scene.order)}>
                                   <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                    Remix prompt
+                                    {translate("Remix prompt")}
                                   </label>
                                   <textarea
                                     className="min-h-[80px] w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
-                                    placeholder="Describe how you want to remix this scene..."
+                                    placeholder={translate("Describe how you want to remix this scene...")}
                                     value={remixPrompts[scene.order] ?? ""}
                                     onChange={(event) =>
                                       setRemixPrompts((prev) => ({ ...prev, [scene.order]: event.target.value }))
                                     }
                                   />
                                   <div className="flex items-center justify-between gap-2 text-xs text-slate-500">
-                                    <span>Uses previous video ID: {selectedVersion?.video_id ?? "Unavailable"}</span>
+                                    <span>
+                                      {translate("Uses previous video ID:")} {selectedVersion?.video_id ?? translate("Unavailable")}
+                                    </span>
                                     <button
                                       type="submit"
                                       disabled={!selectedVersion?.video_id || remixSubmitting[scene.order]}
@@ -1291,7 +1598,7 @@ The camera glides through..."
                                       ) : (
                                         <ArrowPathIcon className="h-4 w-4" />
                                       )}
-                                      Remix Scene
+                                      {translate("Remix Scene")}
                                     </button>
                                   </div>
                                 </form>
@@ -1308,7 +1615,7 @@ The camera glides through..."
                       <div className={`${panelCardClass}`}>
                         <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
                           <ClockIcon className="h-5 w-5 text-slate-600" />
-                          Workflow Timeline
+                          {translate("Workflow Timeline")}
                         </h2>
                         <ol className="mt-6 space-y-4">
                           {job.messages.map((message, index) => {
@@ -1324,7 +1631,7 @@ The camera glides through..."
                                 <div>
                                   <p className="text-sm text-slate-600">{message.text}</p>
                                   <p className="text-xs text-slate-500">
-                                    {formatTimestamp(message.timestamp)} · {stageLabel(message.stage)}
+                                    {formatTimestamp(message.timestamp)} · {stageLabel(message.stage, language)}
                                   </p>
                                 </div>
                               </li>
@@ -1338,7 +1645,7 @@ The camera glides through..."
                       <div className="flex items-center justify-between">
                         <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
                           <ArrowPathIcon className="h-5 w-5 text-slate-600" />
-                          Workflow Runs
+                          {translate("Workflow Runs")}
                         </h2>
                         <button
                           type="button"
@@ -1347,15 +1654,15 @@ The camera glides through..."
                           className="inline-flex items-center gap-1 rounded-lg border border-rose-500/50 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 transition disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           <TrashIcon className="h-4 w-4" />
-                          Delete Selected
+                          {translate("Delete Selected")}
                         </button>
                       </div>
                       {jobs.length === 0 ? (
-                        <p className="mt-4 text-sm text-slate-500">Start your first workflow to see it listed here.</p>
+                        <p className="mt-4 text-sm text-slate-500">{translate("Start your first workflow to see it listed here.")}</p>
                       ) : (
                         <ul className="mt-4 space-y-3 text-sm">
                           {jobs.map((item) => {
-                            const token = getStatusToken(item.status);
+                            const token = getStatusToken(item.status, language);
                             const isActive = item.job_id === activeJobId;
                             const isSelected = selectedCombinedJobs.has(item.job_id);
                             return (
@@ -1392,7 +1699,7 @@ The camera glides through..."
                                       </span>
                                     </div>
                                     <div className="mt-1 text-[11px] text-slate-500">
-                                      {item.resolution} · {stageLabel(item.stage)} · {formatTimeDistance(item.started_at)}
+                                      {item.resolution} · {stageLabel(item.stage, language)} · {formatTimeDistance(item.started_at)}
                                     </div>
                                   </button>
                                 </div>
@@ -1410,7 +1717,7 @@ The camera glides through..."
                 {singleError && (
                   <div className="flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 shadow-md shadow-rose-200/40">
                     <ExclamationTriangleIcon className="h-5 w-5 flex-none text-rose-700" />
-                    <span>{singleError}</span>
+                    <span>{translate(singleError)}</span>
                   </div>
                 )}
 
@@ -1419,22 +1726,22 @@ The camera glides through..."
                     <div className={`${panelCardClass}`}>
                       <div className="flex items-center gap-2 text-lg font-semibold text-slate-900">
                         <FilmIcon className="h-5 w-5 text-slate-600" />
-                        Generate Single Clip
+                        {translate("Generate Single Clip")}
                       </div>
                       <p className="mt-2 text-sm text-slate-500">
-                        Submit a single prompt directly to the Sora2 API. Optionally attach a still reference, select the render resolution, and choose a supported clip duration.
+                        {translate("Submit a single prompt directly to the Sora2 API. Optionally attach a still reference, select the render resolution, and choose a supported clip duration.")}
                       </p>
                       <form className="mt-5 space-y-5" onSubmit={handleSingleSubmit}>
                         <textarea
                           className="min-h-[220px] w-full resize-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-[0_30px_100px_-80px_rgba(15,23,42,0.12)] placeholder:text-slate-500 transition focus:border-slate-400 focus:outline-none focus:ring-4 focus:ring-slate-200"
-                          placeholder="Describe the scene, motion, cinematography, and mood for Sora2..."
+                          placeholder={translate("Describe the scene, motion, cinematography, and mood for Sora2...")}
                           value={singlePrompt}
                           onChange={(event) => setSinglePrompt(event.target.value)}
                         />
 
                         <div className="grid gap-4 sm:grid-cols-2">
                           <div className="space-y-2">
-                            <label className="text-sm font-semibold text-slate-600">Resolution</label>
+                            <label className="text-sm font-semibold text-slate-600">{translate("Resolution")}</label>
                             <select
                               value={singleResolution}
                               onChange={(event) => setSingleResolution(event.target.value as (typeof resolutionOptions)[number])}
@@ -1448,7 +1755,7 @@ The camera glides through..."
                             </select>
                           </div>
                           <div className="space-y-2">
-                            <span className="text-sm font-semibold text-slate-600">Duration</span>
+                            <span className="text-sm font-semibold text-slate-600">{translate("Duration")}</span>
                             <div className="flex gap-2">
                               {durationOptions.map((option) => {
                                 const isActive = singleDuration === option;
@@ -1465,20 +1772,21 @@ The camera glides through..."
                                       type="radio"
                                       name="single-duration"
                                       value={option}
-                                      checked={isActive}
-                                      onChange={(event) => setSingleDuration(event.target.value as (typeof durationOptions)[number])}
-                                      className="sr-only"
-                                    />
-                                    {option}s
-                                  </label>
-                                );
-                              })}
+                                    checked={isActive}
+                                    onChange={(event) => setSingleDuration(event.target.value as (typeof durationOptions)[number])}
+                                    className="sr-only"
+                                  />
+                                  {option}
+                                  {translate("s")}
+                                </label>
+                              );
+                            })}
                             </div>
                           </div>
                         </div>
 
                         <div className="space-y-3">
-                          <label className="text-sm font-semibold text-slate-600">Reference image (optional)</label>
+                          <label className="text-sm font-semibold text-slate-600">{translate("Reference image (optional)")}</label>
                           <input
                             type="file"
                             accept="image/png,image/jpeg"
@@ -1489,7 +1797,7 @@ The camera glides through..."
                             <div className="mt-2 flex h-40 w-32 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-white">
                               <Image
                                 src={singleReferencePreview}
-                                alt="Reference preview"
+                                alt={translate("Reference preview")}
                                 width={160}
                                 height={200}
                                 unoptimized
@@ -1508,17 +1816,17 @@ The camera glides through..."
                             {isSubmittingSingle ? (
                               <>
                                 <ArrowPathIcon className="h-5 w-5 animate-spin" />
-                                Sending Prompt...
+                                {translate("Sending Prompt...")}
                               </>
                             ) : (
                               <>
                                 <PaperAirplaneIcon className="h-5 w-5" />
-                                Generate Clip
+                                {translate("Generate Clip")}
                               </>
                             )}
                           </button>
                           <p className="text-xs text-slate-500">
-                            API target: <span className="font-mono text-[11px] text-slate-500">{API_BASE}/api/single-videos</span>
+                            {translate("API target:")} <span className="font-mono text-[11px] text-slate-500">{API_BASE}/api/single-videos</span>
                           </p>
                         </div>
                       </form>
@@ -1530,16 +1838,16 @@ The camera glides through..."
                           <div>
                             <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
                               <FilmIcon className="h-5 w-5 text-slate-600" />
-                              Single Video Status
+                              {translate("Single Video Status")}
                             </h2>
-                            <p className="mt-1 text-sm text-slate-500">{stageLabel(singleJob.status)}</p>
+                            <p className="mt-1 text-sm text-slate-500">{stageLabel(singleJob.status, language)}</p>
                           </div>
                           <span className={`${pillButtonClass} ${singleStatusToken.className}`}>{singleStatusToken.label}</span>
                         </div>
 
                         <div className="mt-6 space-y-3">
                           <div className="flex items-center justify-between text-xs text-slate-500">
-                            <span>Progress</span>
+                            <span>{translate("Progress")}</span>
                             <span>{singleProgressPercent}%</span>
                           </div>
                           <div className="h-2.5 overflow-hidden rounded-full border border-slate-200 bg-white">
@@ -1558,32 +1866,35 @@ The camera glides through..."
 
                         <dl className="mt-6 grid gap-4 text-sm text-slate-600 sm:grid-cols-2 md:grid-cols-4">
                           <div>
-                            <dt className="text-xs uppercase tracking-wide text-slate-500">Started</dt>
+                            <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Started")}</dt>
                             <dd className="mt-1 text-slate-600">{formatTimeDistance(singleJob.started_at)}</dd>
                           </div>
                           <div>
-                            <dt className="text-xs uppercase tracking-wide text-slate-500">Completed</dt>
+                            <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Completed")}</dt>
                             <dd className="mt-1 text-slate-600">{singleJob.completed_at ? formatTimeDistance(singleJob.completed_at) : "—"}</dd>
                           </div>
                           <div>
-                            <dt className="text-xs uppercase tracking-wide text-slate-500">Resolution</dt>
+                            <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Resolution")}</dt>
                             <dd className="mt-1 text-slate-600">{singleJob.resolution}</dd>
                           </div>
                           <div>
-                            <dt className="text-xs uppercase tracking-wide text-slate-500">Duration</dt>
-                            <dd className="mt-1 text-slate-600">{singleJob.duration}s</dd>
+                            <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Duration")}</dt>
+                            <dd className="mt-1 text-slate-600">
+                              {singleJob.duration}
+                              {translate("s")}
+                            </dd>
                           </div>
                         </dl>
 
                         {singleVideoUrl ? (
                           <div className="mt-8 space-y-3">
-                            <h3 className="text-sm font-semibold text-slate-600">Generated Video</h3>
+                            <h3 className="text-sm font-semibold text-slate-600">{translate("Generated Video")}</h3>
                             <video
                               controls
                               className="max-h-[360px] w-full rounded-2xl border border-slate-200 bg-black/60"
                               src={singleVideoUrl}
                             >
-                              Your browser does not support HTML5 video.
+                              {translate("Your browser does not support HTML5 video.")}
                             </video>
                             <a
                               href={singleVideoUrl}
@@ -1592,12 +1903,12 @@ The camera glides through..."
                               className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-slate-900"
                             >
                               <PlayCircleIcon className="h-4 w-4" />
-                              Open MP4 in new tab
+                              {translate("Open MP4 in new tab")}
                             </a>
                           </div>
                         ) : (
                           <div className="mt-8 flex h-40 items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-100 text-xs text-slate-500">
-                            Video pending...
+                            {translate("Video pending...")}
                           </div>
                         )}
                       </div>
@@ -1609,7 +1920,7 @@ The camera glides through..."
                       <div className={`${panelCardClass}`}>
                         <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
                           <ClockIcon className="h-5 w-5 text-slate-600" />
-                          Job Timeline
+                          {translate("Job Timeline")}
                         </h2>
                         <ol className="mt-6 space-y-4">
                           {singleJob.messages.map((message, index) => {
@@ -1625,7 +1936,7 @@ The camera glides through..."
                                 <div>
                                   <p className="text-sm text-slate-600">{message.text}</p>
                                   <p className="text-xs text-slate-500">
-                                    {formatTimestamp(message.timestamp)} · {stageLabel(message.stage)}
+                                    {formatTimestamp(message.timestamp)} · {stageLabel(message.stage, language)}
                                   </p>
                                 </div>
                               </li>
@@ -1639,7 +1950,7 @@ The camera glides through..."
                       <div className="flex items-center justify-between">
                         <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
                           <ArrowPathIcon className="h-5 w-5 text-slate-600" />
-                          Recent Single Jobs
+                          {translate("Recent Single Jobs")}
                         </h2>
                         <button
                           type="button"
@@ -1648,15 +1959,15 @@ The camera glides through..."
                           className="inline-flex items-center gap-1 rounded-lg border border-rose-500/50 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 transition disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           <TrashIcon className="h-4 w-4" />
-                          Delete Selected
+                          {translate("Delete Selected")}
                         </button>
                       </div>
                       {singleJobs.length === 0 ? (
-                        <p className="mt-4 text-sm text-slate-500">Generate a clip to see it listed here.</p>
+                        <p className="mt-4 text-sm text-slate-500">{translate("Generate a clip to see it listed here.")}</p>
                       ) : (
                         <ul className="mt-4 space-y-3 text-sm">
                           {singleJobs.map((item) => {
-                            const token = getStatusToken(item.status);
+                            const token = getStatusToken(item.status, language);
                             const isActive = item.job_id === activeSingleJobId;
                             const isSelected = selectedSingleJobs.has(item.job_id);
                             return (
@@ -1693,7 +2004,8 @@ The camera glides through..."
                                       </span>
                                     </div>
                                     <div className="mt-1 text-[11px] text-slate-500">
-                                      {item.resolution} · {item.duration}s · {formatTimeDistance(item.started_at)}
+                                      {item.resolution} · {item.duration}
+                                      {translate("s")} · {formatTimeDistance(item.started_at)}
                                     </div>
                                   </button>
                                 </div>
