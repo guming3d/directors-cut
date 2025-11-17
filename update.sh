@@ -1,0 +1,198 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'USAGE'
+Usage: ./update.sh [--component backend|frontend|all] [--image-tag TAG]
+Rebuilds the requested images, pushes them to ACR, and updates the matching Azure Container Apps.
+USAGE
+}
+
+COMPONENT="all"
+IMAGE_TAG_OVERRIDE=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --component)
+      COMPONENT="$2"
+      shift 2
+      ;;
+    --image-tag)
+      IMAGE_TAG_OVERRIDE="$2"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown argument: $1" >&2
+      usage
+      exit 1
+      ;;
+  esac
+done
+
+if [[ "$COMPONENT" != "backend" && "$COMPONENT" != "frontend" && "$COMPONENT" != "all" ]]; then
+  echo "--component must be backend, frontend, or all" >&2
+  exit 1
+fi
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENV_FILE="$ROOT_DIR/.env"
+if [[ ! -f "$ENV_FILE" ]]; then
+  echo "Missing $ENV_FILE. Run deploy.sh first." >&2
+  exit 1
+fi
+
+set -a
+# shellcheck disable=SC1090
+source "$ENV_FILE"
+set +a
+
+required_vars=(
+  AZURE_SUBSCRIPTION_ID
+  AZURE_LOCATION
+  AZURE_RESOURCE_GROUP
+  AZURE_CONTAINER_REGISTRY
+  AZURE_CONTAINERAPPS_ENVIRONMENT
+  AZURE_CONTAINERAPPS_BACKEND
+  AZURE_CONTAINERAPPS_FRONTEND
+)
+for var in "${required_vars[@]}"; do
+  if [[ -z "${!var:-}" ]]; then
+    echo "Missing $var in .env" >&2
+    exit 1
+  fi
+done
+
+command -v az >/dev/null || { echo "Azure CLI (az) is required." >&2; exit 1; }
+command -v docker >/dev/null || { echo "Docker CLI is required." >&2; exit 1; }
+
+az account set --subscription "$AZURE_SUBSCRIPTION_ID"
+az config set extension.use_dynamic_install=yes_without_prompt >/dev/null
+az extension add --name containerapp --upgrade >/dev/null
+
+if ! az containerapp env show --name "$AZURE_CONTAINERAPPS_ENVIRONMENT" --resource-group "$AZURE_RESOURCE_GROUP" >/dev/null 2>&1; then
+  echo "Container Apps environment $AZURE_CONTAINERAPPS_ENVIRONMENT not found. Run deploy.sh first." >&2
+  exit 1
+fi
+
+REGISTRY_SERVER="${AZURE_CONTAINER_REGISTRY}.azurecr.io"
+az acr login --name "$AZURE_CONTAINER_REGISTRY" >/dev/null
+REGISTRY_USERNAME=$(az acr credential show --name "$AZURE_CONTAINER_REGISTRY" --query username -o tsv)
+REGISTRY_PASSWORD=$(az acr credential show --name "$AZURE_CONTAINER_REGISTRY" --query passwords[0].value -o tsv)
+
+IMAGE_TAG="${IMAGE_TAG_OVERRIDE:-$(git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null || date -u +%Y%m%d%H%M%S)}"
+BACKEND_IMAGE="${REGISTRY_SERVER}/${AZURE_CONTAINERAPPS_BACKEND}:${IMAGE_TAG}"
+FRONTEND_IMAGE="${REGISTRY_SERVER}/${AZURE_CONTAINERAPPS_FRONTEND}:${IMAGE_TAG}"
+
+update_backend() {
+  if ! az containerapp show --name "$AZURE_CONTAINERAPPS_BACKEND" --resource-group "$AZURE_RESOURCE_GROUP" >/dev/null 2>&1; then
+    echo "Backend container app $AZURE_CONTAINERAPPS_BACKEND not found. Run deploy.sh first." >&2
+    exit 1
+  fi
+  if [[ -z "${AZURE_OPENAI_API_KEY:-}" ]]; then
+    echo "AZURE_OPENAI_API_KEY must be present in .env to update the backend" >&2
+    exit 1
+  fi
+  DOCKER_BUILDKIT=1 docker build \
+    --file "$ROOT_DIR/Dockerfile.backend" \
+    --tag "$BACKEND_IMAGE" \
+    "$ROOT_DIR"
+  docker push "$BACKEND_IMAGE"
+
+  BACKEND_SECRETS=("sora-openai-api-key=$AZURE_OPENAI_API_KEY")
+  if [[ -n "${OPENAI_API_KEY:-}" ]]; then
+    BACKEND_SECRETS+=("openai-api-key=$OPENAI_API_KEY")
+  fi
+
+  az containerapp secret set \
+    --name "$AZURE_CONTAINERAPPS_BACKEND" \
+    --resource-group "$AZURE_RESOURCE_GROUP" \
+    --secrets "${BACKEND_SECRETS[@]}" >/dev/null
+
+  BACKEND_ENV_VARS=("AZURE_OPENAI_API_KEY=secretref:sora-openai-api-key")
+  [[ -n "${AZURE_OPENAI_ENDPOINT:-}" ]] && BACKEND_ENV_VARS+=("AZURE_OPENAI_ENDPOINT=$AZURE_OPENAI_ENDPOINT")
+  [[ -n "${ENDPOINT_URL:-}" ]] && BACKEND_ENV_VARS+=("ENDPOINT_URL=$ENDPOINT_URL")
+  [[ -n "${DEPLOYMENT_NAME:-}" ]] && BACKEND_ENV_VARS+=("DEPLOYMENT_NAME=$DEPLOYMENT_NAME")
+  [[ -n "${AZURE_OPENAI_CHAT_DEPLOYMENT_NAME:-}" ]] && BACKEND_ENV_VARS+=("AZURE_OPENAI_CHAT_DEPLOYMENT_NAME=$AZURE_OPENAI_CHAT_DEPLOYMENT_NAME")
+  [[ -n "${AZURE_OPENAI_RESPONSES_DEPLOYMENT_NAME:-}" ]] && BACKEND_ENV_VARS+=("AZURE_OPENAI_RESPONSES_DEPLOYMENT_NAME=$AZURE_OPENAI_RESPONSES_DEPLOYMENT_NAME")
+  [[ -n "${SORA_WORKFLOW_ALLOWED_ORIGINS:-}" ]] && BACKEND_ENV_VARS+=("SORA_WORKFLOW_ALLOWED_ORIGINS=$SORA_WORKFLOW_ALLOWED_ORIGINS")
+  [[ -n "${SORA_WORKFLOW_THREADS:-}" ]] && BACKEND_ENV_VARS+=("SORA_WORKFLOW_THREADS=$SORA_WORKFLOW_THREADS")
+  [[ -n "${VIDEO_DOWNLOAD_VARIANT:-}" ]] && BACKEND_ENV_VARS+=("VIDEO_DOWNLOAD_VARIANT=$VIDEO_DOWNLOAD_VARIANT")
+  [[ -n "${AZURE_OPENAI_API_VERSION:-}" ]] && BACKEND_ENV_VARS+=("AZURE_OPENAI_API_VERSION=$AZURE_OPENAI_API_VERSION")
+  if [[ -n "${OPENAI_API_KEY:-}" ]]; then
+    BACKEND_ENV_VARS+=("OPENAI_API_KEY=secretref:openai-api-key")
+  fi
+
+  az containerapp update \
+    --name "$AZURE_CONTAINERAPPS_BACKEND" \
+    --resource-group "$AZURE_RESOURCE_GROUP" \
+    --image "$BACKEND_IMAGE" \
+    --target-port 8000 \
+    --ingress external \
+    --min-replicas 1 \
+    --max-replicas 2 \
+    --registry-server "$REGISTRY_SERVER" \
+    --registry-username "$REGISTRY_USERNAME" \
+    --registry-password "$REGISTRY_PASSWORD" \
+    --cpu 2.0 \
+    --memory 4Gi \
+    --set-env-vars "${BACKEND_ENV_VARS[@]}" >/dev/null
+}
+
+update_frontend() {
+  if ! az containerapp show --name "$AZURE_CONTAINERAPPS_FRONTEND" --resource-group "$AZURE_RESOURCE_GROUP" >/dev/null 2>&1; then
+    echo "Frontend container app $AZURE_CONTAINERAPPS_FRONTEND not found. Run deploy.sh first." >&2
+    exit 1
+  fi
+  BACKEND_FQDN=$(az containerapp show --name "$AZURE_CONTAINERAPPS_BACKEND" --resource-group "$AZURE_RESOURCE_GROUP" --query properties.configuration.ingress.fqdn -o tsv)
+  FRONTEND_API_BASE_URL="${FRONTEND_API_BASE_URL:-https://${BACKEND_FQDN}}"
+  DOCKER_BUILDKIT=1 docker build \
+    --file "$ROOT_DIR/frontend/Dockerfile" \
+    --build-arg "NEXT_PUBLIC_API_BASE_URL=$FRONTEND_API_BASE_URL" \
+    --tag "$FRONTEND_IMAGE" \
+    "$ROOT_DIR/frontend"
+  docker push "$FRONTEND_IMAGE"
+
+  az containerapp update \
+    --name "$AZURE_CONTAINERAPPS_FRONTEND" \
+    --resource-group "$AZURE_RESOURCE_GROUP" \
+    --image "$FRONTEND_IMAGE" \
+    --target-port 3000 \
+    --ingress external \
+    --min-replicas 1 \
+    --max-replicas 2 \
+    --registry-server "$REGISTRY_SERVER" \
+    --registry-username "$REGISTRY_USERNAME" \
+    --registry-password "$REGISTRY_PASSWORD" \
+    --cpu 1.0 \
+    --memory 2Gi \
+    --set-env-vars "NEXT_PUBLIC_API_BASE_URL=$FRONTEND_API_BASE_URL" >/dev/null
+
+  if [[ -z "${SORA_WORKFLOW_ALLOWED_ORIGINS:-}" ]]; then
+    FRONTEND_FQDN=$(az containerapp show --name "$AZURE_CONTAINERAPPS_FRONTEND" --resource-group "$AZURE_RESOURCE_GROUP" --query properties.configuration.ingress.fqdn -o tsv)
+    az containerapp update \
+      --name "$AZURE_CONTAINERAPPS_BACKEND" \
+      --resource-group "$AZURE_RESOURCE_GROUP" \
+      --set-env-vars "SORA_WORKFLOW_ALLOWED_ORIGINS=https://${FRONTEND_FQDN}" >/dev/null
+  fi
+}
+
+case "$COMPONENT" in
+  backend)
+    update_backend
+    ;;
+  frontend)
+    update_frontend
+    ;;
+  all)
+    update_backend
+    update_frontend
+    ;;
+esac
+
+BACKEND_FQDN=$(az containerapp show --name "$AZURE_CONTAINERAPPS_BACKEND" --resource-group "$AZURE_RESOURCE_GROUP" --query properties.configuration.ingress.fqdn -o tsv)
+FRONTEND_FQDN=$(az containerapp show --name "$AZURE_CONTAINERAPPS_FRONTEND" --resource-group "$AZURE_RESOURCE_GROUP" --query properties.configuration.ingress.fqdn -o tsv)
+
+echo "Updated containers pushed with tag ${IMAGE_TAG}.\nBackend: https://${BACKEND_FQDN}\nFrontend: https://${FRONTEND_FQDN}" 
