@@ -3,6 +3,7 @@
 import argparse
 import asyncio
 import base64
+import copy
 import io
 import json
 import logging
@@ -17,11 +18,12 @@ from pathlib import Path
 from typing import Any, Literal, Optional, Sequence
 
 from agent_framework import Executor, WorkflowBuilder, WorkflowContext, handler
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
-from openai import AzureOpenAI
+from openai import AsyncOpenAI, AzureOpenAI
 from pydantic import BaseModel, ConfigDict, Field
 
 # -------------------------
@@ -29,6 +31,7 @@ from pydantic import BaseModel, ConfigDict, Field
 # -------------------------
 
 ROOT = Path(__file__).parent
+load_dotenv(override=True)
 SCRIPT_PATH = ROOT / "Chapters" / "video_script.txt"
 OUTPUT_DIR = ROOT / "output"
 PROMPTS_DIR = OUTPUT_DIR / "prompts"
@@ -62,6 +65,7 @@ AZURE_TEXT_ENDPOINT = (os.getenv("AZURE_OPENAI_ENDPOINT") or os.getenv("ENDPOINT
 AZURE_TEXT_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
 AZURE_TEXT_API_VERSION = os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-15-preview")
 _TEXT_CLIENT: AzureOpenAI | None = None
+_VIDEO_CLIENT: AsyncOpenAI | None = None
 
 
 def _configure_logging() -> logging.Logger:
@@ -115,6 +119,20 @@ def _azure_text_client() -> AzureOpenAI | None:
         )
         _TEXT_CLIENT = client  # type: ignore[assignment]
     return client
+
+
+def _video_client() -> AsyncOpenAI:
+    global _VIDEO_CLIENT  # type: ignore[assignment]
+    if _VIDEO_CLIENT is not None:
+        return _VIDEO_CLIENT
+    endpoint = (os.getenv("ENDPOINT_URL") or os.getenv("AZURE_OPENAI_ENDPOINT") or "").rstrip("/")
+    api_key = os.getenv("AZURE_OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
+    if not endpoint:
+        raise RuntimeError("Configure ENDPOINT_URL or AZURE_OPENAI_ENDPOINT before using remix features.")
+    if not api_key:
+        raise RuntimeError("Configure AZURE_OPENAI_API_KEY or OPENAI_API_KEY before using remix features.")
+    _VIDEO_CLIENT = AsyncOpenAI(api_key=api_key, base_url=f"{endpoint}/openai/v1/")
+    return _VIDEO_CLIENT
 
 
 def _extract_response_text(response: Any) -> str:
@@ -246,6 +264,34 @@ def _resolve_scene_image_dir(
     return SCENE_IMAGE_DIR
 
 
+def _resolution_to_size(resolution: str) -> tuple[int, int]:
+    """Convert a WIDTHxHEIGHT string into an integer tuple with validation."""
+
+    try:
+        width_str, height_str = resolution.lower().split("x", 1)
+        width = int(width_str)
+        height = int(height_str)
+    except (AttributeError, ValueError):
+        logger.warning(
+            "Invalid resolution '%s'; falling back to default scene image size %sx%s.",
+            resolution,
+            SCENE_IMAGE_SIZE[0],
+            SCENE_IMAGE_SIZE[1],
+        )
+        return SCENE_IMAGE_SIZE
+
+    if width <= 0 or height <= 0:
+        logger.warning(
+            "Non-positive resolution '%s'; falling back to default scene image size %sx%s.",
+            resolution,
+            SCENE_IMAGE_SIZE[0],
+            SCENE_IMAGE_SIZE[1],
+        )
+        return SCENE_IMAGE_SIZE
+
+    return width, height
+
+
 # -------------------------
 # Data models
 # -------------------------
@@ -300,6 +346,14 @@ class VideoWorkflowRequest(BaseModel):
         default=None,
         description="Server-assigned workflow job identifier used for progress tracking.",
     )
+    generation_mode: Literal["parallel", "sequence"] = Field(
+        default="parallel",
+        description="Parallel (default) renders scenes concurrently; sequence enforces frame-to-frame chaining.",
+    )
+    sequence_initial_image: Optional[str] = Field(
+        default=None,
+        description="Optional prepared PNG used to seed the first clip when generation_mode=sequence.",
+    )
 
 
 STATIC_URL_PREFIX = "/static"
@@ -317,6 +371,20 @@ class ProgressMessage:
 
 
 @dataclass
+class SceneVersionEntry:
+    version_id: str
+    video_path: str
+    label: str = ""
+    log_path: Optional[str] = None
+    client_log_path: Optional[str] = None
+    video_id: Optional[str] = None
+    prompt: Optional[str] = None
+    prompt_path: Optional[str] = None
+    source: str = "original"
+    created_at: datetime = field(default_factory=_utc_now)
+
+
+@dataclass
 class SceneStatus:
     order: int
     label: str
@@ -325,6 +393,23 @@ class SceneStatus:
     video_path: str
     log_path: Optional[str] = None
     client_log_path: Optional[str] = None
+    selected_version_id: Optional[str] = None
+    versions: list[SceneVersionEntry] = field(default_factory=list)
+
+    def set_selected_version(self, version: SceneVersionEntry) -> None:
+        self.selected_version_id = version.version_id
+        self.video_path = version.video_path
+        self.log_path = version.log_path
+        self.client_log_path = version.client_log_path
+
+    def get_version(self, version_id: Optional[str]) -> SceneVersionEntry:
+        if version_id:
+            for candidate in self.versions:
+                if candidate.version_id == version_id:
+                    return candidate
+        if self.versions:
+            return self.versions[-1]
+        raise KeyError(f"Scene {self.order} has no recorded versions.")
 
 
 @dataclass
@@ -343,6 +428,8 @@ class WorkflowJobState:
     completed_scenes: int = 0
     messages: list[ProgressMessage] = field(default_factory=list)
     scenes: list[SceneStatus] = field(default_factory=list)
+    download_variant: str = field(default_factory=lambda: os.getenv("VIDEO_DOWNLOAD_VARIANT", "video"))
+    generation_mode: str = "parallel"
 
     def add_message(self, stage: str, text: str) -> None:
         self.messages.append(ProgressMessage(timestamp=_utc_now(), stage=stage, text=text))
@@ -354,6 +441,20 @@ class JobMessageModel(BaseModel):
     text: str
 
 
+class SceneVersionModel(BaseModel):
+    version_id: str
+    label: str
+    source: str
+    prompt: Optional[str]
+    prompt_path: Optional[str]
+    video_path: str
+    video_url: Optional[str]
+    log_path: Optional[str]
+    client_log_path: Optional[str]
+    video_id: Optional[str]
+    created_at: datetime
+
+
 class SceneStatusModel(BaseModel):
     order: int
     label: str
@@ -363,6 +464,8 @@ class SceneStatusModel(BaseModel):
     video_url: Optional[str] = None
     log_path: Optional[str] = None
     client_log_path: Optional[str] = None
+    selected_version_id: Optional[str] = None
+    versions: list[SceneVersionModel] = Field(default_factory=list)
 
 
 class JobStatusResponse(BaseModel):
@@ -379,6 +482,7 @@ class JobStatusResponse(BaseModel):
     manifest: Optional[dict[str, Any]]
     messages: list[JobMessageModel]
     scenes: list[SceneStatusModel]
+    generation_mode: str = "parallel"
 
 
 class WorkflowJobStore:
@@ -431,21 +535,43 @@ class WorkflowJobStore:
             job = self._require(job_id)
             job.resolution = resolution
 
+    async def set_download_variant(self, job_id: str, download_variant: str) -> None:
+        async with self._lock:
+            job = self._require(job_id)
+            job.download_variant = download_variant
+
+    async def set_generation_mode(self, job_id: str, generation_mode: str) -> None:
+        async with self._lock:
+            job = self._require(job_id)
+            job.generation_mode = generation_mode
+
     async def record_scene_completion(self, job_id: str, render: "SceneRender") -> None:
         async with self._lock:
             job = self._require(job_id)
             job.completed_scenes += 1
-            job.scenes.append(
-                SceneStatus(
-                    order=render.order,
-                    label=render.label,
-                    duration_seconds=render.duration_seconds,
-                    prompt_path=render.prompt_path,
-                    video_path=render.video_path,
-                    log_path=render.log_path,
-                    client_log_path=render.client_log_path,
-                )
+            version = SceneVersionEntry(
+                version_id=render.version_id,
+                label=render.version_label,
+                video_path=render.video_path,
+                log_path=render.log_path,
+                client_log_path=render.client_log_path,
+                video_id=render.video_id,
+                prompt=render.prompt_text,
+                prompt_path=render.prompt_path,
+                source=render.version_source,
             )
+            scene = SceneStatus(
+                order=render.order,
+                label=render.label,
+                duration_seconds=render.duration_seconds,
+                prompt_path=render.prompt_path,
+                video_path=render.video_path,
+                log_path=render.log_path,
+                client_log_path=render.client_log_path,
+            )
+            scene.versions.append(version)
+            scene.set_selected_version(version)
+            job.scenes.append(scene)
             total = job.total_scenes or 1
             fraction = min(job.completed_scenes / total, 1.0)
             progress = 0.2 + 0.6 * fraction
@@ -460,6 +586,63 @@ class WorkflowJobStore:
             job.progress = max(job.progress, 0.85)
             if message:
                 job.add_message("composing", message)
+
+    async def add_scene_version(
+        self,
+        job_id: str,
+        order: int,
+        version: SceneVersionEntry,
+        *,
+        make_active: bool = False,
+        message: Optional[str] = None,
+    ) -> None:
+        async with self._lock:
+            job = self._require(job_id)
+            scene = next((item for item in job.scenes if item.order == order), None)
+            if scene is None:
+                raise KeyError(f"Scene {order} not found for job {job_id}.")
+            if not version.label:
+                version.label = f"Version {len(scene.versions) + 1}"
+            scene.versions.append(version)
+            if make_active or not scene.selected_version_id:
+                scene.set_selected_version(version)
+            if message:
+                job.add_message("rendering", message)
+
+    async def set_scene_selection(self, job_id: str, order: int, version_id: str) -> None:
+        async with self._lock:
+            job = self._require(job_id)
+            scene = next((item for item in job.scenes if item.order == order), None)
+            if scene is None:
+                raise KeyError(f"Scene {order} not found for job {job_id}.")
+            version = scene.get_version(version_id)
+            scene.set_selected_version(version)
+            job.add_message("rendering", f"Selected {version.label or version.version_id} for {scene.label}.")
+
+    async def get_scene(self, job_id: str, order: int) -> SceneStatus:
+        async with self._lock:
+            job = self._require(job_id)
+            scene = next((item for item in job.scenes if item.order == order), None)
+            if scene is None:
+                raise KeyError(f"Scene {order} not found for job {job_id}.")
+            return copy.deepcopy(scene)
+
+    async def add_message(self, job_id: str, stage: str, text: str) -> None:
+        async with self._lock:
+            job = self._require(job_id)
+            job.add_message(stage, text)
+
+    async def get_download_variant(self, job_id: str) -> str:
+        async with self._lock:
+            job = self._require(job_id)
+            return job.download_variant
+
+    async def update_final_video(self, job_id: str, final_video_path: str, manifest: dict[str, Any]) -> None:
+        async with self._lock:
+            job = self._require(job_id)
+            job.final_video_path = final_video_path
+            job.manifest = manifest
+            job.add_message("composing", "Updated final video with selected scene versions.")
 
     async def mark_completed(
         self, job_id: str, final_video_path: str, manifest: dict[str, Any]
@@ -498,6 +681,23 @@ class WorkflowJobStore:
                 video_url=_static_asset_url(scene.video_path),
                 log_path=scene.log_path,
                 client_log_path=scene.client_log_path,
+                selected_version_id=scene.selected_version_id,
+                versions=[
+                    SceneVersionModel(
+                        version_id=version.version_id,
+                        label=version.label or f"Version {idx + 1}",
+                        source=version.source,
+                        prompt=version.prompt,
+                        prompt_path=version.prompt_path,
+                        video_path=version.video_path,
+                        video_url=_static_asset_url(version.video_path),
+                        log_path=version.log_path,
+                        client_log_path=version.client_log_path,
+                        video_id=version.video_id,
+                        created_at=version.created_at,
+                    )
+                    for idx, version in enumerate(scene.versions)
+                ],
             )
             for scene in sorted(job.scenes, key=lambda item: item.order)
         ]
@@ -515,6 +715,7 @@ class WorkflowJobStore:
             manifest=job.manifest,
             messages=messages,
             scenes=scenes,
+            generation_mode=job.generation_mode,
         )
 
     async def get_status(self, job_id: str) -> JobStatusResponse:
@@ -752,6 +953,11 @@ class StartWorkflowPayload(BaseModel):
         alias="sceneImages",
         description="Optional list of uploaded scene start screen images (data URLs).",
     )
+    generation_mode: Literal["parallel", "sequence"] = Field(
+        default="parallel",
+        alias="generationMode",
+        description="Choose between parallel (default) or sequence rendering with chained references.",
+    )
 
 
 class SingleVideoPayload(BaseModel):
@@ -774,6 +980,18 @@ class SingleVideoPayload(BaseModel):
         default=None,
         alias="referenceImage",
         description="Optional input reference image encoded as a base64 data URL.",
+    )
+
+
+class SceneRemixPayload(BaseModel):
+    prompt: str = Field(
+        ..., description="New descriptive prompt to remix the previously generated scene."
+    )
+
+
+class SceneSelectionPayload(BaseModel):
+    version_id: str = Field(
+        ..., alias="versionId", description="Identifier of the scene version to use in the final cut."
     )
 
 
@@ -814,9 +1032,17 @@ def _prepare_request_for_job(job_id: str, payload: StartWorkflowPayload) -> Vide
     if use_scene_images is None:
         use_scene_images = True
 
+    generation_mode = payload.generation_mode or "parallel"
     thread_count = payload.threads or int(os.getenv("SORA_WORKFLOW_THREADS", "3"))
+    if generation_mode == "sequence":
+        thread_count = 1
+
     download_variant = payload.download_variant or os.getenv("VIDEO_DOWNLOAD_VARIANT", "video")
-    uploads = payload.scene_images or []
+    uploads = list(payload.scene_images or [])
+    if generation_mode == "sequence" and len(uploads) > 1:
+        raise ValueError("Sequence generation mode accepts only one uploaded reference image.")
+    if generation_mode == "sequence" and uploads:
+        uploads = uploads[:1]
     scene_image_override = payload.scene_image_dir
 
     scene_image_dir_path = SCENE_IMAGE_DIR
@@ -829,6 +1055,16 @@ def _prepare_request_for_job(job_id: str, payload: StartWorkflowPayload) -> Vide
             )
         except FileNotFoundError as exc:
             raise ValueError(str(exc)) from exc
+
+    sequence_initial_image: Optional[str] = None
+    if generation_mode == "sequence" and use_scene_images:
+        sequence_initial_image = _prepare_sequence_initial_image(
+            Path(scene_image_dir_path),
+            tmp_dir,
+            resolution,
+        )
+        # Sequence mode only uses a single seed frame; subsequent references come from rendered clips.
+        use_scene_images = False
 
     request = VideoWorkflowRequest(
         script_path=str(script_path),
@@ -844,6 +1080,8 @@ def _prepare_request_for_job(job_id: str, payload: StartWorkflowPayload) -> Vide
         thread_count=thread_count,
         download_variant=download_variant,
         job_id=job_id,
+        generation_mode=generation_mode,
+        sequence_initial_image=sequence_initial_image,
     )
     return request
 
@@ -986,6 +1224,8 @@ async def start_workflow(payload: StartWorkflowPayload) -> JobStatusResponse:
     try:
         request = _prepare_request_for_job(job_id, payload)
         await JOB_STORE.set_resolution(job_id, request.resolution)
+        await JOB_STORE.set_download_variant(job_id, request.download_variant)
+        await JOB_STORE.set_generation_mode(job_id, request.generation_mode)
     except ValueError as exc:
         await JOB_STORE.mark_failed(job_id, str(exc))
         raise HTTPException(status_code=400, detail=str(exc))
@@ -1065,6 +1305,71 @@ async def delete_single_video(job_id: str) -> dict[str, str]:
     return {"status": "deleted"}
 
 
+@fastapi_app.post(
+    "/api/workflows/{job_id}/scenes/{scene_order}/remix",
+    response_model=JobStatusResponse,
+)
+async def remix_scene_version(
+    job_id: str, scene_order: int, payload: SceneRemixPayload
+) -> JobStatusResponse:
+    prompt = (payload.prompt or "").strip()
+    if not prompt:
+        raise HTTPException(status_code=400, detail="Remix prompt is required.")
+    try:
+        scene = await JOB_STORE.get_scene(job_id, scene_order)
+        version = scene.get_version(scene.selected_version_id)
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Scene {scene_order} not found for job {job_id}.",
+        ) from exc
+    if not version.video_id:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Scene is missing Azure video metadata; regenerate the clip before requesting a remix."
+            ),
+        )
+    await JOB_STORE.add_message(job_id, "rendering", f"Queued remix for {scene.label}.")
+    asyncio.create_task(_run_scene_remix_job(job_id, scene_order, prompt))
+    return await JOB_STORE.get_status(job_id)
+
+
+@fastapi_app.post(
+    "/api/workflows/{job_id}/scenes/{scene_order}/select",
+    response_model=JobStatusResponse,
+)
+async def select_scene_version(
+    job_id: str, scene_order: int, payload: SceneSelectionPayload
+) -> JobStatusResponse:
+    version_id = (payload.version_id or "").strip()
+    if not version_id:
+        raise HTTPException(status_code=400, detail="versionId is required.")
+    try:
+        await JOB_STORE.set_scene_selection(job_id, scene_order, version_id)
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Unable to select version {version_id} for scene {scene_order}.",
+        ) from exc
+    return await JOB_STORE.get_status(job_id)
+
+
+@fastapi_app.post(
+    "/api/workflows/{job_id}/recompose",
+    response_model=JobStatusResponse,
+)
+async def recompose_final_video(job_id: str) -> JobStatusResponse:
+    try:
+        await JOB_STORE.mark_composing(
+            job_id, "Regenerating final video from selected scene versions."
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Unknown job: {job_id}") from exc
+    asyncio.create_task(_run_recompose_job(job_id))
+    return await JOB_STORE.get_status(job_id)
+
+
 async def _report_progress(
     request: VideoWorkflowRequest,
     stage: str,
@@ -1100,6 +1405,189 @@ async def _mark_completed(
         await JOB_STORE.mark_completed(request.job_id, final_video_path, manifest)
 
 
+async def _run_scene_remix_job(job_id: str, scene_order: int, prompt: str) -> None:
+    prompt_text = prompt.strip()
+    if not prompt_text:
+        await JOB_STORE.add_message(job_id, "failed", "Remix prompt cannot be empty.")
+        return
+    try:
+        scene = await JOB_STORE.get_scene(job_id, scene_order)
+        base_version = scene.get_version(scene.selected_version_id)
+    except KeyError as exc:  # pragma: no cover - defensive logging
+        logger.warning("Remix request dropped for missing scene %s/%s: %s", job_id, scene_order, exc)
+        await JOB_STORE.add_message(
+            job_id, "failed", f"Unable to remix scene {scene_order}; render not found."
+        )
+        return
+
+    if not base_version.video_id:
+        await JOB_STORE.add_message(
+            job_id,
+            "failed",
+            f"Scene {scene_order} is missing Azure video metadata; regenerate before remixing.",
+        )
+        return
+
+    job_dir = _job_root(job_id)
+    scenes_dir = Path(job_dir) / "scenes"
+    scenes_dir.mkdir(parents=True, exist_ok=True)
+    prompt_dir = Path(scene.prompt_path).parent if scene.prompt_path else (Path(job_dir) / "prompts")
+    prompt_dir.mkdir(parents=True, exist_ok=True)
+
+    timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    video_path = scenes_dir / f"scene_{scene_order:02d}_remix_{timestamp}.mp4"
+    log_path = video_path.with_suffix(".json")
+    client_log_path = video_path.with_suffix(".remix.log")
+    prompt_path = prompt_dir / f"scene_{scene_order:02d}_remix_{timestamp}.txt"
+
+    try:
+        client = _video_client()
+        download_variant = await JOB_STORE.get_download_variant(job_id)
+        remix_job = await client.videos.remix(video_id=base_version.video_id, prompt=prompt_text)
+        remix_job_id = getattr(remix_job, "id", None)
+        if not remix_job_id:
+            raise RuntimeError("Azure remix API did not return a job id.")
+
+        status = getattr(remix_job, "status", None)
+        while status not in {"completed", "failed", "canceled"}:
+            await asyncio.sleep(4)
+            poll = await client.videos.retrieve(remix_job_id)
+            status = getattr(poll, "status", None)
+        if status != "completed":
+            raise RuntimeError(f"Remix job ended with status {status}.")
+
+        content = await client.videos.download_content(remix_job_id, variant=download_variant)
+        content.write_to_file(str(video_path))
+
+        prompt_path.write_text(prompt_text + "\n", encoding="utf-8")
+        log_data = {
+            "timestamp": datetime.utcnow().isoformat(timespec="seconds"),
+            "prompt": prompt_text,
+            "video_id": remix_job_id,
+            "base_video_id": base_version.video_id,
+            "output_file": str(video_path),
+            "source": "remix",
+        }
+        log_path.write_text(json.dumps(log_data, indent=2), encoding="utf-8")
+        client_log_path.write_text(
+            f"Remix job {remix_job_id} completed for scene {scene_order}.\nBase video: {base_version.video_id}\n",
+            encoding="utf-8",
+        )
+
+        version = SceneVersionEntry(
+            version_id=uuid.uuid4().hex,
+            label=f"Remix {len(scene.versions) + 1}",
+            video_path=str(video_path),
+            log_path=str(log_path),
+            client_log_path=str(client_log_path),
+            video_id=remix_job_id,
+            prompt=prompt_text,
+            prompt_path=str(prompt_path),
+            source="remix",
+        )
+        await JOB_STORE.add_scene_version(
+            job_id,
+            scene_order,
+            version,
+            make_active=False,
+            message=f"Remix ready for {scene.label}.",
+        )
+    except asyncio.CancelledError:  # pragma: no cover - propagation only
+        raise
+    except Exception as exc:  # pragma: no cover - defensive logging
+        logger.exception("Remix job for %s scene %s failed: %s", job_id, scene_order, exc)
+        await JOB_STORE.add_message(
+            job_id,
+            "failed",
+            f"Remix for scene {scene_order} failed: {exc}",
+        )
+
+
+async def _run_recompose_job(job_id: str) -> None:
+    try:
+        status = await JOB_STORE.get_status(job_id)
+    except KeyError as exc:  # pragma: no cover - defensive logging
+        logger.warning("Recompose requested for unknown job %s: %s", job_id, exc)
+        return
+
+    job_dir = _job_root(job_id)
+    tmp_dir = job_dir / "tmp"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    final_video = job_dir / f"sora_story_compilation_{timestamp}.mp4"
+    concat_list = tmp_dir / f"concat_recompose_{timestamp}.txt"
+
+    scenes_sorted = sorted(status.scenes, key=lambda item: item.order)
+    renders: list[SceneRender] = []
+    for scene in scenes_sorted:
+        version = next(
+            (v for v in scene.versions if v.version_id == scene.selected_version_id),
+            None,
+        )
+        if version is None and scene.versions:
+            version = scene.versions[-1]
+        if version is None or not version.video_path:
+            await JOB_STORE.add_message(
+                job_id,
+                "failed",
+                f"Cannot recompose; scene {scene.order} has no completed versions.",
+            )
+            return
+        renders.append(
+            SceneRender(
+                order=scene.order,
+                label=scene.label,
+                duration_seconds=scene.duration_seconds,
+                prompt_path=version.prompt_path or scene.prompt_path,
+                video_path=version.video_path,
+                log_path=version.log_path,
+                client_log_path=version.client_log_path,
+                prompt_text=version.prompt,
+                version_id=version.version_id,
+                version_label=version.label,
+                video_id=version.video_id,
+                version_source=version.source,
+            )
+        )
+
+    with open(concat_list, "w", encoding="utf-8") as fh:
+        for render in renders:
+            fh.write(escape_for_concat(Path(render.video_path)) + "\n")
+
+    try:
+        await run_subprocess(
+            [
+                "ffmpeg",
+                "-y",
+                "-f",
+                "concat",
+                "-safe",
+                "0",
+                "-i",
+                str(concat_list),
+                "-c",
+                "copy",
+                str(final_video),
+            ]
+        )
+    except Exception as exc:  # pragma: no cover - defensive logging
+        logger.exception("Recompose failed for job %s: %s", job_id, exc)
+        await JOB_STORE.add_message(
+            job_id,
+            "failed",
+            f"Recompose failed: {exc}",
+        )
+        return
+
+    total_seconds = sum(render.duration_seconds for render in renders)
+    manifest = summarize_manifest(renders, final_video, total_seconds, status.resolution)
+    manifest_path = final_video.with_suffix(".json")
+    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    await JOB_STORE.update_final_video(job_id, str(final_video), manifest)
+    await JOB_STORE.add_message(job_id, "completed", "Regenerated final video with selected scene versions.")
+    await JOB_STORE.update_stage(job_id, "completed", "Final video refreshed.", progress=1.0)
+
+
 @dataclass
 class SceneDraft:
     order: int
@@ -1133,6 +1621,11 @@ class SceneRender:
     video_path: str
     log_path: str | None
     client_log_path: str | None
+    prompt_text: Optional[str] = None
+    version_id: str = field(default_factory=lambda: uuid.uuid4().hex)
+    version_label: str = "Original"
+    video_id: Optional[str] = None
+    version_source: str = "original"
 
 
 @dataclass
@@ -1288,14 +1781,16 @@ def escape_for_concat(path: Path) -> str:
     return f"file '{escaped}'"
 
 
-def _resize_scene_image(source: Path, dest: Path) -> None:
+def _resize_scene_image(
+    source: Path, dest: Path, target_size: tuple[int, int] | None = None
+) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
     with Image.open(source) as img:
         has_alpha = "A" in img.getbands()
         mode = "RGBA" if has_alpha else "RGB"
         converted = img.convert(mode)
 
-        target_w, target_h = SCENE_IMAGE_SIZE
+        target_w, target_h = target_size or SCENE_IMAGE_SIZE
         src_w, src_h = converted.size
         if src_w == 0 or src_h == 0:
             raise ValueError(f"Invalid source image dimensions for {source}")
@@ -1314,8 +1809,31 @@ def _resize_scene_image(source: Path, dest: Path) -> None:
         canvas.save(dest, format="PNG")
 
 
+def _find_scene_image(scene_dir: Path, index: int) -> Optional[Path]:
+    if not scene_dir.is_dir():
+        return None
+    for entry in scene_dir.iterdir():
+        if not entry.is_file():
+            continue
+        match = SCENE_IMAGE_PATTERN.fullmatch(entry.name)
+        if match and int(match.group(1)) == index:
+            return entry
+    return None
+
+
+def _prepare_sequence_initial_image(
+    scene_dir: Path, tmp_dir: Path, resolution: str
+) -> Optional[str]:
+    source = _find_scene_image(scene_dir, 1)
+    if source is None:
+        return None
+    dest = tmp_dir / "sequence_initial.png"
+    _resize_scene_image(source, dest, target_size=_resolution_to_size(resolution))
+    return str(dest)
+
+
 def prepare_scene_start_images(
-    scene_dir: Path, tmp_dir: Path, scene_count: int
+    scene_dir: Path, tmp_dir: Path, scene_count: int, resolution: str
 ) -> list[str]:
     if scene_count <= 0:
         return []
@@ -1349,11 +1867,13 @@ def prepare_scene_start_images(
         )
 
     prepared_dir = tmp_dir / "scene_start_images"
+    target_size = _resolution_to_size(resolution)
+    target_w, target_h = target_size
     prepared_paths: list[str] = []
     for idx in range(1, scene_count + 1):
         source = matches[idx]
-        dest = prepared_dir / f"scene{idx}_720x1280.png"
-        _resize_scene_image(source, dest)
+        dest = prepared_dir / f"scene{idx}_{target_w}x{target_h}.png"
+        _resize_scene_image(source, dest, target_size=target_size)
         prepared_paths.append(str(dest))
     return prepared_paths
 
@@ -1378,25 +1898,47 @@ async def run_subprocess(
     return stdout, stderr
 
 
+async def extract_last_frame(video_path: Path, dest_path: Path) -> Path:
+    dest_path.parent.mkdir(parents=True, exist_ok=True)
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(video_path),
+        "-vf",
+        "select=eq(n\\,N-1)",
+        "-vframes",
+        "1",
+        str(dest_path),
+    ]
+    await run_subprocess(cmd)
+    return dest_path
+
+
 def summarize_manifest(
     renders: list[SceneRender],
     final_video: Path,
     total_seconds: int,
-    request: VideoWorkflowRequest,
+    resolution: str,
 ) -> dict[str, Any]:
     return {
         "final_video": str(final_video),
         "assigned_seconds": total_seconds,
-        "resolution": request.resolution,
+        "resolution": resolution,
         "scenes": [
             {
                 "order": render.order,
                 "label": render.label,
                 "duration_seconds": render.duration_seconds,
                 "prompt_path": render.prompt_path,
+                "prompt_text": render.prompt_text,
                 "video_path": render.video_path,
                 "sora_log_path": render.log_path,
                 "client_capture": render.client_log_path,
+                "version_id": render.version_id,
+                "version_label": render.version_label,
+                "version_source": render.version_source,
+                "video_id": render.video_id,
             }
             for render in renders
         ],
@@ -1464,9 +2006,26 @@ class DirectorAgent(Executor):
         )
 
         tmp_dir = Path(request.tmp_dir)
-        if request.use_scene_images:
+        if request.generation_mode == "sequence":
+            initial_reference = request.sequence_initial_image
+            scene_images = [initial_reference] if initial_reference else []
+            note = (
+                "Prepared initial reference frame for sequence chaining."
+                if initial_reference
+                else "Sequence mode active without a starting reference; chaining begins from scene one."
+            )
+            await _report_progress(
+                request,
+                "planning",
+                note,
+                progress=0.2,
+            )
+        elif request.use_scene_images:
             scene_images = prepare_scene_start_images(
-                Path(request.scene_image_dir), tmp_dir, len(plans)
+                Path(request.scene_image_dir),
+                tmp_dir,
+                len(plans),
+                request.resolution,
             )
             await _report_progress(
                 request,
@@ -1507,6 +2066,26 @@ class Sora2Agent(Executor):
         scene_images: Sequence[str] = await ctx.get_shared_state("scene_images")  # type: ignore
         scenes_dir = Path(request.scenes_dir)
         scenes_dir.mkdir(parents=True, exist_ok=True)
+        if request.generation_mode == "sequence":
+            renders = await self._render_sequence(batch, ctx, request, scenes_dir, scene_images)
+        else:
+            renders = await self._render_parallel(batch, ctx, request, scenes_dir, scene_images)
+
+        await ctx.send_message(
+            SceneRenderBatch(
+                renders=renders,
+                assigned_total_seconds=batch.assigned_total_seconds,
+            )
+        )
+
+    async def _render_parallel(
+        self,
+        batch: ScenePlanBatch,
+        ctx: WorkflowContext[SceneRenderBatch],
+        request: VideoWorkflowRequest,
+        scenes_dir: Path,
+        scene_images: Sequence[str],
+    ) -> list[SceneRender]:
         semaphore = asyncio.Semaphore(max(1, request.thread_count))
         await _report_progress(
             request,
@@ -1525,16 +2104,50 @@ class Sora2Agent(Executor):
             render = await task
             renders.append(render)
             await _record_scene_completion(request, render)
-            await ctx.yield_output(
-                f"Sora completed {render.label} -> {render.video_path}"
-            )
+            await ctx.yield_output(f"Sora completed {render.label} -> {render.video_path}")
 
         renders.sort(key=lambda item: item.order)
-        await ctx.send_message(
-            SceneRenderBatch(
-                renders=renders, assigned_total_seconds=batch.assigned_total_seconds
-            )
+        return renders
+
+    async def _render_sequence(
+        self,
+        batch: ScenePlanBatch,
+        ctx: WorkflowContext[SceneRenderBatch],
+        request: VideoWorkflowRequest,
+        scenes_dir: Path,
+        scene_images: Sequence[str],
+    ) -> list[SceneRender]:
+        await _report_progress(
+            request,
+            "rendering",
+            f"Sequence mode: rendering {len(batch.plans)} scene(s) one after another for visual continuity.",
+            progress=0.25,
         )
+        next_reference = request.sequence_initial_image or (scene_images[0] if scene_images else None)
+        frame_dir = Path(request.tmp_dir) / "sequence_frames"
+        frame_dir.mkdir(parents=True, exist_ok=True)
+        renders: list[SceneRender] = []
+        for plan in batch.plans:
+            render = await self._invoke_sora(
+                plan,
+                request,
+                scenes_dir,
+                scene_images,
+                reference_override=next_reference,
+            )
+            renders.append(render)
+            await _record_scene_completion(request, render)
+            await ctx.yield_output(f"Sora completed {render.label} -> {render.video_path}")
+            frame_path = frame_dir / f"scene_{plan.order:02d}_tail.png"
+            try:
+                captured = await extract_last_frame(Path(render.video_path), frame_path)
+                next_reference = str(captured)
+            except Exception as exc:  # pragma: no cover - diagnostic logging only
+                logger.warning("Failed to capture last frame for %s: %s", render.label, exc)
+                next_reference = None
+
+        renders.sort(key=lambda item: item.order)
+        return renders
 
     async def _invoke_sora(
         self,
@@ -1542,6 +2155,7 @@ class Sora2Agent(Executor):
         request: VideoWorkflowRequest,
         scenes_dir: Path,
         scene_images: Sequence[str],
+        reference_override: Optional[str] = None,
     ) -> SceneRender:
         scene_basename = f"scene_{plan.order:02d}.mp4"
         video_path = scenes_dir / scene_basename
@@ -1571,13 +2185,16 @@ class Sora2Agent(Executor):
             str(plan.duration_seconds),
         ]
 
-        scene_index = plan.order - 1
-        if request.use_scene_images:
+        input_reference = reference_override
+        if not input_reference and request.use_scene_images:
+            scene_index = plan.order - 1
             if scene_index < 0 or scene_index >= len(scene_images):
                 raise RuntimeError(
                     f"Missing prepared start screen for {plan.label} (index {scene_index}). Verify plan/image alignment."
                 )
-            cmd.extend(["--input-image", scene_images[scene_index]])
+            input_reference = scene_images[scene_index]
+        if input_reference:
+            cmd.extend(["--input-image", input_reference])
 
         stdout, stderr = await run_subprocess(cmd, cwd=ROOT, env=env)
         client_log_path = video_path.with_suffix(".client.log")
@@ -1593,6 +2210,14 @@ class Sora2Agent(Executor):
             )
 
         sora_log_path = video_path.with_suffix(".json")
+        video_id = None
+        if sora_log_path.is_file():
+            try:
+                metadata = json.loads(sora_log_path.read_text(encoding="utf-8"))
+                video_id = metadata.get("video_id") or metadata.get("job_id")
+            except json.JSONDecodeError:
+                video_id = None
+
         return SceneRender(
             order=plan.order,
             label=plan.label,
@@ -1601,6 +2226,8 @@ class Sora2Agent(Executor):
             video_path=str(video_path),
             log_path=str(sora_log_path) if sora_log_path.is_file() else None,
             client_log_path=str(client_log_path),
+            prompt_text=plan.prompt_text,
+            video_id=video_id,
         )
 
 
@@ -1648,7 +2275,7 @@ class ComposerAgent(Executor):
             batch.renders,
             final_video,
             batch.assigned_total_seconds,
-            request,
+            request.resolution,
         )
         manifest_path = final_video.with_suffix(".json")
         manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
