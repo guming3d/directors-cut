@@ -25,6 +25,7 @@ from fastapi.staticfiles import StaticFiles
 from PIL import Image
 from openai import AsyncOpenAI, AzureOpenAI
 from pydantic import BaseModel, ConfigDict, Field
+from tinydb import Query, TinyDB
 
 # -------------------------
 # Paths & constants
@@ -40,6 +41,7 @@ FINAL_VIDEO_PATH = OUTPUT_DIR / "sora_story_compilation.mp4"
 SORA_CLIENT = ROOT / "sora-openai-client.py"
 TMP_DIR = OUTPUT_DIR / "tmp"
 SINGLE_VIDEO_JOBS_DIR = OUTPUT_DIR / "single_videos"
+WORKFLOW_DB_PATH = OUTPUT_DIR / "db" / "workflow_jobs.json"
 DEFAULT_SORA_RESOLUTION = "720x1280"
 SCENE_IMAGE_DIR = ROOT / "scene_start_screen"
 SCENE_IMAGE_PATTERN = re.compile(r"scene0*(\d+)\.(?:png|jpe?g)$", re.IGNORECASE)
@@ -435,6 +437,187 @@ class WorkflowJobState:
         self.messages.append(ProgressMessage(timestamp=_utc_now(), stage=stage, text=text))
 
 
+def _serialize_datetime(value: Optional[datetime]) -> Optional[str]:
+    if value is None:
+        return None
+    return value.isoformat()
+
+
+def _deserialize_datetime(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def _serialize_progress_message(message: ProgressMessage) -> dict[str, Any]:
+    return {
+        "timestamp": _serialize_datetime(message.timestamp),
+        "stage": message.stage,
+        "text": message.text,
+    }
+
+
+def _deserialize_progress_message(payload: dict[str, Any]) -> ProgressMessage:
+    return ProgressMessage(
+        timestamp=_deserialize_datetime(payload.get("timestamp")) or _utc_now(),
+        stage=payload.get("stage", "queued"),
+        text=payload.get("text", ""),
+    )
+
+
+def _scene_version_to_record(version: SceneVersionEntry) -> dict[str, Any]:
+    return {
+        "version_id": version.version_id,
+        "label": version.label,
+        "video_path": version.video_path,
+        "log_path": version.log_path,
+        "client_log_path": version.client_log_path,
+        "video_id": version.video_id,
+        "prompt": version.prompt,
+        "prompt_path": version.prompt_path,
+        "source": version.source,
+        "created_at": _serialize_datetime(version.created_at),
+    }
+
+
+def _scene_version_from_record(payload: dict[str, Any]) -> SceneVersionEntry:
+    return SceneVersionEntry(
+        version_id=payload.get("version_id", str(uuid.uuid4())),
+        video_path=payload.get("video_path", ""),
+        label=payload.get("label", ""),
+        log_path=payload.get("log_path"),
+        client_log_path=payload.get("client_log_path"),
+        video_id=payload.get("video_id"),
+        prompt=payload.get("prompt"),
+        prompt_path=payload.get("prompt_path"),
+        source=payload.get("source", "original"),
+        created_at=_deserialize_datetime(payload.get("created_at")) or _utc_now(),
+    )
+
+
+def _scene_status_to_record(scene: SceneStatus) -> dict[str, Any]:
+    return {
+        "order": scene.order,
+        "label": scene.label,
+        "duration_seconds": scene.duration_seconds,
+        "prompt_path": scene.prompt_path,
+        "video_path": scene.video_path,
+        "log_path": scene.log_path,
+        "client_log_path": scene.client_log_path,
+        "selected_version_id": scene.selected_version_id,
+        "versions": [_scene_version_to_record(version) for version in scene.versions],
+    }
+
+
+def _scene_status_from_record(payload: dict[str, Any]) -> SceneStatus:
+    versions = []
+    for version_record in payload.get("versions", []):
+        try:
+            versions.append(_scene_version_from_record(version_record))
+        except Exception:  # pragma: no cover - defensive
+            continue
+    scene = SceneStatus(
+        order=int(payload.get("order", 0)),
+        label=payload.get("label", ""),
+        duration_seconds=int(payload.get("duration_seconds", 0)),
+        prompt_path=payload.get("prompt_path") or "",
+        video_path=payload.get("video_path") or "",
+        log_path=payload.get("log_path"),
+        client_log_path=payload.get("client_log_path"),
+        selected_version_id=payload.get("selected_version_id"),
+        versions=versions,
+    )
+    if scene.selected_version_id:
+        try:
+            scene.set_selected_version(scene.get_version(scene.selected_version_id))
+        except KeyError:
+            pass
+    return scene
+
+
+def _workflow_state_to_record(job: WorkflowJobState) -> dict[str, Any]:
+    return {
+        "job_id": job.job_id,
+        "status": job.status,
+        "stage": job.stage,
+        "progress": job.progress,
+        "resolution": job.resolution,
+        "started_at": _serialize_datetime(job.started_at),
+        "completed_at": _serialize_datetime(job.completed_at),
+        "error": job.error,
+        "final_video_path": job.final_video_path,
+        "manifest": copy.deepcopy(job.manifest) if job.manifest else None,
+        "total_scenes": job.total_scenes,
+        "completed_scenes": job.completed_scenes,
+        "messages": [_serialize_progress_message(message) for message in job.messages],
+        "scenes": [_scene_status_to_record(scene) for scene in job.scenes],
+        "download_variant": job.download_variant,
+        "generation_mode": job.generation_mode,
+    }
+
+
+def _workflow_state_from_record(payload: dict[str, Any]) -> WorkflowJobState:
+    return WorkflowJobState(
+        job_id=payload.get("job_id", str(uuid.uuid4())),
+        status=payload.get("status", "queued"),
+        stage=payload.get("stage"),
+        progress=float(payload.get("progress", 0.0)),
+        resolution=payload.get("resolution", DEFAULT_SORA_RESOLUTION),
+        started_at=_deserialize_datetime(payload.get("started_at")) or _utc_now(),
+        completed_at=_deserialize_datetime(payload.get("completed_at")),
+        error=payload.get("error"),
+        final_video_path=payload.get("final_video_path"),
+        manifest=copy.deepcopy(payload.get("manifest")),
+        total_scenes=int(payload.get("total_scenes", 0)),
+        completed_scenes=int(payload.get("completed_scenes", 0)),
+        messages=[_deserialize_progress_message(item) for item in payload.get("messages", [])],
+        scenes=[_scene_status_from_record(item) for item in payload.get("scenes", [])],
+        download_variant=payload.get("download_variant", os.getenv("VIDEO_DOWNLOAD_VARIANT", "video")),
+        generation_mode=payload.get("generation_mode", "parallel"),
+    )
+
+
+class WorkflowJobDatabase:
+    """TinyDB-backed persistence for workflow jobs."""
+
+    def __init__(self, path: Path) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self._db = TinyDB(path, indent=2, ensure_ascii=False)
+        self._table = self._db.table("workflow_jobs")
+
+    def load_jobs(self) -> list[WorkflowJobState]:
+        try:
+            records = self._table.all()
+        except Exception:  # pragma: no cover - defensive
+            logger.exception("Failed to read workflow job database.")
+            return []
+        jobs: list[WorkflowJobState] = []
+        for record in records:
+            try:
+                jobs.append(_workflow_state_from_record(record))
+            except Exception:  # pragma: no cover - defensive
+                logger.exception("Unable to parse workflow job record: %s", record.get("job_id"))
+        return jobs
+
+    def upsert(self, job: WorkflowJobState) -> None:
+        try:
+            self._table.upsert(_workflow_state_to_record(job), Query().job_id == job.job_id)
+        except Exception:  # pragma: no cover - defensive
+            logger.exception("Failed to persist workflow job: %s", job.job_id)
+
+    def delete(self, job_id: str) -> None:
+        try:
+            self._table.remove(Query().job_id == job_id)
+        except Exception:  # pragma: no cover - defensive
+            logger.exception("Failed to delete workflow job: %s", job_id)
+
+
 class JobMessageModel(BaseModel):
     timestamp: datetime
     stage: str
@@ -486,9 +669,17 @@ class JobStatusResponse(BaseModel):
 
 
 class WorkflowJobStore:
-    def __init__(self) -> None:
+    def __init__(self, persistence: Optional[WorkflowJobDatabase] = None) -> None:
         self._jobs: dict[str, WorkflowJobState] = {}
         self._lock = asyncio.Lock()
+        self._persistence = persistence
+        if self._persistence:
+            for job in self._persistence.load_jobs():
+                self._jobs[job.job_id] = job
+
+    def _persist(self, job: WorkflowJobState) -> None:
+        if self._persistence:
+            self._persistence.upsert(job)
 
     def _require(self, job_id: str) -> WorkflowJobState:
         job = self._jobs.get(job_id)
@@ -501,6 +692,7 @@ class WorkflowJobStore:
             state = WorkflowJobState(job_id=job_id)
             state.add_message("queued", "Job queued.")
             self._jobs[job_id] = state
+            self._persist(state)
 
     async def mark_running(self, job_id: str) -> None:
         async with self._lock:
@@ -509,6 +701,7 @@ class WorkflowJobStore:
             job.stage = "initializing"
             job.progress = max(job.progress, 0.01)
             job.add_message("initializing", "Workflow execution started.")
+            self._persist(job)
 
     async def update_stage(
         self,
@@ -524,26 +717,31 @@ class WorkflowJobStore:
                 job.progress = max(job.progress, min(max(progress, 0.0), 1.0))
             if message:
                 job.add_message(stage, message)
+            self._persist(job)
 
     async def set_total_scenes(self, job_id: str, total: int) -> None:
         async with self._lock:
             job = self._require(job_id)
             job.total_scenes = max(total, 0)
+            self._persist(job)
 
     async def set_resolution(self, job_id: str, resolution: str) -> None:
         async with self._lock:
             job = self._require(job_id)
             job.resolution = resolution
+            self._persist(job)
 
     async def set_download_variant(self, job_id: str, download_variant: str) -> None:
         async with self._lock:
             job = self._require(job_id)
             job.download_variant = download_variant
+            self._persist(job)
 
     async def set_generation_mode(self, job_id: str, generation_mode: str) -> None:
         async with self._lock:
             job = self._require(job_id)
             job.generation_mode = generation_mode
+            self._persist(job)
 
     async def record_scene_completion(self, job_id: str, render: "SceneRender") -> None:
         async with self._lock:
@@ -578,6 +776,7 @@ class WorkflowJobStore:
             job.progress = max(job.progress, progress)
             job.stage = "rendering"
             job.add_message("rendering", f"Completed {render.label}.")
+            self._persist(job)
 
     async def mark_composing(self, job_id: str, message: str | None = None) -> None:
         async with self._lock:
@@ -586,6 +785,7 @@ class WorkflowJobStore:
             job.progress = max(job.progress, 0.85)
             if message:
                 job.add_message("composing", message)
+            self._persist(job)
 
     async def add_scene_version(
         self,
@@ -608,6 +808,7 @@ class WorkflowJobStore:
                 scene.set_selected_version(version)
             if message:
                 job.add_message("rendering", message)
+            self._persist(job)
 
     async def set_scene_selection(self, job_id: str, order: int, version_id: str) -> None:
         async with self._lock:
@@ -618,6 +819,7 @@ class WorkflowJobStore:
             version = scene.get_version(version_id)
             scene.set_selected_version(version)
             job.add_message("rendering", f"Selected {version.label or version.version_id} for {scene.label}.")
+            self._persist(job)
 
     async def get_scene(self, job_id: str, order: int) -> SceneStatus:
         async with self._lock:
@@ -631,6 +833,7 @@ class WorkflowJobStore:
         async with self._lock:
             job = self._require(job_id)
             job.add_message(stage, text)
+            self._persist(job)
 
     async def get_download_variant(self, job_id: str) -> str:
         async with self._lock:
@@ -643,6 +846,7 @@ class WorkflowJobStore:
             job.final_video_path = final_video_path
             job.manifest = manifest
             job.add_message("composing", "Updated final video with selected scene versions.")
+            self._persist(job)
 
     async def mark_completed(
         self, job_id: str, final_video_path: str, manifest: dict[str, Any]
@@ -656,6 +860,7 @@ class WorkflowJobStore:
             job.final_video_path = final_video_path
             job.manifest = manifest
             job.add_message("completed", "Workflow complete.")
+            self._persist(job)
 
     async def mark_failed(self, job_id: str, error: str) -> None:
         async with self._lock:
@@ -665,6 +870,7 @@ class WorkflowJobStore:
             job.error = error
             job.completed_at = _utc_now()
             job.add_message("failed", error)
+            self._persist(job)
 
     def _snapshot(self, job: WorkflowJobState) -> JobStatusResponse:
         messages = [
@@ -739,10 +945,22 @@ class WorkflowJobStore:
             job = self._require(job_id)
             if job.status == "running":
                 raise ValueError("Cannot delete a workflow while it is running.")
-            return self._jobs.pop(job_id)
+            removed = self._jobs.pop(job_id)
+            if self._persistence:
+                self._persistence.delete(job_id)
+            return removed
 
 
-JOB_STORE = WorkflowJobStore()
+def _build_workflow_job_store() -> WorkflowJobStore:
+    try:
+        persistence = WorkflowJobDatabase(WORKFLOW_DB_PATH)
+    except Exception:  # pragma: no cover - defensive
+        logger.exception("Persistent workflow database unavailable, using in-memory store.")
+        return WorkflowJobStore()
+    return WorkflowJobStore(persistence=persistence)
+
+
+JOB_STORE = _build_workflow_job_store()
 
 
 @dataclass

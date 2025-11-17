@@ -175,7 +175,9 @@ const zhTranslations: Record<string, string> = {
   "Initializing single job...": "正在初始化单视频任务…",
   "Initializing workflow...": "正在初始化工作流…",
   "Job Timeline": "任务时间线",
+  "Job ID": "任务 ID",
   "Language": "语言",
+  "Mode": "模式",
   "No scene references": "不使用参考图",
   "Live jobs": "正在运行的任务",
   "Log file": "日志文件",
@@ -233,6 +235,7 @@ const zhTranslations: Record<string, string> = {
   "Started": "开始时间",
   "Storyboard Workflow": "分镜工作流",
   "Storyboard workspace": "分镜工作区",
+  "Status": "状态",
   "The Director agent will refine prompts following Sora2 best practices.": "导演代理会按照 Sora2 最佳实践优化提示词。",
   "Regenerate Final Video": "重新生成最终视频",
   "Open MP4 in new tab": "在新标签页打开 MP4",
@@ -240,6 +243,7 @@ const zhTranslations: Record<string, string> = {
   "Submit reference image": "上传参考图",
   "Submit remix": "提交重制",
   "Tracked workstreams": "追踪的工作项",
+  "Tap a row to view job details.": "点击任意行以查看任务详情。",
   "Upload reference stills": "上传参考画面",
   "Use the provided username and password to access the dashboard.": "使用提供的用户名和密码登录控制面板。",
   "Use this version": "使用该版本",
@@ -1660,53 +1664,77 @@ export default function Home() {
                       {jobs.length === 0 ? (
                         <p className="mt-4 text-sm text-slate-500">{translate("Start your first workflow to see it listed here.")}</p>
                       ) : (
-                        <ul className="mt-4 space-y-3 text-sm">
-                          {jobs.map((item) => {
-                            const token = getStatusToken(item.status, language);
-                            const isActive = item.job_id === activeJobId;
-                            const isSelected = selectedCombinedJobs.has(item.job_id);
-                            return (
-                              <li
-                                key={item.job_id}
-                                className={`rounded-2xl border p-4 transition ${
-                                  isActive
-                                    ? "border-slate-400 bg-slate-100 shadow-sm"
-                                    : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-100"
-                                }`}
-                              >
-                                <div className="flex items-start gap-3">
-                                  <input
-                                    type="checkbox"
-                                    checked={isSelected}
-                                    onChange={() => toggleCombinedSelection(item.job_id)}
-                                    onClick={(event) => event.stopPropagation()}
-                                    className="mt-1 h-4 w-4 rounded border-slate-200 bg-white text-slate-900 focus:ring-slate-400"
-                                  />
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setActiveJobId(item.job_id);
-                                      setJob(item);
-                                    }}
-                                    className="flex-1 text-left"
-                                  >
-                                    <div className="flex items-center justify-between">
-                                      <span className="font-mono text-xs text-slate-500">{item.job_id.slice(0, 12)}</span>
-                                      <span
-                                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${token.className}`}
-                                      >
-                                        {token.label}
-                                      </span>
-                                    </div>
-                                    <div className="mt-1 text-[11px] text-slate-500">
-                                      {item.resolution} · {stageLabel(item.stage, language)} · {formatTimeDistance(item.started_at)}
-                                    </div>
-                                  </button>
-                                </div>
-                              </li>
-                            );
-                          })}
-                        </ul>
+                        <>
+                          <p className="mt-4 text-xs text-slate-500">{translate("Tap a row to view job details.")}</p>
+                          <div className="mt-3 overflow-x-auto">
+                            <table className="min-w-full divide-y divide-slate-200 text-sm">
+                              <thead className="bg-slate-100 text-[11px] uppercase tracking-wide text-slate-500">
+                                <tr>
+                                  <th scope="col" className="px-3 py-2 text-left">
+                                    <span className="sr-only">{translate("Select workflows")}</span>
+                                  </th>
+                                  <th scope="col" className="px-3 py-2 text-left">{translate("Job ID")}</th>
+                                  <th scope="col" className="px-3 py-2 text-left">{translate("Status")}</th>
+                                  <th scope="col" className="px-3 py-2 text-left">{translate("Mode")}</th>
+                                  <th scope="col" className="px-3 py-2 text-left">{translate("Resolution")}</th>
+                                  <th scope="col" className="px-3 py-2 text-left">{translate("Progress")}</th>
+                                  <th scope="col" className="px-3 py-2 text-left">{translate("Started")}</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100">
+                                {jobs.map((item) => {
+                                  const token = getStatusToken(item.status, language);
+                                  const isActive = item.job_id === activeJobId;
+                                  const isSelected = selectedCombinedJobs.has(item.job_id);
+                                  const progressPercent = Math.min(100, Math.max(0, Math.round((item.progress ?? 0) * 100)));
+                                  return (
+                                    <tr
+                                      key={item.job_id}
+                                      onClick={() => {
+                                        setActiveJobId(item.job_id);
+                                        setJob(item);
+                                      }}
+                                      className={`cursor-pointer transition ${isActive ? "bg-slate-100/80" : "bg-white hover:bg-slate-50"}`}
+                                    >
+                                      <td className="px-3 py-2">
+                                        <input
+                                          type="checkbox"
+                                          checked={isSelected}
+                                          onChange={() => toggleCombinedSelection(item.job_id)}
+                                          onClick={(event) => event.stopPropagation()}
+                                          className="h-4 w-4 rounded border-slate-200 text-slate-900 focus:ring-slate-400"
+                                        />
+                                      </td>
+                                      <td className="whitespace-nowrap px-3 py-2 font-mono text-xs text-slate-600">{item.job_id.slice(0, 12)}</td>
+                                      <td className="px-3 py-2">
+                                        <div className="flex flex-col gap-1">
+                                          <span className={`${pillButtonClass} ${token.className}`}>{token.label}</span>
+                                          <span className="text-[11px] text-slate-500">{stageLabel(item.stage, language)}</span>
+                                        </div>
+                                      </td>
+                                      <td className="px-3 py-2 text-xs text-slate-600">
+                                        {translate(item.generation_mode === "sequence" ? "Sequence" : "Parallel")}
+                                      </td>
+                                      <td className="px-3 py-2 text-xs text-slate-600">{item.resolution}</td>
+                                      <td className="px-3 py-2">
+                                        <div className="flex items-center gap-2">
+                                          <div className="h-2 w-24 rounded-full bg-slate-100">
+                                            <div
+                                              className="h-full rounded-full bg-slate-900 transition-all"
+                                              style={{ width: `${progressPercent}%` }}
+                                            />
+                                          </div>
+                                          <span className="text-xs font-medium text-slate-600">{progressPercent}%</span>
+                                        </div>
+                                      </td>
+                                      <td className="whitespace-nowrap px-3 py-2 text-xs text-slate-500">{formatTimeDistance(item.started_at)}</td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </>
                       )}
                     </div>
                   </aside>
@@ -1965,54 +1993,78 @@ export default function Home() {
                       {singleJobs.length === 0 ? (
                         <p className="mt-4 text-sm text-slate-500">{translate("Generate a clip to see it listed here.")}</p>
                       ) : (
-                        <ul className="mt-4 space-y-3 text-sm">
-                          {singleJobs.map((item) => {
-                            const token = getStatusToken(item.status, language);
-                            const isActive = item.job_id === activeSingleJobId;
-                            const isSelected = selectedSingleJobs.has(item.job_id);
-                            return (
-                              <li
-                                key={item.job_id}
-                                className={`rounded-2xl border p-4 transition ${
-                                  isActive
-                                    ? "border-slate-400 bg-slate-100 shadow-sm"
-                                    : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-100"
-                                }`}
-                              >
-                                <div className="flex items-start gap-3">
-                                  <input
-                                    type="checkbox"
-                                    checked={isSelected}
-                                    onChange={() => toggleSingleSelection(item.job_id)}
-                                    onClick={(event) => event.stopPropagation()}
-                                    className="mt-1 h-4 w-4 rounded border-slate-200 bg-white text-slate-900 focus:ring-slate-400"
-                                  />
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setActiveSingleJobId(item.job_id);
-                                      setSingleJob(item);
-                                    }}
-                                    className="flex-1 text-left"
-                                  >
-                                    <div className="flex items-center justify-between">
-                                      <span className="font-mono text-xs text-slate-500">{item.job_id.slice(0, 12)}</span>
-                                      <span
-                                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${token.className}`}
-                                      >
-                                        {token.label}
-                                      </span>
-                                    </div>
-                                    <div className="mt-1 text-[11px] text-slate-500">
-                                      {item.resolution} · {item.duration}
-                                      {translate("s")} · {formatTimeDistance(item.started_at)}
-                                    </div>
-                                  </button>
-                                </div>
-                              </li>
-                            );
-                          })}
-                        </ul>
+                        <>
+                          <p className="mt-4 text-xs text-slate-500">{translate("Tap a row to view job details.")}</p>
+                          <div className="mt-3 overflow-x-auto">
+                            <table className="min-w-full divide-y divide-slate-200 text-sm">
+                              <thead className="bg-slate-100 text-[11px] uppercase tracking-wide text-slate-500">
+                                <tr>
+                                  <th scope="col" className="px-3 py-2 text-left">
+                                    <span className="sr-only">{translate("Select workflows")}</span>
+                                  </th>
+                                  <th scope="col" className="px-3 py-2 text-left">{translate("Job ID")}</th>
+                                  <th scope="col" className="px-3 py-2 text-left">{translate("Status")}</th>
+                                  <th scope="col" className="px-3 py-2 text-left">{translate("Resolution")}</th>
+                                  <th scope="col" className="px-3 py-2 text-left">{translate("Duration")}</th>
+                                  <th scope="col" className="px-3 py-2 text-left">{translate("Progress")}</th>
+                                  <th scope="col" className="px-3 py-2 text-left">{translate("Started")}</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100">
+                                {singleJobs.map((item) => {
+                                  const token = getStatusToken(item.status, language);
+                                  const isActive = item.job_id === activeSingleJobId;
+                                  const isSelected = selectedSingleJobs.has(item.job_id);
+                                  const progressPercent = Math.min(100, Math.max(0, Math.round((item.progress ?? 0) * 100)));
+                                  return (
+                                    <tr
+                                      key={item.job_id}
+                                      onClick={() => {
+                                        setActiveSingleJobId(item.job_id);
+                                        setSingleJob(item);
+                                      }}
+                                      className={`cursor-pointer transition ${isActive ? "bg-slate-100/80" : "bg-white hover:bg-slate-50"}`}
+                                    >
+                                      <td className="px-3 py-2">
+                                        <input
+                                          type="checkbox"
+                                          checked={isSelected}
+                                          onChange={() => toggleSingleSelection(item.job_id)}
+                                          onClick={(event) => event.stopPropagation()}
+                                          className="h-4 w-4 rounded border-slate-200 text-slate-900 focus:ring-slate-400"
+                                        />
+                                      </td>
+                                      <td className="whitespace-nowrap px-3 py-2 font-mono text-xs text-slate-600">{item.job_id.slice(0, 12)}</td>
+                                      <td className="px-3 py-2">
+                                        <div className="flex flex-col gap-1">
+                                          <span className={`${pillButtonClass} ${token.className}`}>{token.label}</span>
+                                          <span className="text-[11px] text-slate-500">{stageLabel(item.status, language)}</span>
+                                        </div>
+                                      </td>
+                                      <td className="px-3 py-2 text-xs text-slate-600">{item.resolution}</td>
+                                      <td className="px-3 py-2 text-xs text-slate-600">
+                                        {item.duration}
+                                        {translate("s")}
+                                      </td>
+                                      <td className="px-3 py-2">
+                                        <div className="flex items-center gap-2">
+                                          <div className="h-2 w-24 rounded-full bg-slate-100">
+                                            <div
+                                              className="h-full rounded-full bg-slate-900 transition-all"
+                                              style={{ width: `${progressPercent}%` }}
+                                            />
+                                          </div>
+                                          <span className="text-xs font-medium text-slate-600">{progressPercent}%</span>
+                                        </div>
+                                      </td>
+                                      <td className="whitespace-nowrap px-3 py-2 text-xs text-slate-500">{formatTimeDistance(item.started_at)}</td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </>
                       )}
                     </div>
                   </aside>
