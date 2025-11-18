@@ -100,27 +100,29 @@ if [[ -n "${OPENAI_API_KEY:-}" ]]; then
 fi
 
 BACKEND_SECRET_ARGS=(--secrets "${BACKEND_SECRETS[@]}")
-BACKEND_ENV_ARGS=(--set-env-vars "${BACKEND_ENV_VARS[@]}")
+BACKEND_ENV_SET_ARGS=(--set-env-vars "${BACKEND_ENV_VARS[@]}")
+BACKEND_ENV_CREATE_ARGS=(--env-vars "${BACKEND_ENV_VARS[@]}")
 
 if az containerapp show --name "$AZURE_CONTAINERAPPS_BACKEND" --resource-group "$AZURE_RESOURCE_GROUP" >/dev/null 2>&1; then
   az containerapp secret set \
     --name "$AZURE_CONTAINERAPPS_BACKEND" \
     --resource-group "$AZURE_RESOURCE_GROUP" \
     --secrets "${BACKEND_SECRETS[@]}" >/dev/null
+  az containerapp registry set \
+    --name "$AZURE_CONTAINERAPPS_BACKEND" \
+    --resource-group "$AZURE_RESOURCE_GROUP" \
+    --server "$REGISTRY_SERVER" \
+    --username "$REGISTRY_USERNAME" \
+    --password "$REGISTRY_PASSWORD" >/dev/null
   az containerapp update \
     --name "$AZURE_CONTAINERAPPS_BACKEND" \
     --resource-group "$AZURE_RESOURCE_GROUP" \
     --image "$BACKEND_IMAGE" \
-    --target-port 8000 \
-    --ingress external \
     --min-replicas 1 \
     --max-replicas 2 \
-    --registry-server "$REGISTRY_SERVER" \
-    --registry-username "$REGISTRY_USERNAME" \
-    --registry-password "$REGISTRY_PASSWORD" \
     --cpu 2.0 \
     --memory 4Gi \
-    "${BACKEND_ENV_ARGS[@]}" >/dev/null
+    "${BACKEND_ENV_SET_ARGS[@]}" >/dev/null
 else
   az containerapp create \
     --name "$AZURE_CONTAINERAPPS_BACKEND" \
@@ -137,7 +139,7 @@ else
     --cpu 2.0 \
     --memory 4Gi \
     "${BACKEND_SECRET_ARGS[@]}" \
-    "${BACKEND_ENV_ARGS[@]}" >/dev/null
+    "${BACKEND_ENV_CREATE_ARGS[@]}" >/dev/null
 fi
 
 BACKEND_FQDN=$(az containerapp show --name "$AZURE_CONTAINERAPPS_BACKEND" --resource-group "$AZURE_RESOURCE_GROUP" --query properties.configuration.ingress.fqdn -o tsv)
@@ -152,23 +154,25 @@ DOCKER_BUILDKIT=1 docker build \
 docker push "$FRONTEND_IMAGE"
 
 FRONTEND_ENV_VARS=("NEXT_PUBLIC_API_BASE_URL=$FRONTEND_API_BASE_URL")
-FRONTEND_ENV_ARGS=(--set-env-vars "${FRONTEND_ENV_VARS[@]}")
+FRONTEND_ENV_SET_ARGS=(--set-env-vars "${FRONTEND_ENV_VARS[@]}")
+FRONTEND_ENV_CREATE_ARGS=(--env-vars "${FRONTEND_ENV_VARS[@]}")
 
 if az containerapp show --name "$AZURE_CONTAINERAPPS_FRONTEND" --resource-group "$AZURE_RESOURCE_GROUP" >/dev/null 2>&1; then
+  az containerapp registry set \
+    --name "$AZURE_CONTAINERAPPS_FRONTEND" \
+    --resource-group "$AZURE_RESOURCE_GROUP" \
+    --server "$REGISTRY_SERVER" \
+    --username "$REGISTRY_USERNAME" \
+    --password "$REGISTRY_PASSWORD" >/dev/null
   az containerapp update \
     --name "$AZURE_CONTAINERAPPS_FRONTEND" \
     --resource-group "$AZURE_RESOURCE_GROUP" \
     --image "$FRONTEND_IMAGE" \
-    --target-port 3000 \
-    --ingress external \
     --min-replicas 1 \
     --max-replicas 2 \
-    --registry-server "$REGISTRY_SERVER" \
-    --registry-username "$REGISTRY_USERNAME" \
-    --registry-password "$REGISTRY_PASSWORD" \
     --cpu 1.0 \
     --memory 2Gi \
-    "${FRONTEND_ENV_ARGS[@]}" >/dev/null
+    "${FRONTEND_ENV_SET_ARGS[@]}" >/dev/null
 else
   az containerapp create \
     --name "$AZURE_CONTAINERAPPS_FRONTEND" \
@@ -184,7 +188,7 @@ else
     --registry-password "$REGISTRY_PASSWORD" \
     --cpu 1.0 \
     --memory 2Gi \
-    "${FRONTEND_ENV_ARGS[@]}" >/dev/null
+    "${FRONTEND_ENV_CREATE_ARGS[@]}" >/dev/null
 fi
 
 FRONTEND_FQDN=$(az containerapp show --name "$AZURE_CONTAINERAPPS_FRONTEND" --resource-group "$AZURE_RESOURCE_GROUP" --query properties.configuration.ingress.fqdn -o tsv)
