@@ -34,6 +34,8 @@ type SceneVersion = {
   client_log_path: string | null;
   video_id: string | null;
   created_at: string;
+  last_frame_path?: string | null;
+  last_frame_url?: string | null;
 };
 
 type SceneStatus = {
@@ -47,6 +49,22 @@ type SceneStatus = {
   client_log_path: string | null;
   selected_version_id: string | null;
   versions: SceneVersion[];
+  last_frame_path?: string | null;
+  last_frame_url?: string | null;
+};
+
+type SingleVideoVersion = {
+  version_id: string;
+  label: string;
+  source: string;
+  prompt: string;
+  prompt_path: string;
+  video_path: string;
+  video_url: string | null;
+  log_path: string | null;
+  client_log_path: string | null;
+  video_id: string | null;
+  created_at: string;
 };
 
 type JobStatus = {
@@ -82,6 +100,9 @@ type SingleVideoJob = {
   log_path: string | null;
   log_url: string | null;
   client_log_path: string | null;
+  video_id: string | null;
+  selected_version_id: string | null;
+  versions: SingleVideoVersion[];
   messages: JobMessage[];
 };
 
@@ -276,6 +297,19 @@ const zhTranslations: Record<string, string> = {
   "Generate Clip": "生成片段",
   "Reference image (optional)": "参考图（可选）",
   "Reference preview": "参考图预览",
+  "Refine script with GPT-5": "使用 GPT-5 优化剧本",
+  "Use GPT-5 to polish the storyboard before planning scenes.": "在规划场景前，用 GPT-5 打磨分镜文案。",
+  "Refine prompt with GPT-5": "使用 GPT-5 优化提示词",
+  "Let GPT-5 tighten the single-scene prompt before submitting.": "在提交前，让 GPT-5 精炼单条视频的提示词。",
+  "Enabled": "已启用",
+  "Disabled": "已关闭",
+  "Last frame reference": "最后一帧参考图",
+  "Remix Clip": "重制片段",
+  "Remix Single Video": "重制单条视频",
+  "Describe how you want to remix this clip...": "描述你希望如何重制该片段…",
+  "Enter a prompt to remix this clip.": "请填写重制提示词。",
+  "Unable to submit single-video remix. Confirm the backend endpoint is reachable.": "无法提交单视频重制请求，请确认后端可访问。",
+  "Start a single-video job before requesting a remix.": "请先创建单视频任务再尝试重制。",
   "Sending Prompt...": "正在发送提示词…",
   "s": "秒",
 };
@@ -419,6 +453,7 @@ export default function Home() {
   const [remixSubmitting, setRemixSubmitting] = useState<Record<number, boolean>>({});
   const [selectionSubmitting, setSelectionSubmitting] = useState<Record<string, boolean>>({});
   const [isRecomposing, setIsRecomposing] = useState(false);
+  const [refineWorkflowWithGpt5, setRefineWorkflowWithGpt5] = useState(false);
 
   // Single video state
   const [singlePrompt, setSinglePrompt] = useState("");
@@ -432,6 +467,9 @@ export default function Home() {
   const [isSubmittingSingle, setIsSubmittingSingle] = useState(false);
   const [singleError, setSingleError] = useState<string | null>(null);
   const [selectedSingleJobs, setSelectedSingleJobs] = useState<Set<string>>(new Set());
+  const [refineSingleWithGpt5, setRefineSingleWithGpt5] = useState(false);
+  const [singleRemixPrompt, setSingleRemixPrompt] = useState("");
+  const [singleRemixSubmitting, setSingleRemixSubmitting] = useState(false);
 
   const loadCombinedJobs = useCallback(async () => {
     try {
@@ -631,6 +669,7 @@ export default function Home() {
   const finalVideoUrl = buildAssetUrl(job?.final_video_url);
   const canRecompose = Boolean(job?.scenes?.length && job?.status === "completed");
   const currentStatusToken = getStatusToken(job?.status, language);
+  const showSequenceReferences = job?.generation_mode === "sequence";
 
   const singleVideoUrl = buildAssetUrl(singleJob?.video_url);
   const singleStatusToken = getStatusToken(singleJob?.status, language);
@@ -841,6 +880,7 @@ export default function Home() {
       payload.useSceneImages = useSceneImages;
       payload.resolution = combinedResolution;
       payload.generationMode = generationMode;
+      payload.refineWithGpt5 = refineWorkflowWithGpt5;
       if (useSceneImages && sceneImageFiles.length) {
         const uploads = await Promise.all(
           sceneImageFiles.map(async (file) => ({
@@ -893,6 +933,7 @@ export default function Home() {
         prompt: trimmed,
         resolution: singleResolution,
         duration: Number(singleDuration),
+        refineWithGpt5: refineSingleWithGpt5,
       };
 
       if (singleReferenceFile) {
@@ -924,6 +965,44 @@ export default function Home() {
       setSingleError("Unable to start the single-video job. Verify the backend is reachable.");
     } finally {
       setIsSubmittingSingle(false);
+    }
+  };
+
+  const handleSingleRemixSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!singleJob?.job_id) {
+      setSingleError("Start a single-video job before requesting a remix.");
+      return;
+    }
+    const trimmed = singleRemixPrompt.trim();
+    if (!trimmed) {
+      setSingleError("Enter a prompt to remix this clip.");
+      return;
+    }
+
+    setSingleError(null);
+    setSingleRemixSubmitting(true);
+    try {
+      const response = await fetch(`${API_BASE}/api/single-videos/${singleJob.job_id}/remix`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: trimmed }),
+      });
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      const data: SingleVideoJob = await response.json();
+      setSingleJob(data);
+      setSingleJobs((prev) => {
+        const others = prev.filter((item) => item.job_id !== data.job_id);
+        return [data, ...others];
+      });
+      setSingleRemixPrompt("");
+    } catch (err) {
+      console.error(err);
+      setSingleError("Unable to submit single-video remix. Confirm the backend endpoint is reachable.");
+    } finally {
+      setSingleRemixSubmitting(false);
     }
   };
 
@@ -1321,6 +1400,39 @@ export default function Home() {
                           </p>
                         </div>
 
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                          <div className="flex items-center justify-between gap-4">
+                            <div>
+                              <p className="text-sm font-semibold text-slate-700">{translate("Refine script with GPT-5")}</p>
+                              <p className="text-xs text-slate-500">
+                                {translate("Use GPT-5 to polish the storyboard before planning scenes.")}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setRefineWorkflowWithGpt5((value) => !value)}
+                              className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold transition ${
+                                refineWorkflowWithGpt5
+                                  ? "border-slate-900 bg-slate-900 text-white"
+                                  : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900"
+                              }`}
+                            >
+                              <span
+                                className={`relative inline-flex h-5 w-10 items-center rounded-full border transition ${
+                                  refineWorkflowWithGpt5 ? "border-slate-700 bg-slate-800" : "border-slate-300 bg-white"
+                                }`}
+                              >
+                                <span
+                                  className={`absolute left-1 h-3 rounded-full bg-white transition ${
+                                    refineWorkflowWithGpt5 ? "translate-x-4 w-4" : "w-3"
+                                  }`}
+                                />
+                              </span>
+                              {translate(refineWorkflowWithGpt5 ? "Enabled" : "Disabled")}
+                            </button>
+                          </div>
+                        </div>
+
                         {useSceneImages ? (
                           <div className="space-y-3">
                             <label className="text-sm font-semibold text-slate-600">{translate("Upload reference stills")}</label>
@@ -1476,6 +1588,9 @@ export default function Home() {
                             const versions = scene.versions ?? [];
                             const selectedVersion = versions.find((version) => version.version_id === scene.selected_version_id) ?? versions[0];
                             const sceneVideoUrl = buildAssetUrl(selectedVersion?.video_url ?? scene.video_url);
+                            const sceneLastFrameUrl = showSequenceReferences
+                              ? buildAssetUrl(selectedVersion?.last_frame_url ?? scene.last_frame_url)
+                              : null;
                             return (
                               <div
                                 key={scene.order}
@@ -1492,15 +1607,46 @@ export default function Home() {
                                     {translate("Scene")} {scene.order}
                                   </span>
                                 </div>
-                                {sceneVideoUrl ? (
-                                  <video
-                                    key={`${scene.order}-${sceneVideoUrl}`}
-                                    controls
-                                    className="mt-3 max-h-56 w-full rounded-xl border border-slate-200 bg-black/60"
-                                    src={sceneVideoUrl}
+                                {sceneVideoUrl || (showSequenceReferences && sceneLastFrameUrl) ? (
+                                  <div
+                                    className={`mt-3 grid gap-3 ${
+                                      showSequenceReferences && sceneLastFrameUrl && sceneVideoUrl
+                                        ? "md:grid-cols-[1.2fr,0.8fr]"
+                                        : ""
+                                    }`}
                                   >
-                                    {translate("Video unavailable.")}
-                                  </video>
+                                    <div>
+                                      {sceneVideoUrl ? (
+                                        <video
+                                          key={`${scene.order}-${sceneVideoUrl}`}
+                                          controls
+                                          className="max-h-56 w-full rounded-xl border border-slate-200 bg-black/60"
+                                          src={sceneVideoUrl}
+                                        >
+                                          {translate("Video unavailable.")}
+                                        </video>
+                                      ) : (
+                                        <div className="flex h-40 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-100 text-xs text-slate-500">
+                                          {translate("Clip pending...")}
+                                        </div>
+                                      )}
+                                    </div>
+                                    {showSequenceReferences && sceneLastFrameUrl ? (
+                                      <div className="flex flex-col rounded-xl border border-slate-200 bg-white/80 p-3 text-center shadow-inner shadow-slate-200/60">
+                                        <Image
+                                          src={sceneLastFrameUrl}
+                                          alt={`${scene.label} ${translate("Last frame reference")}`}
+                                          width={320}
+                                          height={240}
+                                          unoptimized
+                                          className="h-40 w-full rounded-lg object-cover"
+                                        />
+                                        <p className="mt-2 text-xs text-slate-500">
+                                          {translate("Last frame reference")}
+                                        </p>
+                                      </div>
+                                    ) : null}
+                                  </div>
                                 ) : (
                                   <div className="mt-3 flex h-40 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-100 text-xs text-slate-500">
                                     {translate("Clip pending...")}
@@ -1517,6 +1663,7 @@ export default function Home() {
                                     </h4>
                                     {versions.map((version) => {
                                       const versionVideoUrl = buildAssetUrl(version.video_url);
+                                      const versionLastFrameUrl = showSequenceReferences ? buildAssetUrl(version.last_frame_url) : null;
                                       const isActive = version.version_id === scene.selected_version_id;
                                       const isBusy = Boolean(selectionSubmitting[version.version_id]);
                                       return (
@@ -1561,6 +1708,21 @@ export default function Home() {
                                             >
                                               {translate("Version video unavailable.")}
                                             </video>
+                                          ) : null}
+                                          {versionLastFrameUrl ? (
+                                            <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-2">
+                                              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                                                {translate("Last frame reference")}
+                                              </p>
+                                              <Image
+                                                src={versionLastFrameUrl}
+                                                alt={`${version.label} ${translate("Last frame reference")}`}
+                                                width={280}
+                                                height={200}
+                                                unoptimized
+                                                className="mt-2 h-28 w-full rounded-lg object-cover"
+                                              />
+                                            </div>
                                           ) : null}
                                           {version.prompt ? (
                                             <p className="mt-2 text-xs text-slate-600">
@@ -1813,6 +1975,39 @@ export default function Home() {
                           </div>
                         </div>
 
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                          <div className="flex items-center justify-between gap-4">
+                            <div>
+                              <p className="text-sm font-semibold text-slate-700">{translate("Refine prompt with GPT-5")}</p>
+                              <p className="text-xs text-slate-500">
+                                {translate("Let GPT-5 tighten the single-scene prompt before submitting.")}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setRefineSingleWithGpt5((value) => !value)}
+                              className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold transition ${
+                                refineSingleWithGpt5
+                                  ? "border-slate-900 bg-slate-900 text-white"
+                                  : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900"
+                              }`}
+                            >
+                              <span
+                                className={`relative inline-flex h-5 w-10 items-center rounded-full border transition ${
+                                  refineSingleWithGpt5 ? "border-slate-700 bg-slate-800" : "border-slate-300 bg-white"
+                                }`}
+                              >
+                                <span
+                                  className={`absolute left-1 h-3 rounded-full bg-white transition ${
+                                    refineSingleWithGpt5 ? "translate-x-4 w-4" : "w-3"
+                                  }`}
+                                />
+                              </span>
+                              {translate(refineSingleWithGpt5 ? "Enabled" : "Disabled")}
+                            </button>
+                          </div>
+                        </div>
+
                         <div className="space-y-3">
                           <label className="text-sm font-semibold text-slate-600">{translate("Reference image (optional)")}</label>
                           <input
@@ -1892,7 +2087,7 @@ export default function Home() {
                           )}
                         </div>
 
-                        <dl className="mt-6 grid gap-4 text-sm text-slate-600 sm:grid-cols-2 md:grid-cols-4">
+                        <dl className="mt-6 grid gap-4 text-sm text-slate-600 sm:grid-cols-2 md:grid-cols-5">
                           <div>
                             <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Started")}</dt>
                             <dd className="mt-1 text-slate-600">{formatTimeDistance(singleJob.started_at)}</dd>
@@ -1911,6 +2106,10 @@ export default function Home() {
                               {singleJob.duration}
                               {translate("s")}
                             </dd>
+                          </div>
+                          <div>
+                            <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Azure video ID:")}</dt>
+                            <dd className="mt-1 text-slate-600">{singleJob.video_id ?? translate("Unavailable")}</dd>
                           </div>
                         </dl>
 
@@ -1939,6 +2138,87 @@ export default function Home() {
                             {translate("Video pending...")}
                           </div>
                         )}
+
+                        {singleJob.video_id ? (
+                          <form className="mt-6 space-y-2" onSubmit={handleSingleRemixSubmit}>
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                              <h3 className="text-sm font-semibold text-slate-600">{translate("Remix Single Video")}</h3>
+                              <span className="text-[11px] text-slate-500">
+                                {translate("Uses previous video ID:")} {singleJob.video_id}
+                              </span>
+                            </div>
+                            <textarea
+                              className="min-h-[80px] w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                              placeholder={translate("Describe how you want to remix this clip...")}
+                              value={singleRemixPrompt}
+                              onChange={(event) => setSingleRemixPrompt(event.target.value)}
+                            />
+                            <div className="flex items-center justify-end">
+                              <button
+                                type="submit"
+                                disabled={singleRemixSubmitting}
+                                className="inline-flex items-center gap-2 rounded-xl border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-400 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                {singleRemixSubmitting ? (
+                                  <ArrowPathIcon className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <ArrowPathIcon className="h-4 w-4" />
+                                )}
+                                {translate("Remix Clip")}
+                              </button>
+                            </div>
+                          </form>
+                        ) : null}
+
+                        {singleJob.versions?.length ? (
+                          <div className="mt-8 space-y-3">
+                            <h3 className="text-sm font-semibold text-slate-600">{translate("Versions")}</h3>
+                            <div className="space-y-3">
+                              {singleJob.versions.map((version) => {
+                                const versionVideoUrl = buildAssetUrl(version.video_url);
+                                const isActive = version.version_id === singleJob.selected_version_id;
+                                return (
+                                  <div
+                                    key={version.version_id}
+                                    className={`rounded-2xl border p-3 ${
+                                      isActive ? "border-slate-900 bg-slate-50" : "border-slate-200 bg-white"
+                                    }`}
+                                  >
+                                    <div className="flex items-start justify-between gap-3">
+                                      <div>
+                                        <p className="text-sm font-semibold text-slate-900">{version.label}</p>
+                                        <p className="text-xs text-slate-500">
+                                          {version.source} • {formatTimeDistance(version.created_at)}
+                                        </p>
+                                      </div>
+                                      {isActive ? (
+                                        <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+                                          {translate("Selected")}
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                    {versionVideoUrl ? (
+                                      <video
+                                        key={`${version.version_id}-${versionVideoUrl}`}
+                                        controls
+                                        className="mt-2 max-h-48 w-full rounded-xl border border-slate-200 bg-black/60"
+                                        src={versionVideoUrl}
+                                      >
+                                        {translate("Version video unavailable.")}
+                                      </video>
+                                    ) : null}
+                                    <p className="mt-2 text-[11px] text-slate-500">
+                                      {translate("Azure video ID:")} {version.video_id ?? translate("Unavailable")}
+                                    </p>
+                                    <p className="mt-1 text-xs text-slate-600">
+                                      {translate("Prompt:")} <span className="font-mono text-[11px] text-slate-500">{version.prompt}</span>
+                                    </p>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ) : null}
                       </div>
                     )}
                   </section>
