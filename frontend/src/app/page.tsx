@@ -1583,7 +1583,7 @@ export default function Home() {
                           <PlayCircleIcon className="h-5 w-5 text-slate-600" />
                           {translate("Scene Renders")}
                         </h2>
-                        <div className="mt-5 grid gap-5 md:grid-cols-2">
+                        <div className="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-[repeat(auto-fit,minmax(360px,1fr))]">
                           {job.scenes.map((scene) => {
                             const versions = scene.versions ?? [];
                             const selectedVersion = versions.find((version) => version.version_id === scene.selected_version_id) ?? versions[0];
