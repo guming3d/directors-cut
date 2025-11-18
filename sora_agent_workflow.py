@@ -63,6 +63,11 @@ DIRECTOR_REFINEMENT_DEPLOYMENT = (
     or os.getenv("AZURE_OPENAI_RESPONSES_DEPLOYMENT")
     or os.getenv("AZURE_OPENAI_DEPLOYMENT")
 )
+GPT5_REFINEMENT_DEPLOYMENT = (
+    os.getenv("AZURE_OPENAI_GPT5_DEPLOYMENT")
+    or os.getenv("AZURE_OPENAI_RESPONSES_DEPLOYMENT")
+    or os.getenv("AZURE_OPENAI_DEPLOYMENT")
+)
 AZURE_TEXT_ENDPOINT = (os.getenv("AZURE_OPENAI_ENDPOINT") or os.getenv("ENDPOINT_URL") or "").rstrip("/")
 AZURE_TEXT_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
 AZURE_TEXT_API_VERSION = os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-15-preview")
@@ -101,7 +106,7 @@ logger = _configure_logging()
 def _azure_text_client() -> AzureOpenAI | None:
     """Create or reuse a shared Azure OpenAI client for GPT-4.1 refinement."""
 
-    if not DIRECTOR_REFINEMENT_DEPLOYMENT:
+    if not (DIRECTOR_REFINEMENT_DEPLOYMENT or GPT5_REFINEMENT_DEPLOYMENT):
         return None
     if not AZURE_TEXT_ENDPOINT or not AZURE_TEXT_API_KEY:
         logger.debug("Azure OpenAI credentials not configured; skipping prompt refinement client.")
@@ -384,6 +389,7 @@ class SceneVersionEntry:
     prompt_path: Optional[str] = None
     source: str = "original"
     created_at: datetime = field(default_factory=_utc_now)
+    last_frame_path: Optional[str] = None
 
 
 @dataclass
@@ -397,12 +403,14 @@ class SceneStatus:
     client_log_path: Optional[str] = None
     selected_version_id: Optional[str] = None
     versions: list[SceneVersionEntry] = field(default_factory=list)
+    last_frame_path: Optional[str] = None
 
     def set_selected_version(self, version: SceneVersionEntry) -> None:
         self.selected_version_id = version.version_id
         self.video_path = version.video_path
         self.log_path = version.log_path
         self.client_log_path = version.client_log_path
+        self.last_frame_path = version.last_frame_path
 
     def get_version(self, version_id: Optional[str]) -> SceneVersionEntry:
         if version_id:
@@ -483,6 +491,7 @@ def _scene_version_to_record(version: SceneVersionEntry) -> dict[str, Any]:
         "prompt_path": version.prompt_path,
         "source": version.source,
         "created_at": _serialize_datetime(version.created_at),
+        "last_frame_path": version.last_frame_path,
     }
 
 
@@ -498,6 +507,7 @@ def _scene_version_from_record(payload: dict[str, Any]) -> SceneVersionEntry:
         prompt_path=payload.get("prompt_path"),
         source=payload.get("source", "original"),
         created_at=_deserialize_datetime(payload.get("created_at")) or _utc_now(),
+        last_frame_path=payload.get("last_frame_path"),
     )
 
 
@@ -512,6 +522,7 @@ def _scene_status_to_record(scene: SceneStatus) -> dict[str, Any]:
         "client_log_path": scene.client_log_path,
         "selected_version_id": scene.selected_version_id,
         "versions": [_scene_version_to_record(version) for version in scene.versions],
+        "last_frame_path": scene.last_frame_path,
     }
 
 
@@ -532,6 +543,7 @@ def _scene_status_from_record(payload: dict[str, Any]) -> SceneStatus:
         client_log_path=payload.get("client_log_path"),
         selected_version_id=payload.get("selected_version_id"),
         versions=versions,
+        last_frame_path=payload.get("last_frame_path"),
     )
     if scene.selected_version_id:
         try:
@@ -636,6 +648,8 @@ class SceneVersionModel(BaseModel):
     client_log_path: Optional[str]
     video_id: Optional[str]
     created_at: datetime
+    last_frame_path: Optional[str] = None
+    last_frame_url: Optional[str] = None
 
 
 class SceneStatusModel(BaseModel):
@@ -649,6 +663,8 @@ class SceneStatusModel(BaseModel):
     client_log_path: Optional[str] = None
     selected_version_id: Optional[str] = None
     versions: list[SceneVersionModel] = Field(default_factory=list)
+    last_frame_path: Optional[str] = None
+    last_frame_url: Optional[str] = None
 
 
 class JobStatusResponse(BaseModel):
@@ -757,6 +773,7 @@ class WorkflowJobStore:
                 prompt=render.prompt_text,
                 prompt_path=render.prompt_path,
                 source=render.version_source,
+                last_frame_path=render.last_frame_path,
             )
             scene = SceneStatus(
                 order=render.order,
@@ -766,6 +783,7 @@ class WorkflowJobStore:
                 video_path=render.video_path,
                 log_path=render.log_path,
                 client_log_path=render.client_log_path,
+                last_frame_path=render.last_frame_path,
             )
             scene.versions.append(version)
             scene.set_selected_version(version)
@@ -901,9 +919,13 @@ class WorkflowJobStore:
                         client_log_path=version.client_log_path,
                         video_id=version.video_id,
                         created_at=version.created_at,
+                        last_frame_path=version.last_frame_path,
+                        last_frame_url=_static_asset_url(version.last_frame_path),
                     )
                     for idx, version in enumerate(scene.versions)
                 ],
+                last_frame_path=scene.last_frame_path,
+                last_frame_url=_static_asset_url(scene.last_frame_path),
             )
             for scene in sorted(job.scenes, key=lambda item: item.order)
         ]
@@ -964,6 +986,20 @@ JOB_STORE = _build_workflow_job_store()
 
 
 @dataclass
+class SingleVideoVersionEntry:
+    version_id: str
+    label: str
+    prompt: str
+    prompt_path: str
+    video_path: str
+    log_path: Optional[str] = None
+    client_log_path: Optional[str] = None
+    video_id: Optional[str] = None
+    source: str = "original"
+    created_at: datetime = field(default_factory=_utc_now)
+
+
+@dataclass
 class SingleVideoJobState:
     job_id: str
     prompt: str
@@ -978,10 +1014,30 @@ class SingleVideoJobState:
     video_path: Optional[str] = None
     log_path: Optional[str] = None
     client_log_path: Optional[str] = None
+    video_id: Optional[str] = None
     messages: list[ProgressMessage] = field(default_factory=list)
+    versions: list[SingleVideoVersionEntry] = field(default_factory=list)
+    selected_version_id: Optional[str] = None
 
     def add_message(self, stage: str, text: str) -> None:
         self.messages.append(ProgressMessage(timestamp=_utc_now(), stage=stage, text=text))
+
+    def set_active_version(self, version: SingleVideoVersionEntry) -> None:
+        self.selected_version_id = version.version_id
+        self.video_path = version.video_path
+        self.log_path = version.log_path
+        self.client_log_path = version.client_log_path
+        self.video_id = version.video_id
+
+
+def _get_active_single_version(job: SingleVideoJobState) -> Optional[SingleVideoVersionEntry]:
+    if job.selected_version_id:
+        for version in job.versions:
+            if version.version_id == job.selected_version_id:
+                return version
+    if job.versions:
+        return job.versions[-1]
+    return None
 
 
 @dataclass
@@ -995,6 +1051,20 @@ class SingleVideoJobConfig:
     video_path: Path
     reference_image_path: Optional[Path]
     job_dir: Path
+
+
+class SingleVideoVersionModel(BaseModel):
+    version_id: str
+    label: str
+    source: str
+    prompt: str
+    prompt_path: str
+    video_path: str
+    video_url: Optional[str]
+    log_path: Optional[str]
+    client_log_path: Optional[str]
+    video_id: Optional[str]
+    created_at: datetime
 
 
 class SingleVideoJobResponse(BaseModel):
@@ -1013,6 +1083,9 @@ class SingleVideoJobResponse(BaseModel):
     log_path: Optional[str]
     log_url: Optional[str]
     client_log_path: Optional[str]
+    video_id: Optional[str]
+    selected_version_id: Optional[str]
+    versions: list[SingleVideoVersionModel] = Field(default_factory=list)
     messages: list[JobMessageModel]
 
 
@@ -1066,12 +1139,15 @@ class SingleVideoJobStore:
         video_path: Optional[str],
         log_path: Optional[str],
         client_log_path: Optional[str],
+        video_id: Optional[str] = None,
     ) -> None:
         async with self._lock:
             job = self._require(job_id)
             job.video_path = video_path
             job.log_path = log_path
             job.client_log_path = client_log_path
+            if video_id is not None:
+                job.video_id = video_id
 
     async def mark_completed(self, job_id: str) -> None:
         async with self._lock:
@@ -1088,6 +1164,28 @@ class SingleVideoJobStore:
             job.error = error
             job.completed_at = _utc_now()
             job.add_message("failed", error)
+
+    async def record_version(
+        self,
+        job_id: str,
+        version: SingleVideoVersionEntry,
+        make_active: bool = True,
+        message: Optional[str] = None,
+        stage: str = "running",
+    ) -> None:
+        async with self._lock:
+            job = self._require(job_id)
+            job.versions.append(version)
+            if make_active:
+                job.set_active_version(version)
+            job.prompt = version.prompt
+            if message:
+                job.add_message(stage, message)
+
+    async def get_job_state(self, job_id: str) -> SingleVideoJobState:
+        async with self._lock:
+            job = self._require(job_id)
+            return copy.deepcopy(job)
 
     async def snapshot(self, job_id: str) -> SingleVideoJobResponse:
         async with self._lock:
@@ -1112,10 +1210,31 @@ class SingleVideoJobStore:
                 raise ValueError("Cannot delete a single-video job while it is running.")
             return self._jobs.pop(job_id)
 
+    async def add_message(self, job_id: str, stage: str, text: str) -> None:
+        async with self._lock:
+            job = self._require(job_id)
+            job.add_message(stage, text)
+
     def _snapshot(self, job: SingleVideoJobState) -> SingleVideoJobResponse:
         messages = [
             JobMessageModel(timestamp=item.timestamp, stage=item.stage, text=item.text)
             for item in job.messages
+        ]
+        versions = [
+            SingleVideoVersionModel(
+                version_id=version.version_id,
+                label=version.label,
+                source=version.source,
+                prompt=version.prompt,
+                prompt_path=version.prompt_path,
+                video_path=version.video_path,
+                video_url=_static_asset_url(version.video_path),
+                log_path=version.log_path,
+                client_log_path=version.client_log_path,
+                video_id=version.video_id,
+                created_at=version.created_at,
+            )
+            for version in job.versions
         ]
         return SingleVideoJobResponse(
             job_id=job.job_id,
@@ -1133,6 +1252,9 @@ class SingleVideoJobStore:
             log_path=job.log_path,
             log_url=_static_asset_url(job.log_path),
             client_log_path=job.client_log_path,
+             video_id=job.video_id,
+             selected_version_id=job.selected_version_id,
+             versions=versions,
             messages=messages,
         )
 
@@ -1176,6 +1298,11 @@ class StartWorkflowPayload(BaseModel):
         alias="generationMode",
         description="Choose between parallel (default) or sequence rendering with chained references.",
     )
+    refine_with_gpt5: bool = Field(
+        default=False,
+        alias="refineWithGpt5",
+        description="When true, runs the submitted script through GPT-5 before planning scenes.",
+    )
 
 
 class SingleVideoPayload(BaseModel):
@@ -1199,11 +1326,22 @@ class SingleVideoPayload(BaseModel):
         alias="referenceImage",
         description="Optional input reference image encoded as a base64 data URL.",
     )
+    refine_with_gpt5: bool = Field(
+        default=False,
+        alias="refineWithGpt5",
+        description="When true, uses GPT-5 to refine the prompt before submitting to Sora2.",
+    )
 
 
 class SceneRemixPayload(BaseModel):
     prompt: str = Field(
         ..., description="New descriptive prompt to remix the previously generated scene."
+    )
+
+
+class SingleVideoRemixPayload(BaseModel):
+    prompt: str = Field(
+        ..., description="New descriptive prompt for remixing the previous single-video output."
     )
 
 
@@ -1391,16 +1529,141 @@ async def _run_single_video_job(config: SingleVideoJobConfig) -> None:
             )
 
         sora_log_path = config.video_path.with_suffix(".json")
+        video_id: Optional[str] = None
+        if sora_log_path.is_file():
+            try:
+                metadata = json.loads(sora_log_path.read_text(encoding="utf-8"))
+                video_id = metadata.get("video_id") or metadata.get("job_id")
+            except json.JSONDecodeError:
+                video_id = None
         await SINGLE_VIDEO_STORE.set_artifacts(
             job_id,
             str(config.video_path),
             str(sora_log_path) if sora_log_path.is_file() else None,
             str(client_log_path),
+            video_id=video_id,
+        )
+        version = SingleVideoVersionEntry(
+            version_id=uuid.uuid4().hex,
+            label="Original",
+            prompt=config.prompt_text,
+            prompt_path=str(config.prompt_path),
+            video_path=str(config.video_path),
+            log_path=str(sora_log_path) if sora_log_path.is_file() else None,
+            client_log_path=str(client_log_path),
+            video_id=video_id,
+        )
+        await SINGLE_VIDEO_STORE.record_version(
+            job_id,
+            version,
+            make_active=True,
+            message="Initial render saved.",
+            stage="completed",
         )
         await SINGLE_VIDEO_STORE.mark_completed(job_id)
+    except asyncio.CancelledError:  # pragma: no cover - propagation only
+        raise
     except Exception as exc:  # pragma: no cover - defensive logging
         logger.exception("Single video job %s failed: %s", job_id, exc)
         await SINGLE_VIDEO_STORE.mark_failed(job_id, str(exc))
+
+
+async def _run_single_video_remix(job_id: str, prompt: str) -> None:
+    prompt_text = prompt.strip()
+    if not prompt_text:
+        await SINGLE_VIDEO_STORE.add_message(job_id, "failed", "Remix prompt cannot be empty.")
+        return
+    try:
+        job_state = await SINGLE_VIDEO_STORE.get_job_state(job_id)
+    except KeyError as exc:  # pragma: no cover - defensive logging
+        logger.warning("Remix requested for unknown single job %s: %s", job_id, exc)
+        return
+
+    base_version = _get_active_single_version(job_state)
+    if not base_version or not base_version.video_id:
+        await SINGLE_VIDEO_STORE.add_message(
+            job_id,
+            "failed",
+            "This job is missing Azure video metadata; render a clip before requesting a remix.",
+        )
+        return
+
+    try:
+        await SINGLE_VIDEO_STORE.mark_running(job_id)
+        await SINGLE_VIDEO_STORE.update_progress(job_id, 0.1, "Submitting remix to Azure Sora2.")
+        client = _video_client()
+        remix_job = await client.videos.remix(video_id=base_version.video_id, prompt=prompt_text)
+        remix_job_id = getattr(remix_job, "id", None)
+        if not remix_job_id:
+            raise RuntimeError("Azure remix API did not return a job id.")
+
+        status = getattr(remix_job, "status", None)
+        while status not in {"completed", "failed", "canceled"}:
+            await asyncio.sleep(4)
+            poll = await client.videos.retrieve(remix_job_id)
+            status = getattr(poll, "status", None)
+        if status != "completed":
+            raise RuntimeError(f"Remix job ended with status {status}.")
+
+        job_dir = SINGLE_VIDEO_JOBS_DIR / job_id
+        job_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+        video_path = job_dir / f"sora_single_remix_{timestamp}.mp4"
+        prompt_path = job_dir / f"sora_single_remix_{timestamp}.txt"
+        log_path = video_path.with_suffix(".json")
+        client_log_path = video_path.with_suffix(".remix.log")
+        prompt_path.write_text(prompt_text + "\n", encoding="utf-8")
+
+        download_variant = job_state.download_variant or os.getenv("VIDEO_DOWNLOAD_VARIANT", "video")
+        content = await client.videos.download_content(remix_job_id, variant=download_variant)
+        content.write_to_file(str(video_path))
+        await SINGLE_VIDEO_STORE.update_progress(job_id, 0.75, "Remix downloaded, finalizing artifacts.")
+
+        log_data = {
+            "timestamp": datetime.utcnow().isoformat(timespec="seconds"),
+            "prompt": prompt_text,
+            "video_id": remix_job_id,
+            "base_video_id": base_version.video_id,
+            "output_file": str(video_path),
+            "source": "remix",
+        }
+        log_path.write_text(json.dumps(log_data, indent=2), encoding="utf-8")
+        client_log_path.write_text(
+            f"Remix job {remix_job_id} completed for single-video job {job_id}.\nBase video: {base_version.video_id}\n",
+            encoding="utf-8",
+        )
+
+        await SINGLE_VIDEO_STORE.set_artifacts(
+            job_id,
+            str(video_path),
+            str(log_path),
+            str(client_log_path),
+            video_id=remix_job_id,
+        )
+        version = SingleVideoVersionEntry(
+            version_id=uuid.uuid4().hex,
+            label=f"Remix {len(job_state.versions) + 1}",
+            prompt=prompt_text,
+            prompt_path=str(prompt_path),
+            video_path=str(video_path),
+            log_path=str(log_path),
+            client_log_path=str(client_log_path),
+            video_id=remix_job_id,
+            source="remix",
+        )
+        await SINGLE_VIDEO_STORE.record_version(
+            job_id,
+            version,
+            make_active=True,
+            message="Remix completed.",
+            stage="completed",
+        )
+        await SINGLE_VIDEO_STORE.mark_completed(job_id)
+    except asyncio.CancelledError:  # pragma: no cover - propagation only
+        raise
+    except Exception as exc:  # pragma: no cover - defensive logging
+        logger.exception("Remix job for single video %s failed: %s", job_id, exc)
+        await SINGLE_VIDEO_STORE.mark_failed(job_id, f"Remix failed: {exc}")
 
 
 def _allowed_origins() -> list[str]:
@@ -1439,6 +1702,21 @@ async def start_workflow(payload: StartWorkflowPayload) -> JobStatusResponse:
 
     job_id = uuid.uuid4().hex
     await JOB_STORE.create_job(job_id)
+
+    if payload.refine_with_gpt5:
+        try:
+            refined_script = await refine_text_with_gpt5(script, mode="workflow")
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.warning("GPT-5 refinement failed for workflow %s: %s", job_id, exc)
+            refined_script = script
+        if refined_script.strip():
+            payload.script = refined_script
+            await JOB_STORE.add_message(
+                job_id, "planning", "Storyboard refined with GPT-5 before scene planning."
+            )
+        else:
+            payload.script = script
+
     try:
         request = _prepare_request_for_job(job_id, payload)
         await JOB_STORE.set_resolution(job_id, request.resolution)
@@ -1481,6 +1759,17 @@ async def delete_workflow(job_id: str) -> dict[str, str]:
 @fastapi_app.post("/api/single-videos", response_model=SingleVideoJobResponse)
 async def start_single_video(payload: SingleVideoPayload) -> SingleVideoJobResponse:
     job_id = uuid.uuid4().hex
+    prompt_text = payload.prompt or ""
+    if payload.refine_with_gpt5:
+        try:
+            prompt_text = await refine_text_with_gpt5(prompt_text, mode="single")
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.warning("GPT-5 prompt refinement failed for single job %s: %s", job_id, exc)
+        if prompt_text.strip():
+            payload.prompt = prompt_text
+        else:
+            prompt_text = payload.prompt or ""
+
     try:
         config = _prepare_single_video_job(job_id, payload)
     except ValueError as exc:
@@ -1494,6 +1783,11 @@ async def start_single_video(payload: SingleVideoPayload) -> SingleVideoJobRespo
         config.duration,
         config.download_variant,
     )
+    if payload.refine_with_gpt5:
+        await SINGLE_VIDEO_STORE.add_message(
+            job_id, "queued", "Prompt refined with GPT-5 before submission."
+        )
+
     asyncio.create_task(_run_single_video_job(config))
     return await SINGLE_VIDEO_STORE.snapshot(job_id)
 
@@ -1521,6 +1815,30 @@ async def delete_single_video(job_id: str) -> dict[str, str]:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     shutil.rmtree(SINGLE_VIDEO_JOBS_DIR / job_id, ignore_errors=True)
     return {"status": "deleted"}
+
+
+@fastapi_app.post(
+    "/api/single-videos/{job_id}/remix",
+    response_model=SingleVideoJobResponse,
+)
+async def remix_single_video(job_id: str, payload: SingleVideoRemixPayload) -> SingleVideoJobResponse:
+    prompt = (payload.prompt or "").strip()
+    if not prompt:
+        raise HTTPException(status_code=400, detail="Remix prompt is required.")
+    try:
+        status = await SINGLE_VIDEO_STORE.snapshot(job_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Unknown job: {job_id}") from exc
+
+    if not status.video_id:
+        raise HTTPException(
+            status_code=400,
+            detail="This job is missing Azure video metadata. Generate a clip before remixing.",
+        )
+
+    await SINGLE_VIDEO_STORE.add_message(job_id, "running", "Remix request submitted.")
+    asyncio.create_task(_run_single_video_remix(job_id, prompt))
+    return await SINGLE_VIDEO_STORE.snapshot(job_id)
 
 
 @fastapi_app.post(
@@ -1844,6 +2162,7 @@ class SceneRender:
     version_label: str = "Original"
     video_id: Optional[str] = None
     version_source: str = "original"
+    last_frame_path: Optional[str] = None
 
 
 @dataclass
@@ -1992,6 +2311,69 @@ async def refine_scene_description(title: str, description: str) -> str:
         cleaned.append(stripped or line)
 
     return "\n".join(cleaned)
+
+
+async def refine_text_with_gpt5(content: str, mode: Literal["workflow", "single"]) -> str:
+    normalized = content.strip()
+    if not normalized:
+        return content
+
+    deployment = GPT5_REFINEMENT_DEPLOYMENT
+    if not deployment:
+        return content
+
+    client = _azure_text_client()
+    if client is None:
+        return content
+
+    if mode == "workflow":
+        system_prompt = (
+            "You are GPT-5 helping polish multi-scene storyboards for Azure OpenAI Sora2. "
+            "Keep every scene heading in the exact format **Scene X (Title)** while rewriting the narrative "
+            "under each heading into vivid, production-ready copy. Preserve the number and order of scenes."
+        )
+        user_tone = (
+            "Rewrite the storyboard below. Keep headings identical, but upgrade the scene descriptions into 2-4 polished sentences "
+            "with strong cinematic cues (camera moves, subject, motion, lighting). Separate each scene block with a blank line."
+        )
+    else:
+        system_prompt = (
+            "You are GPT-5 optimizing single-scene prompts for Azure OpenAI Sora2 video generation."
+        )
+        user_tone = (
+            "Refine the following prompt into one paragraph that clearly describes subject, motion, camera, and mood."
+        )
+
+    user_prompt = f"{user_tone}\n\n---\n{normalized}\n---"
+
+    max_tokens = 1400 if mode == "workflow" else 600
+
+    def _call() -> str:
+        response = client.responses.create(
+            model=deployment,
+            input=[
+                {
+                    "role": "system",
+                    "content": [{"type": "text", "text": system_prompt}],
+                },
+                {
+                    "role": "user",
+                    "content": [{"type": "text", "text": user_prompt}],
+                },
+            ],
+            max_output_tokens=max_tokens,
+            temperature=0.35,
+        )
+        return _extract_response_text(response)
+
+    try:
+        refined = await asyncio.to_thread(_call)
+    except Exception as exc:  # pragma: no cover - defensive fallback
+        logger.warning("GPT-5 refinement failed (%s mode): %s", mode, exc)
+        return content
+
+    cleaned = refined.strip()
+    return cleaned or content
 
 
 def escape_for_concat(path: Path) -> str:
@@ -2359,6 +2741,7 @@ class Sora2Agent(Executor):
             frame_path = frame_dir / f"scene_{plan.order:02d}_tail.png"
             try:
                 captured = await extract_last_frame(Path(render.video_path), frame_path)
+                render.last_frame_path = str(captured)
                 next_reference = str(captured)
             except Exception as exc:  # pragma: no cover - diagnostic logging only
                 logger.warning("Failed to capture last frame for %s: %s", render.label, exc)
