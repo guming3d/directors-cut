@@ -2,11 +2,13 @@ import argparse
 import asyncio
 import json
 import os
+import tempfile
 from datetime import datetime
 from typing import Optional
 
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
+from PIL import Image
 
 # Load environment variables from .env file with override=True
 load_dotenv(override=True)
@@ -76,7 +78,36 @@ def load_prompt(prompt_file=None) -> str:
     # 3) Fallback to env string default
     return VIDEO_PROMPT
 
- 
+
+def resize_image_if_needed(image_path: str, target_size_str: str) -> str:
+    """Resize image to match target resolution if needed, returning path to temp file or original."""
+    try:
+        w_str, h_str = target_size_str.lower().split("x")
+        target_w, target_h = int(w_str), int(h_str)
+    except ValueError:
+        return image_path
+
+    try:
+        with Image.open(image_path) as img:
+            if img.size == (target_w, target_h):
+                return image_path
+
+            print(f"Resizing input image from {img.size} to {target_w}x{target_h}...")
+            img_resized = img.resize((target_w, target_h), Image.Resampling.LANCZOS)
+
+            ext = os.path.splitext(image_path)[1]
+            if not ext:
+                ext = ".png"
+            
+            fd, tmp_path = tempfile.mkstemp(suffix=ext)
+            os.close(fd)
+            
+            img_resized.save(tmp_path)
+            return tmp_path
+    except Exception as e:
+        print(f"Warning: Failed to resize image: {e}")
+        return image_path
+
 
 async def main() -> None:
     """Submit a Sora job and wait for completion."""
@@ -129,6 +160,10 @@ async def main() -> None:
         raise ValueError(
             f"Invalid duration '{video_seconds}' from environment. Choose from: {', '.join(allowed_durations)}."
         )
+
+    # Resize reference image if it doesn't match the target resolution
+    if reference_path and os.path.isfile(reference_path):
+        reference_path = resize_image_if_needed(reference_path, video_size)
 
     client = AsyncOpenAI(
         api_key=api_key,
