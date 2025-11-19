@@ -93,7 +93,22 @@ def resize_image_if_needed(image_path: str, target_size_str: str) -> str:
                 return image_path
 
             print(f"Resizing input image from {img.size} to {target_w}x{target_h}...")
-            img_resized = img.resize((target_w, target_h), Image.Resampling.LANCZOS)
+
+            # Calculate new dimensions to fill the target resolution (Aspect Fill)
+            src_w, src_h = img.size
+            ratio = max(target_w / src_w, target_h / src_h)
+            new_w = int(src_w * ratio)
+            new_h = int(src_h * ratio)
+
+            img_resized = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+
+            # Center crop to target resolution
+            left = (new_w - target_w) // 2
+            top = (new_h - target_h) // 2
+            right = left + target_w
+            bottom = top + target_h
+
+            img_resized = img_resized.crop((left, top, right, bottom))
 
             ext = os.path.splitext(image_path)[1]
             if not ext:

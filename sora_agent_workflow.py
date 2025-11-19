@@ -42,6 +42,7 @@ SORA_CLIENT = ROOT / "sora-openai-client.py"
 TMP_DIR = OUTPUT_DIR / "tmp"
 SINGLE_VIDEO_JOBS_DIR = OUTPUT_DIR / "single_videos"
 WORKFLOW_DB_PATH = OUTPUT_DIR / "db" / "workflow_jobs.json"
+SINGLE_VIDEO_DB_PATH = OUTPUT_DIR / "db" / "single_video_jobs.json"
 DEFAULT_SORA_RESOLUTION = "720x1280"
 SCENE_IMAGE_DIR = ROOT / "scene_start_screen"
 SCENE_IMAGE_PATTERN = re.compile(r"scene0*(\d+)\.(?:png|jpe?g)$", re.IGNORECASE)
@@ -1089,10 +1090,127 @@ class SingleVideoJobResponse(BaseModel):
     messages: list[JobMessageModel]
 
 
+def _single_video_version_to_record(version: SingleVideoVersionEntry) -> dict[str, Any]:
+    return {
+        "version_id": version.version_id,
+        "label": version.label,
+        "prompt": version.prompt,
+        "prompt_path": version.prompt_path,
+        "video_path": version.video_path,
+        "log_path": version.log_path,
+        "client_log_path": version.client_log_path,
+        "video_id": version.video_id,
+        "source": version.source,
+        "created_at": _serialize_datetime(version.created_at),
+    }
+
+
+def _single_video_version_from_record(payload: dict[str, Any]) -> SingleVideoVersionEntry:
+    return SingleVideoVersionEntry(
+        version_id=payload.get("version_id", str(uuid.uuid4())),
+        label=payload.get("label", ""),
+        prompt=payload.get("prompt", ""),
+        prompt_path=payload.get("prompt_path", ""),
+        video_path=payload.get("video_path", ""),
+        log_path=payload.get("log_path"),
+        client_log_path=payload.get("client_log_path"),
+        video_id=payload.get("video_id"),
+        source=payload.get("source", "original"),
+        created_at=_deserialize_datetime(payload.get("created_at")) or _utc_now(),
+    )
+
+
+def _single_video_state_to_record(job: SingleVideoJobState) -> dict[str, Any]:
+    return {
+        "job_id": job.job_id,
+        "prompt": job.prompt,
+        "resolution": job.resolution,
+        "duration": job.duration,
+        "download_variant": job.download_variant,
+        "status": job.status,
+        "progress": job.progress,
+        "started_at": _serialize_datetime(job.started_at),
+        "completed_at": _serialize_datetime(job.completed_at),
+        "error": job.error,
+        "video_path": job.video_path,
+        "log_path": job.log_path,
+        "client_log_path": job.client_log_path,
+        "video_id": job.video_id,
+        "messages": [_serialize_progress_message(msg) for msg in job.messages],
+        "versions": [_single_video_version_to_record(v) for v in job.versions],
+        "selected_version_id": job.selected_version_id,
+    }
+
+
+def _single_video_state_from_record(payload: dict[str, Any]) -> SingleVideoJobState:
+    return SingleVideoJobState(
+        job_id=payload.get("job_id", str(uuid.uuid4())),
+        prompt=payload.get("prompt", ""),
+        resolution=payload.get("resolution", DEFAULT_SORA_RESOLUTION),
+        duration=int(payload.get("duration", 8)),
+        download_variant=payload.get("download_variant", "video"),
+        status=payload.get("status", "queued"),
+        progress=float(payload.get("progress", 0.0)),
+        started_at=_deserialize_datetime(payload.get("started_at")) or _utc_now(),
+        completed_at=_deserialize_datetime(payload.get("completed_at")),
+        error=payload.get("error"),
+        video_path=payload.get("video_path"),
+        log_path=payload.get("log_path"),
+        client_log_path=payload.get("client_log_path"),
+        video_id=payload.get("video_id"),
+        messages=[_deserialize_progress_message(msg) for msg in payload.get("messages", [])],
+        versions=[_single_video_version_from_record(v) for v in payload.get("versions", [])],
+        selected_version_id=payload.get("selected_version_id"),
+    )
+
+
+class SingleVideoJobDatabase:
+    """TinyDB-backed persistence for single video jobs."""
+
+    def __init__(self, path: Path) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self._db = TinyDB(path, indent=2, ensure_ascii=False)
+        self._table = self._db.table("single_video_jobs")
+
+    def load_jobs(self) -> list[SingleVideoJobState]:
+        try:
+            records = self._table.all()
+        except Exception:
+            logger.exception("Failed to read single video job database.")
+            return []
+        jobs: list[SingleVideoJobState] = []
+        for record in records:
+            try:
+                jobs.append(_single_video_state_from_record(record))
+            except Exception:
+                logger.exception("Unable to parse single video job record: %s", record.get("job_id"))
+        return jobs
+
+    def upsert(self, job: SingleVideoJobState) -> None:
+        try:
+            self._table.upsert(_single_video_state_to_record(job), Query().job_id == job.job_id)
+        except Exception:
+            logger.exception("Failed to persist single video job: %s", job.job_id)
+
+    def delete(self, job_id: str) -> None:
+        try:
+            self._table.remove(Query().job_id == job_id)
+        except Exception:
+            logger.exception("Failed to delete single video job: %s", job_id)
+
+
 class SingleVideoJobStore:
-    def __init__(self) -> None:
+    def __init__(self, persistence: Optional[SingleVideoJobDatabase] = None) -> None:
         self._jobs: dict[str, SingleVideoJobState] = {}
         self._lock = asyncio.Lock()
+        self._persistence = persistence
+        if self._persistence:
+            for job in self._persistence.load_jobs():
+                self._jobs[job.job_id] = job
+
+    def _persist(self, job: SingleVideoJobState) -> None:
+        if self._persistence:
+            self._persistence.upsert(job)
 
     def _require(self, job_id: str) -> SingleVideoJobState:
         job = self._jobs.get(job_id)
@@ -1118,6 +1236,7 @@ class SingleVideoJobStore:
             )
             state.add_message("queued", "Job queued.")
             self._jobs[job_id] = state
+            self._persist(state)
 
     async def mark_running(self, job_id: str) -> None:
         async with self._lock:
@@ -1125,6 +1244,7 @@ class SingleVideoJobStore:
             job.status = "running"
             job.progress = max(job.progress, 0.05)
             job.add_message("running", "Submitting video generation request to Sora2.")
+            self._persist(job)
 
     async def update_progress(self, job_id: str, progress: float, message: str | None = None) -> None:
         async with self._lock:
@@ -1132,6 +1252,7 @@ class SingleVideoJobStore:
             job.progress = max(job.progress, min(max(progress, 0.0), 1.0))
             if message:
                 job.add_message("running", message)
+            self._persist(job)
 
     async def set_artifacts(
         self,
@@ -1148,6 +1269,7 @@ class SingleVideoJobStore:
             job.client_log_path = client_log_path
             if video_id is not None:
                 job.video_id = video_id
+            self._persist(job)
 
     async def mark_completed(self, job_id: str) -> None:
         async with self._lock:
@@ -1156,6 +1278,7 @@ class SingleVideoJobStore:
             job.progress = 1.0
             job.completed_at = _utc_now()
             job.add_message("completed", "Video generation finished.")
+            self._persist(job)
 
     async def mark_failed(self, job_id: str, error: str) -> None:
         async with self._lock:
@@ -1164,6 +1287,7 @@ class SingleVideoJobStore:
             job.error = error
             job.completed_at = _utc_now()
             job.add_message("failed", error)
+            self._persist(job)
 
     async def record_version(
         self,
@@ -1181,6 +1305,7 @@ class SingleVideoJobStore:
             job.prompt = version.prompt
             if message:
                 job.add_message(stage, message)
+            self._persist(job)
 
     async def get_job_state(self, job_id: str) -> SingleVideoJobState:
         async with self._lock:
@@ -1208,12 +1333,16 @@ class SingleVideoJobStore:
             job = self._require(job_id)
             if job.status == "running":
                 raise ValueError("Cannot delete a single-video job while it is running.")
-            return self._jobs.pop(job_id)
+            removed = self._jobs.pop(job_id)
+            if self._persistence:
+                self._persistence.delete(job_id)
+            return removed
 
     async def add_message(self, job_id: str, stage: str, text: str) -> None:
         async with self._lock:
             job = self._require(job_id)
             job.add_message(stage, text)
+            self._persist(job)
 
     def _snapshot(self, job: SingleVideoJobState) -> SingleVideoJobResponse:
         messages = [
@@ -1259,7 +1388,16 @@ class SingleVideoJobStore:
         )
 
 
-SINGLE_VIDEO_STORE = SingleVideoJobStore()
+def _build_single_video_job_store() -> SingleVideoJobStore:
+    try:
+        persistence = SingleVideoJobDatabase(SINGLE_VIDEO_DB_PATH)
+    except Exception:
+        logger.exception("Persistent single video database unavailable, using in-memory store.")
+        return SingleVideoJobStore()
+    return SingleVideoJobStore(persistence=persistence)
+
+
+SINGLE_VIDEO_STORE = _build_single_video_job_store()
 
 
 class StartWorkflowPayload(BaseModel):
@@ -2395,18 +2533,19 @@ def _resize_scene_image(
         if src_w == 0 or src_h == 0:
             raise ValueError(f"Invalid source image dimensions for {source}")
 
-        scale = min(target_w / src_w, target_h / src_h)
+        scale = max(target_w / src_w, target_h / src_h)
         resized_w = max(1, int(round(src_w * scale)))
         resized_h = max(1, int(round(src_h * scale)))
         resized = converted.resize((resized_w, resized_h), SCENE_IMAGE_RESAMPLE)
 
-        background_color = (0, 0, 0, 255) if mode == "RGBA" else (0, 0, 0)
-        canvas = Image.new(mode, (target_w, target_h), background_color)
-        offset_x = (target_w - resized_w) // 2
-        offset_y = (target_h - resized_h) // 2
-        mask = resized if mode == "RGBA" else None
-        canvas.paste(resized, (offset_x, offset_y), mask)
-        canvas.save(dest, format="PNG")
+        # Center crop
+        left = (resized_w - target_w) // 2
+        top = (resized_h - target_h) // 2
+        right = left + target_w
+        bottom = top + target_h
+
+        cropped = resized.crop((left, top, right, bottom))
+        cropped.save(dest, format="PNG")
 
 
 def _find_scene_image(scene_dir: Path, index: int) -> Optional[Path]:
