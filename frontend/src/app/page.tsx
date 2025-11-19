@@ -145,8 +145,8 @@ type TabId = "combined" | "single";
 type Language = "en" | "zh";
 
 const TABS: { id: TabId; label: string }[] = [
-  { id: "combined", label: "Storyboard Workflow" },
-  { id: "single", label: "Single Sora2 Video" },
+  { id: "combined", label: "Storyboard workspace" },
+  { id: "single", label: "Single clip console" },
 ];
 const LANGUAGE_OPTIONS: Language[] = ["en", "zh"];
 
@@ -722,14 +722,7 @@ export default function Home() {
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
   };
-  const focusStoryboardWorkspace = () => {
-    setActiveTab("combined");
-    scrollToWorkspaceTop();
-  };
-  const focusSingleClipWorkspace = () => {
-    setActiveTab("single");
-    scrollToWorkspaceTop();
-  };
+
   const refreshAllJobs = () => {
     void loadCombinedJobs();
     void loadSingleJobs();
@@ -1183,38 +1176,7 @@ export default function Home() {
               </div>
             </div>
             
-            <div className="flex flex-col gap-2 text-sm">
-              <button
-                type="button"
-                onClick={focusStoryboardWorkspace}
-                className={`group flex items-center justify-between rounded border px-4 py-3 font-medium transition ${
-                  activeTab === "combined"
-                    ? "border-slate-400 dark:border-slate-600 bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-sm"
-                    : "border-transparent bg-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-100/50 dark:bg-slate-100 dark:bg-slate-800/50 hover:text-slate-700 dark:text-slate-200"
-                }`}
-              >
-                <span className="flex items-center gap-2">
-                  <DocumentTextIcon className={`h-4 w-4 transition ${activeTab === "combined" ? "text-slate-900 dark:text-slate-100" : "text-slate-500 group-hover:text-slate-500 dark:text-slate-400"}`} />
-                  {translate("Storyboard workspace")}
-                </span>
-                {activeTab === "combined" && <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" />}
-              </button>
-              <button
-                type="button"
-                onClick={focusSingleClipWorkspace}
-                className={`group flex items-center justify-between rounded border px-4 py-3 font-medium transition ${
-                  activeTab === "single"
-                    ? "border-slate-400 dark:border-slate-600 bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-sm"
-                    : "border-transparent bg-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-100/50 dark:bg-slate-100 dark:bg-slate-800/50 hover:text-slate-700 dark:text-slate-200"
-                }`}
-              >
-                <span className="flex items-center gap-2">
-                  <PlayCircleIcon className={`h-4 w-4 transition ${activeTab === "single" ? "text-slate-900 dark:text-slate-100" : "text-slate-500 group-hover:text-slate-500 dark:text-slate-400"}`} />
-                  {translate("Single clip console")}
-                </span>
-                {activeTab === "single" && <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" />}
-              </button>
-            </div>
+
 
             <div className="rounded border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/50 p-4">
               <p className="text-xs uppercase text-slate-500">{translate("Workflow health")}</p>
@@ -1253,9 +1215,28 @@ export default function Home() {
 
         <main className="flex-1 space-y-10">
           <header className="flex items-center justify-between rounded-md border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/50 px-6 py-4 backdrop-blur-xl">
-            <h1 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
-              {activeTab === "combined" ? translate("Storyboard Workflow") : translate("Single Sora2 Video")}
-            </h1>
+            <div className="flex items-center gap-1 rounded-lg bg-slate-100 dark:bg-slate-800 p-1">
+              {TABS.map(({ id, label }) => {
+                const isActive = activeTab === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => {
+                      setActiveTab(id);
+                      scrollToWorkspaceTop();
+                    }}
+                    className={`rounded-md px-4 py-2 text-sm font-semibold transition ${
+                      isActive
+                        ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm"
+                        : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
+                    }`}
+                  >
+                    {translate(label)}
+                  </button>
+                );
+              })}
+            </div>
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-3"><ThemeToggle /><LanguageToggle /></div>
               <span className={`${pillButtonClass} whitespace-nowrap`}>
@@ -1272,25 +1253,7 @@ export default function Home() {
           </header>
 
           <div className="space-y-8">
-            <div className="flex flex-wrap gap-3 rounded border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/50 p-2 shadow-inner shadow-black/20 backdrop-blur xl:hidden">
-              {TABS.map(({ id, label }) => {
-                const isActive = activeTab === id;
-                return (
-                  <button
-                    key={id}
-                    type="button"
-                    onClick={() => setActiveTab(id)}
-                    className={`flex-1 rounded-md px-4 py-2 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400 ${
-                      isActive
-                        ? "bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-sm"
-                        : "bg-transparent text-slate-500 hover:bg-slate-100/50 dark:bg-slate-100 dark:bg-slate-800/50 hover:text-slate-600 dark:text-slate-300"
-                    }`}
-                  >
-                    {translate(label)}
-                  </button>
-                );
-              })}
-            </div>
+
 
             {activeTab === "combined" ? (
               <>
@@ -1909,6 +1872,100 @@ export default function Home() {
                   </div>
                 )}
 
+                <div className={`${panelCardClass}`}>
+                  <div className="flex items-center justify-between">
+                    <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
+                      <ArrowPathIcon className="h-5 w-5 text-slate-500 dark:text-slate-400" />
+                      {translate("Recent Single Jobs")}
+                    </h2>
+                    <button
+                      type="button"
+                      onClick={handleDeleteSingleJobs}
+                      disabled={!selectedSingleJobs.size}
+                      className="inline-flex items-center gap-1 rounded border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30 px-3 py-1.5 text-xs font-semibold text-rose-400 transition disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <TrashIcon className="h-4 w-4" />
+                      {translate("Delete Selected")}
+                    </button>
+                  </div>
+                  {singleJobs.length === 0 ? (
+                    <p className="mt-4 text-sm text-slate-500">{translate("Generate a clip to see it listed here.")}</p>
+                  ) : (
+                    <>
+                      <p className="mt-4 text-xs text-slate-500">{translate("Tap a row to view job details.")}</p>
+                      <div className="mt-3 overflow-x-auto">
+                        <table className="min-w-full divide-y divide-slate-800 text-sm">
+                          <thead className="bg-slate-100/50 dark:bg-slate-100 dark:bg-slate-800/50 text-[11px] uppercase tracking-wide text-slate-500">
+                            <tr>
+                              <th scope="col" className="px-3 py-2 text-left">
+                                <span className="sr-only">{translate("Select workflows")}</span>
+                              </th>
+                              <th scope="col" className="px-3 py-2 text-left">{translate("Job ID")}</th>
+                              <th scope="col" className="px-3 py-2 text-left">{translate("Status")}</th>
+                              <th scope="col" className="px-3 py-2 text-left">{translate("Resolution")}</th>
+                              <th scope="col" className="px-3 py-2 text-left">{translate("Duration")}</th>
+                              <th scope="col" className="px-3 py-2 text-left">{translate("Progress")}</th>
+                              <th scope="col" className="px-3 py-2 text-left">{translate("Started")}</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-800">
+                            {singleJobs.map((item) => {
+                              const token = getStatusToken(item.status, language);
+                              const isActive = item.job_id === activeSingleJobId;
+                              const isSelected = selectedSingleJobs.has(item.job_id);
+                              const progressPercent = Math.min(100, Math.max(0, Math.round((item.progress ?? 0) * 100)));
+                              return (
+                                <tr
+                                  key={item.job_id}
+                                  onClick={() => {
+                                    setActiveSingleJobId(item.job_id);
+                                    setSingleJob(item);
+                                  }}
+                                  className={`cursor-pointer transition ${isActive ? "bg-slate-100 dark:bg-slate-800" : "bg-transparent hover:bg-slate-100/50 dark:bg-slate-100 dark:bg-slate-800/50"}`}
+                                >
+                                  <td className="px-3 py-2">
+                                    <input
+                                      type="checkbox"
+                                      checked={isSelected}
+                                      onChange={() => toggleSingleSelection(item.job_id)}
+                                      onClick={(event) => event.stopPropagation()}
+                                      className="h-4 w-4 rounded border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700 text-indigo-500 focus:ring-indigo-500"
+                                    />
+                                  </td>
+                                  <td className="whitespace-nowrap px-3 py-2 font-mono text-xs text-slate-500 dark:text-slate-400">{item.job_id.slice(0, 12)}</td>
+                                  <td className="px-3 py-2">
+                                    <div className="flex flex-col gap-1">
+                                      <span className={`${pillButtonClass} ${token.className}`}>{token.label}</span>
+                                      <span className="text-[11px] text-slate-500">{stageLabel(item.status, language)}</span>
+                                    </div>
+                                  </td>
+                                  <td className="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">{item.resolution}</td>
+                                  <td className="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">
+                                    {item.duration}
+                                    {translate("s")}
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    <div className="flex items-center gap-2">
+                                      <div className="h-2 w-24 rounded-full bg-slate-100 dark:bg-slate-800">
+                                        <div
+                                          className="h-full rounded-full bg-slate-400 transition-all"
+                                          style={{ width: `${progressPercent}%` }}
+                                        />
+                                      </div>
+                                      <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{progressPercent}%</span>
+                                    </div>
+                                  </td>
+                                  <td className="whitespace-nowrap px-3 py-2 text-xs text-slate-500">{formatTimeDistance(item.started_at)}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
+                  )}
+                </div>
+
                 <div className="grid gap-8 xl:grid-cols-[1.05fr,0.95fr]">
                   <section className="space-y-8">
                     <div className={`${panelCardClass}`}>
@@ -2252,99 +2309,7 @@ export default function Home() {
                       </div>
                     ) : null}
 
-                    <div className={`${panelCardClass}`}>
-                      <div className="flex items-center justify-between">
-                        <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
-                          <ArrowPathIcon className="h-5 w-5 text-slate-500 dark:text-slate-400" />
-                          {translate("Recent Single Jobs")}
-                        </h2>
-                        <button
-                          type="button"
-                          onClick={handleDeleteSingleJobs}
-                          disabled={!selectedSingleJobs.size}
-                          className="inline-flex items-center gap-1 rounded border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30 px-3 py-1.5 text-xs font-semibold text-rose-400 transition disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          <TrashIcon className="h-4 w-4" />
-                          {translate("Delete Selected")}
-                        </button>
-                      </div>
-                      {singleJobs.length === 0 ? (
-                        <p className="mt-4 text-sm text-slate-500">{translate("Generate a clip to see it listed here.")}</p>
-                      ) : (
-                        <>
-                          <p className="mt-4 text-xs text-slate-500">{translate("Tap a row to view job details.")}</p>
-                          <div className="mt-3 overflow-x-auto">
-                            <table className="min-w-full divide-y divide-slate-800 text-sm">
-                              <thead className="bg-slate-100/50 dark:bg-slate-100 dark:bg-slate-800/50 text-[11px] uppercase tracking-wide text-slate-500">
-                                <tr>
-                                  <th scope="col" className="px-3 py-2 text-left">
-                                    <span className="sr-only">{translate("Select workflows")}</span>
-                                  </th>
-                                  <th scope="col" className="px-3 py-2 text-left">{translate("Job ID")}</th>
-                                  <th scope="col" className="px-3 py-2 text-left">{translate("Status")}</th>
-                                  <th scope="col" className="px-3 py-2 text-left">{translate("Resolution")}</th>
-                                  <th scope="col" className="px-3 py-2 text-left">{translate("Duration")}</th>
-                                  <th scope="col" className="px-3 py-2 text-left">{translate("Progress")}</th>
-                                  <th scope="col" className="px-3 py-2 text-left">{translate("Started")}</th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-slate-800">
-                                {singleJobs.map((item) => {
-                                  const token = getStatusToken(item.status, language);
-                                  const isActive = item.job_id === activeSingleJobId;
-                                  const isSelected = selectedSingleJobs.has(item.job_id);
-                                  const progressPercent = Math.min(100, Math.max(0, Math.round((item.progress ?? 0) * 100)));
-                                  return (
-                                    <tr
-                                      key={item.job_id}
-                                      onClick={() => {
-                                        setActiveSingleJobId(item.job_id);
-                                        setSingleJob(item);
-                                      }}
-                                      className={`cursor-pointer transition ${isActive ? "bg-slate-100 dark:bg-slate-800" : "bg-transparent hover:bg-slate-100/50 dark:bg-slate-100 dark:bg-slate-800/50"}`}
-                                    >
-                                      <td className="px-3 py-2">
-                                        <input
-                                          type="checkbox"
-                                          checked={isSelected}
-                                          onChange={() => toggleSingleSelection(item.job_id)}
-                                          onClick={(event) => event.stopPropagation()}
-                                          className="h-4 w-4 rounded border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700 text-indigo-500 focus:ring-indigo-500"
-                                        />
-                                      </td>
-                                      <td className="whitespace-nowrap px-3 py-2 font-mono text-xs text-slate-500 dark:text-slate-400">{item.job_id.slice(0, 12)}</td>
-                                      <td className="px-3 py-2">
-                                        <div className="flex flex-col gap-1">
-                                          <span className={`${pillButtonClass} ${token.className}`}>{token.label}</span>
-                                          <span className="text-[11px] text-slate-500">{stageLabel(item.status, language)}</span>
-                                        </div>
-                                      </td>
-                                      <td className="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">{item.resolution}</td>
-                                      <td className="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">
-                                        {item.duration}
-                                        {translate("s")}
-                                      </td>
-                                      <td className="px-3 py-2">
-                                        <div className="flex items-center gap-2">
-                                          <div className="h-2 w-24 rounded-full bg-slate-100 dark:bg-slate-800">
-                                            <div
-                                              className="h-full rounded-full bg-slate-400 transition-all"
-                                              style={{ width: `${progressPercent}%` }}
-                                            />
-                                          </div>
-                                          <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{progressPercent}%</span>
-                                        </div>
-                                      </td>
-                                      <td className="whitespace-nowrap px-3 py-2 text-xs text-slate-500">{formatTimeDistance(item.started_at)}</td>
-                                    </tr>
-                                  );
-                                })}
-                              </tbody>
-                            </table>
-                          </div>
-                        </>
-                      )}
-                    </div>
+
                   </aside>
                 </div>
               </>
