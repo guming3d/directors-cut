@@ -398,7 +398,7 @@ const getStatusToken = (status: string | undefined, language: Language) => {
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<TabId>("combined");
-    const [theme, setTheme] = useState<"light" | "dark">("dark");
+    const [theme, setTheme] = useState<"light" | "dark">("light");
 
   useEffect(() => {
     if (theme === "dark") {
@@ -461,7 +461,7 @@ export default function Home() {
 
   // Combined workflow state
   const [script, setScript] = useState("");
-  const [useSceneImages, setUseSceneImages] = useState(true);
+  const [useSceneImages, setUseSceneImages] = useState(false);
   const [generationMode, setGenerationMode] = useState<"parallel" | "sequence">("parallel");
   const [combinedResolution, setCombinedResolution] = useState<(typeof resolutionOptions)[number]>(resolutionOptions[0]);
   const [sceneImageFiles, setSceneImageFiles] = useState<File[]>([]);
@@ -1172,7 +1172,6 @@ export default function Home() {
               />
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-500">{translate("Sora2 Studio")}</p>
-                <h2 className="mt-1 text-xl font-semibold text-slate-900 dark:text-slate-100">{translate("Production Workspace")}</h2>
               </div>
             </div>
             
