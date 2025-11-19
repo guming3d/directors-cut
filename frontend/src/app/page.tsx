@@ -11,6 +11,8 @@ import {
   PaperAirplaneIcon,
   PlayCircleIcon,
   TrashIcon,
+  SunIcon,
+  MoonIcon,
 } from "@heroicons/react/24/outline";
 import Image from "next/image";
 
@@ -109,19 +111,19 @@ type SingleVideoJob = {
 const STATUS_TOKENS: Record<string, { label: string; className: string }> = {
   queued: {
     label: "Queued",
-    className: "border border-slate-300 bg-slate-100 text-slate-600",
+    className: "border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300",
   },
   running: {
     label: "In Progress",
-    className: "border border-slate-300 bg-white text-slate-600",
+    className: "border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300",
   },
   completed: {
     label: "Completed",
-    className: "border border-emerald-200 bg-emerald-50 text-emerald-700",
+    className: "border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-400",
   },
   failed: {
     label: "Failed",
-    className: "border border-rose-200 bg-rose-50 text-rose-700",
+    className: "border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30 text-rose-400",
   },
 };
 
@@ -381,7 +383,7 @@ const getStatusToken = (status: string | undefined, language: Language) => {
   if (!status) {
     return {
       label: translateValue(language, "Idle"),
-      className: "border border-slate-200 bg-white text-slate-600",
+      className: "border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-500",
     };
   }
   const token = STATUS_TOKENS[status];
@@ -390,12 +392,33 @@ const getStatusToken = (status: string | undefined, language: Language) => {
   }
   return {
     label: translateValue(language, status.charAt(0).toUpperCase() + status.slice(1)),
-    className: "border border-slate-200 bg-white text-slate-600",
+    className: "border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-500",
   };
 };
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<TabId>("combined");
+    const [theme, setTheme] = useState<"light" | "dark">("dark");
+
+  useEffect(() => {
+    if (theme === "dark") {
+      document.documentElement.classList.add("dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+    }
+  }, [theme]);
+
+  const ThemeToggle = () => (
+    <button
+      type="button"
+      onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+      className="rounded-full border border-slate-300 bg-white p-1.5 text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+      title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+    >
+      {theme === "dark" ? <SunIcon className="h-4 w-4" /> : <MoonIcon className="h-4 w-4" />}
+    </button>
+  );
+
   const [language, setLanguage] = useState<Language>("en");
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [username, setUsername] = useState("");
@@ -405,7 +428,7 @@ export default function Home() {
   const LanguageToggle = () => (
     <div className="flex items-center gap-2">
       <span className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-500">{translate("Language")}</span>
-      <div className="flex overflow-hidden rounded-full border border-slate-200">
+      <div className="flex overflow-hidden rounded-full border border-slate-300 dark:border-slate-700">
         {LANGUAGE_OPTIONS.map((locale) => {
           const isActive = language === locale;
           return (
@@ -413,7 +436,7 @@ export default function Home() {
               key={locale}
               type="button"
               onClick={() => setLanguage(locale)}
-              className={`px-3 py-1 text-xs font-semibold transition ${isActive ? "bg-slate-900 text-white" : "bg-white text-slate-600 hover:bg-slate-100"}`}
+              className={`px-3 py-1 text-xs font-semibold transition ${isActive ? "bg-slate-100 text-slate-900" : "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:bg-slate-700"}`}
             >
               {translate(locale === "en" ? "English" : "Chinese")}
             </button>
@@ -690,9 +713,9 @@ export default function Home() {
 
   const activeScenes = job?.scenes?.length ?? 0;
   const panelCardClass =
-    "rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_35px_120px_-85px_rgba(15,23,42,0.12)] backdrop-blur";
+    "rounded-md border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/50 p-6 shadow-2xl backdrop-blur-xl";
   const pillButtonClass =
-    "rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-600";
+    "rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100/50 dark:bg-slate-100 dark:bg-slate-800/50 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400";
   const displayApiBase = API_BASE.replace(/^https?:\/\//, "");
   const scrollToWorkspaceTop = () => {
     if (typeof window !== "undefined") {
@@ -1082,19 +1105,19 @@ export default function Home() {
 
   if (!isAuthenticated) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-10 text-slate-900">
-        <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-8 shadow-[0_35px_120px_-65px_rgba(15,23,42,0.35)]">
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-950 px-4 py-10 text-slate-900 dark:text-slate-100">
+        <div className="w-full max-w-md rounded-md border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 shadow-2xl">
           <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
             <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-500">{translate("Sora2 Studio")}</p>
-            <LanguageToggle />
+            <div className="flex items-center gap-3"><ThemeToggle /><LanguageToggle /></div>
           </div>
           <div className="space-y-2 text-center">
-            <h1 className="text-2xl font-semibold text-slate-900">{translate("Sign in to continue")}</h1>
-            <p className="text-sm text-slate-500">{translate("Use the provided username and password to access the dashboard.")}</p>
+            <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{translate("Sign in to continue")}</h1>
+            <p className="text-sm text-slate-500 dark:text-slate-400">{translate("Use the provided username and password to access the dashboard.")}</p>
           </div>
           <form className="mt-6 space-y-4" onSubmit={handleLogin}>
             <div>
-              <label htmlFor="username" className="text-sm font-medium text-slate-700">
+              <label htmlFor="username" className="text-sm font-medium text-slate-600 dark:text-slate-300">
                 {translate("Username")}
               </label>
               <input
@@ -1102,13 +1125,13 @@ export default function Home() {
                 type="text"
                 value={username}
                 onChange={(event) => setUsername(event.target.value)}
-                className="mt-1 w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none focus:ring-0"
+                className="mt-1 w-full rounded border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-slate-500 focus:outline-none focus:ring-0"
                 placeholder={translate("Enter username")}
                 autoComplete="username"
               />
             </div>
             <div>
-              <label htmlFor="password" className="text-sm font-medium text-slate-700">
+              <label htmlFor="password" className="text-sm font-medium text-slate-600 dark:text-slate-300">
                 {translate("Password")}
               </label>
               <input
@@ -1116,15 +1139,15 @@ export default function Home() {
                 type="password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
-                className="mt-1 w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none focus:ring-0"
+                className="mt-1 w-full rounded border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-slate-500 focus:outline-none focus:ring-0"
                 placeholder={translate("Enter password")}
                 autoComplete="current-password"
               />
             </div>
-            {authError ? <p className="text-sm text-rose-600">{translate(authError)}</p> : null}
+            {authError ? <p className="text-sm text-rose-500">{translate(authError)}</p> : null}
             <button
               type="submit"
-              className="w-full rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
+              className="w-full rounded bg-slate-900 px-4 py-2 text-sm font-semibold text-white dark:bg-slate-100 dark:text-slate-900 transition hover:bg-white"
             >
               {translate("Sign in")}
             </button>
@@ -1135,11 +1158,11 @@ export default function Home() {
   }
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-slate-50 text-slate-900">
+    <div className="relative min-h-screen overflow-hidden bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100">
       <div className="pointer-events-none absolute inset-0">
-        <div className="absolute inset-0 bg-gradient-to-b from-white via-transparent to-slate-100" />
-        <div className="absolute left-[-18%] top-[10%] h-[420px] w-[420px] rounded-full bg-gradient-to-br from-slate-200/60 via-white/40 to-transparent blur-3xl" />
-        <div className="absolute right-[-12%] top-[40%] h-[380px] w-[380px] rounded-full bg-gradient-to-tr from-slate-300/40 via-white/30 to-transparent blur-[140px]" />
+        <div className="absolute inset-0 bg-gradient-to-b from-white dark:from-slate-900 via-transparent to-slate-100 dark:to-slate-950" />
+        <div className="absolute left-[-18%] top-[10%] h-[420px] w-[420px] rounded-full bg-gradient-to-br from-indigo-500/10 via-purple-500/5 to-transparent blur-3xl" />
+        <div className="absolute right-[-12%] top-[40%] h-[380px] w-[380px] rounded-full bg-gradient-to-tr from-blue-500/10 via-cyan-500/5 to-transparent blur-[140px]" />
       </div>
 
       <div className="relative mx-auto flex min-h-screen w-full max-w-[1500px] flex-col gap-10 px-6 pb-20 pt-12 xl:flex-row xl:gap-12">
@@ -1151,131 +1174,105 @@ export default function Home() {
                 alt={translate("Sora Agent Workflow logo")}
                 width={56}
                 height={56}
-                className="h-14 w-14 rounded-2xl border border-slate-200 object-cover shadow-sm shadow-slate-300/50"
+                className="h-14 w-14 rounded border border-slate-300 dark:border-slate-700 object-cover shadow-sm shadow-black/50"
                 priority
               />
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-500">{translate("Sora2 Studio")}</p>
-                <h2 className="mt-1 text-xl font-semibold text-slate-900">{translate("Production Workspace")}</h2>
+                <h2 className="mt-1 text-xl font-semibold text-slate-900 dark:text-slate-100">{translate("Production Workspace")}</h2>
               </div>
             </div>
-            <p className="text-sm text-slate-500">{translate("Monitor orchestrator agents, track scene deliveries, and keep your queue aligned with Sora best practices.")}</p>
-            <div className="rounded-2xl border border-slate-200 bg-white p-4">
-              <p className="text-xs uppercase text-slate-500">{translate("Workflow health")}</p>
-              <dl className="mt-4 space-y-3 text-sm text-slate-600">
-                <div className="flex items-center justify-between">
-                  <dt>{translate("Active workflows")}</dt>
-                  <dd className="text-lg font-semibold text-slate-900">{combinedStats.running}</dd>
-                </div>
-                <div className="flex items-center justify-between">
-                  <dt>{translate("Completed runs")}</dt>
-                  <dd className="text-lg font-semibold text-slate-900">{combinedStats.completed}</dd>
-                </div>
-                <div className="flex items-center justify-between">
-                  <dt>{translate("Scenes this run")}</dt>
-                  <dd className="text-lg font-semibold text-slate-900">{activeScenes}</dd>
-                </div>
-                <div className="flex items-center justify-between">
-                  <dt>{translate("Single queue")}</dt>
-                  <dd className="text-lg font-semibold text-slate-900">{singleStats.running}</dd>
-                </div>
-              </dl>
-            </div>
-          </div>
-
-          <div className={`${panelCardClass} space-y-4`}>
-            <p className="text-xs uppercase text-slate-500">{translate("Quick actions")}</p>
+            
             <div className="flex flex-col gap-2 text-sm">
               <button
                 type="button"
                 onClick={focusStoryboardWorkspace}
-                className="group flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 font-medium text-slate-600 transition hover:border-slate-300 hover:bg-slate-100 hover:text-slate-900"
+                className={`group flex items-center justify-between rounded border px-4 py-3 font-medium transition ${
+                  activeTab === "combined"
+                    ? "border-slate-400 dark:border-slate-600 bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-sm"
+                    : "border-transparent bg-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-100/50 dark:bg-slate-100 dark:bg-slate-800/50 hover:text-slate-700 dark:text-slate-200"
+                }`}
               >
                 <span className="flex items-center gap-2">
-                  <DocumentTextIcon className="h-4 w-4 text-slate-600 transition group-hover:text-slate-500" />
+                  <DocumentTextIcon className={`h-4 w-4 transition ${activeTab === "combined" ? "text-slate-900 dark:text-slate-100" : "text-slate-500 group-hover:text-slate-500 dark:text-slate-400"}`} />
                   {translate("Storyboard workspace")}
                 </span>
-                <PaperAirplaneIcon className="h-5 w-5 text-slate-500 transition group-hover:translate-x-1 group-hover:text-slate-500" />
+                {activeTab === "combined" && <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" />}
               </button>
               <button
                 type="button"
                 onClick={focusSingleClipWorkspace}
-                className="group flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 font-medium text-slate-600 transition hover:border-slate-300 hover:bg-slate-100 hover:text-slate-900"
+                className={`group flex items-center justify-between rounded border px-4 py-3 font-medium transition ${
+                  activeTab === "single"
+                    ? "border-slate-400 dark:border-slate-600 bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-sm"
+                    : "border-transparent bg-transparent text-slate-500 dark:text-slate-400 hover:bg-slate-100/50 dark:bg-slate-100 dark:bg-slate-800/50 hover:text-slate-700 dark:text-slate-200"
+                }`}
               >
                 <span className="flex items-center gap-2">
-                  <PlayCircleIcon className="h-4 w-4 text-slate-600 transition group-hover:text-slate-500" />
+                  <PlayCircleIcon className={`h-4 w-4 transition ${activeTab === "single" ? "text-slate-900 dark:text-slate-100" : "text-slate-500 group-hover:text-slate-500 dark:text-slate-400"}`} />
                   {translate("Single clip console")}
                 </span>
-                <ArrowPathIcon className="h-5 w-5 text-slate-500 transition group-hover:animate-spin group-hover:text-slate-500" />
-              </button>
-              <button
-                type="button"
-                onClick={refreshAllJobs}
-                className="group flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 font-medium text-slate-600 transition hover:border-slate-300 hover:bg-slate-100 hover:text-slate-900"
-              >
-                <span className="flex items-center gap-2">
-                  <ArrowPathIcon className="h-4 w-4 text-emerald-300 transition group-hover:animate-spin group-hover:text-emerald-200" />
-                  {translate("Refresh telemetry")}
-                </span>
-                <CheckCircleIcon className="h-5 w-5 text-slate-500 transition group-hover:text-emerald-200" />
+                {activeTab === "single" && <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" />}
               </button>
             </div>
+
+            <div className="rounded border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/50 p-4">
+              <p className="text-xs uppercase text-slate-500">{translate("Workflow health")}</p>
+              <dl className="mt-4 space-y-3 text-sm text-slate-500 dark:text-slate-400">
+                <div className="flex items-center justify-between">
+                  <dt>{translate("Active workflows")}</dt>
+                  <dd className="text-lg font-semibold text-slate-900 dark:text-slate-100">{combinedStats.running}</dd>
+                </div>
+                <div className="flex items-center justify-between">
+                  <dt>{translate("Completed runs")}</dt>
+                  <dd className="text-lg font-semibold text-slate-900 dark:text-slate-100">{combinedStats.completed}</dd>
+                </div>
+                <div className="flex items-center justify-between">
+                  <dt>{translate("Scenes this run")}</dt>
+                  <dd className="text-lg font-semibold text-slate-900 dark:text-slate-100">{activeScenes}</dd>
+                </div>
+                <div className="flex items-center justify-between">
+                  <dt>{translate("Single queue")}</dt>
+                  <dd className="text-lg font-semibold text-slate-900 dark:text-slate-100">{singleStats.running}</dd>
+                </div>
+              </dl>
+            </div>
+            
+            <button
+              type="button"
+              onClick={refreshAllJobs}
+              className="group flex w-full items-center justify-between rounded border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/50 px-4 py-3 text-sm font-medium text-slate-500 dark:text-slate-400 transition hover:border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:bg-slate-800 hover:text-slate-900 dark:text-slate-100"
+            >
+              <span className="flex items-center gap-2">
+                <ArrowPathIcon className="h-4 w-4 text-emerald-500/70 transition group-hover:animate-spin group-hover:text-emerald-400" />
+                {translate("Refresh telemetry")}
+              </span>
+            </button>
           </div>
         </aside>
 
         <main className="flex-1 space-y-10">
-          <header className={`${panelCardClass} p-8`}>
-            <div className="flex flex-wrap items-start justify-between gap-6">
-              <div className="space-y-3">
-                <span className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-500">
-                  {translate("Script-to-Video Control Room")}
-                </span>
-                <h1 className="text-3xl font-semibold text-slate-900">{translate("Sora Agent Production Dashboard")}</h1>
-                <p className="max-w-2xl text-sm text-slate-500">
-                  {translate("Orchestrate multi-scene storyboards, monitor scene renders, and review delivery timelines. The workspace syncs live with your FastAPI backend.")}
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-3">
-                <LanguageToggle />
-                <span className={`${pillButtonClass} whitespace-nowrap`}>{translate("API ·")} <span className="font-mono text-[11px] text-slate-500">{displayApiBase || API_BASE}</span></span>
-                <button
-                  type="button"
-                  onClick={handleLogout}
-                  className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
-                >
-                  {translate("Sign out")}
-                </button>
-              </div>
-            </div>
-
-            <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                <p className="text-xs uppercase text-slate-500">{translate("Live jobs")}</p>
-                <div className="mt-2 flex items-baseline gap-2">
-                  <span className="text-3xl font-semibold text-slate-900">{combinedStats.running + singleStats.running}</span>
-                  <span className="text-xs text-slate-500">{translate("running or queued")}</span>
-                </div>
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                <p className="text-xs uppercase text-slate-500">{translate("Completed jobs")}</p>
-                <div className="mt-2 text-3xl font-semibold text-slate-900">{combinedStats.completed + singleStats.completed}</div>
-                <p className="text-xs text-slate-500">{translate("Since session start")}</p>
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                <p className="text-xs uppercase text-slate-500">{translate("Scenes this workflow")}</p>
-                <div className="mt-2 text-3xl font-semibold text-slate-900">{activeScenes}</div>
-                <p className="text-xs text-slate-500">{translate("Current storyboard")}</p>
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                <p className="text-xs uppercase text-slate-500">{translate("Tracked workstreams")}</p>
-                <div className="mt-2 text-3xl font-semibold text-slate-900">{combinedStats.totalJobs + singleStats.totalJobs}</div>
-                <p className="text-xs text-slate-500">{translate("Across storyboard & single clips")}</p>
-              </div>
+          <header className="flex items-center justify-between rounded-md border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/50 px-6 py-4 backdrop-blur-xl">
+            <h1 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+              {activeTab === "combined" ? translate("Storyboard Workflow") : translate("Single Sora2 Video")}
+            </h1>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3"><ThemeToggle /><LanguageToggle /></div>
+              <span className={`${pillButtonClass} whitespace-nowrap`}>
+                {translate("API ·")} <span className="font-mono text-[11px] text-slate-500">{displayApiBase || API_BASE}</span>
+              </span>
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="rounded-full border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-900 dark:text-slate-100"
+              >
+                {translate("Sign out")}
+              </button>
             </div>
           </header>
 
           <div className="space-y-8">
-            <div className="flex flex-wrap gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-2 shadow-inner shadow-slate-200/60 backdrop-blur">
+            <div className="flex flex-wrap gap-3 rounded border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/50 p-2 shadow-inner shadow-black/20 backdrop-blur xl:hidden">
               {TABS.map(({ id, label }) => {
                 const isActive = activeTab === id;
                 return (
@@ -1283,10 +1280,10 @@ export default function Home() {
                     key={id}
                     type="button"
                     onClick={() => setActiveTab(id)}
-                    className={`flex-1 rounded-xl px-4 py-2 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400 ${
+                    className={`flex-1 rounded-md px-4 py-2 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400 ${
                       isActive
-                        ? "bg-slate-900 text-white shadow-sm"
-                        : "bg-transparent text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+                        ? "bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-sm"
+                        : "bg-transparent text-slate-500 hover:bg-slate-100/50 dark:bg-slate-100 dark:bg-slate-800/50 hover:text-slate-600 dark:text-slate-300"
                     }`}
                   >
                     {translate(label)}
@@ -1298,29 +1295,122 @@ export default function Home() {
             {activeTab === "combined" ? (
               <>
                 {combinedError && (
-                  <div className="flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 shadow-md shadow-rose-200/40">
-                    <ExclamationTriangleIcon className="h-5 w-5 flex-none text-rose-700" />
+                  <div className="flex items-start gap-3 rounded border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30 px-4 py-3 text-sm text-rose-400 shadow-md shadow-rose-900/20">
+                    <ExclamationTriangleIcon className="h-5 w-5 flex-none text-rose-500" />
                     <span>{translate(combinedError)}</span>
                   </div>
                 )}
+
+                <div className={`${panelCardClass}`}>
+                  <div className="flex items-center justify-between">
+                    <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
+                      <ArrowPathIcon className="h-5 w-5 text-slate-500 dark:text-slate-400" />
+                      {translate("Workflow Runs")}
+                    </h2>
+                    <button
+                      type="button"
+                      onClick={handleDeleteCombinedJobs}
+                      disabled={!selectedCombinedJobs.size}
+                      className="inline-flex items-center gap-1 rounded border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30 px-3 py-1.5 text-xs font-semibold text-rose-400 transition disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <TrashIcon className="h-4 w-4" />
+                      {translate("Delete Selected")}
+                    </button>
+                  </div>
+                  {jobs.length === 0 ? (
+                    <p className="mt-4 text-sm text-slate-500">{translate("Start your first workflow to see it listed here.")}</p>
+                  ) : (
+                    <>
+                      <p className="mt-4 text-xs text-slate-500">{translate("Tap a row to view job details.")}</p>
+                      <div className="mt-3 overflow-x-auto">
+                        <table className="min-w-full divide-y divide-slate-800 text-sm">
+                          <thead className="bg-slate-100/50 dark:bg-slate-100 dark:bg-slate-800/50 text-[11px] uppercase tracking-wide text-slate-500">
+                            <tr>
+                              <th scope="col" className="px-3 py-2 text-left">
+                                <span className="sr-only">{translate("Select workflows")}</span>
+                              </th>
+                              <th scope="col" className="px-3 py-2 text-left">{translate("Job ID")}</th>
+                              <th scope="col" className="px-3 py-2 text-left">{translate("Status")}</th>
+                              <th scope="col" className="px-3 py-2 text-left">{translate("Mode")}</th>
+                              <th scope="col" className="px-3 py-2 text-left">{translate("Resolution")}</th>
+                              <th scope="col" className="px-3 py-2 text-left">{translate("Progress")}</th>
+                              <th scope="col" className="px-3 py-2 text-left">{translate("Started")}</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-800">
+                            {jobs.map((item) => {
+                              const token = getStatusToken(item.status, language);
+                              const isActive = item.job_id === activeJobId;
+                              const isSelected = selectedCombinedJobs.has(item.job_id);
+                              const progressPercent = Math.min(100, Math.max(0, Math.round((item.progress ?? 0) * 100)));
+                              return (
+                                <tr
+                                  key={item.job_id}
+                                  onClick={() => {
+                                    setActiveJobId(item.job_id);
+                                    setJob(item);
+                                  }}
+                                  className={`cursor-pointer transition ${isActive ? "bg-slate-100 dark:bg-slate-800" : "bg-transparent hover:bg-slate-100/50 dark:bg-slate-100 dark:bg-slate-800/50"}`}
+                                >
+                                  <td className="px-3 py-2">
+                                    <input
+                                      type="checkbox"
+                                      checked={isSelected}
+                                      onChange={() => toggleCombinedSelection(item.job_id)}
+                                      onClick={(event) => event.stopPropagation()}
+                                      className="h-4 w-4 rounded border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700 text-indigo-500 focus:ring-indigo-500"
+                                    />
+                                  </td>
+                                  <td className="whitespace-nowrap px-3 py-2 font-mono text-xs text-slate-500 dark:text-slate-400">{item.job_id.slice(0, 12)}</td>
+                                  <td className="px-3 py-2">
+                                    <div className="flex flex-col gap-1">
+                                      <span className={`${pillButtonClass} ${token.className}`}>{token.label}</span>
+                                      <span className="text-[11px] text-slate-500">{stageLabel(item.stage, language)}</span>
+                                    </div>
+                                  </td>
+                                  <td className="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">
+                                    {translate(item.generation_mode === "sequence" ? "Sequence" : "Parallel")}
+                                  </td>
+                                  <td className="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">{item.resolution}</td>
+                                  <td className="px-3 py-2">
+                                    <div className="flex items-center gap-2">
+                                      <div className="h-2 w-24 rounded-full bg-slate-100 dark:bg-slate-800">
+                                        <div
+                                          className="h-full rounded-full bg-slate-400 transition-all"
+                                          style={{ width: `${progressPercent}%` }}
+                                        />
+                                      </div>
+                                      <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{progressPercent}%</span>
+                                    </div>
+                                  </td>
+                                  <td className="whitespace-nowrap px-3 py-2 text-xs text-slate-500">{formatTimeDistance(item.started_at)}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
+                  )}
+                </div>
 
                 <div className="grid gap-8 xl:grid-cols-[1.15fr,0.85fr]">
                   <section className="space-y-8">
                     <div className={`${panelCardClass}`}>
                       <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2 text-lg font-semibold text-slate-900">
-                          <DocumentTextIcon className="h-5 w-5 text-slate-600" />
+                        <div className="flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
+                          <DocumentTextIcon className="h-5 w-5 text-slate-500 dark:text-slate-400" />
                           {translate("Storyboard Script")}
                         </div>
                       </div>
-                      <p className="mt-2 text-sm text-slate-500">
+                      <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
                         {translate("Paste your storyboard with scene headings.")}{" "}
-                        <span className="font-mono text-xs text-slate-600">**Scene 1 (Title)**</span>{" "}
+                        <span className="font-mono text-xs text-slate-500">**Scene 1 (Title)**</span>{" "}
                         {translate("The Director agent will refine prompts following Sora2 best practices.")}
                       </p>
                       <form className="mt-5 space-y-5" onSubmit={handleCombinedSubmit}>
                         <textarea
-                          className="min-h-[260px] w-full resize-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-[0_30px_100px_-80px_rgba(15,23,42,0.12)] placeholder:text-slate-500 transition focus:border-slate-400 focus:outline-none focus:ring-4 focus:ring-slate-200"
+                          className="min-h-[260px] w-full resize-none rounded border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-4 py-3 text-sm text-slate-900 dark:text-slate-100 shadow-inner placeholder:text-slate-500 transition focus:border-slate-500 focus:outline-none focus:ring-4 focus:ring-slate-800"
                           placeholder={translate("Enter script or storyboard prompt")}
                           value={script}
                           onChange={(event) => setScript(event.target.value)}
@@ -1328,11 +1418,11 @@ export default function Home() {
 
                         <div className="grid gap-4 sm:grid-cols-2">
                           <div className="space-y-2">
-                            <label className="text-sm font-semibold text-slate-600">{translate("Resolution")}</label>
+                            <label className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Resolution")}</label>
                             <select
                               value={combinedResolution}
                               onChange={(event) => setCombinedResolution(event.target.value as (typeof resolutionOptions)[number])}
-                              className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-inner shadow-slate-200/50 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                              className="w-full rounded border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 shadow-inner focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-800"
                             >
                               {resolutionOptions.map((option) => (
                                 <option key={option} value={option}>
@@ -1342,23 +1432,23 @@ export default function Home() {
                             </select>
                           </div>
                           <div className="space-y-2">
-                            <span className="text-sm font-semibold text-slate-600">{translate("Scene references")}</span>
+                            <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Scene references")}</span>
                             <button
                               type="button"
                               onClick={() => setUseSceneImages((value) => !value)}
-                              className={`flex items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-semibold transition ${
+                              className={`flex items-center gap-3 rounded border px-4 py-3 text-sm font-semibold transition ${
                                 useSceneImages
-                                  ? "border-slate-300 bg-slate-100 text-slate-900 shadow-sm"
-                                  : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900"
+                                  ? "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm"
+                                  : "border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200"
                               }`}
                             >
                               <span className={`inline-flex h-5 w-10 items-center rounded-full border transition ${
                                 useSceneImages
-                                  ? "border-slate-300 bg-slate-200"
-                                  : "border-slate-200 bg-white"
+                                  ? "border-slate-500 bg-slate-600"
+                                  : "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700"
                               }`}>
                                 <span
-                                  className={`ml-1 inline-block h-3.5 w-3.5 rounded-full bg-white transition ${
+                                  className={`ml-1 inline-block h-3.5 w-3.5 rounded-full bg-slate-200 transition ${
                                     useSceneImages ? "translate-x-4" : "translate-x-0"
                                   }`}
                                 />
@@ -1369,7 +1459,7 @@ export default function Home() {
                         </div>
 
                         <div className="space-y-2">
-                          <label className="text-sm font-semibold text-slate-600">{translate("Generation mode")}</label>
+                          <label className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Generation mode")}</label>
                           <div className="flex flex-wrap gap-3">
                             {[
                               { id: "parallel" as const, label: translate("Parallel"), description: translate("Render scenes concurrently") },
@@ -1381,14 +1471,14 @@ export default function Home() {
                                   key={mode.id}
                                   type="button"
                                   onClick={() => setGenerationMode(mode.id)}
-                                  className={`flex flex-col rounded-2xl border px-4 py-2 text-left text-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400 ${
+                                  className={`flex flex-col rounded border px-4 py-2 text-left text-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400 ${
                                     isActive
-                                      ? "border-slate-900 bg-slate-900 text-white shadow-sm"
-                                      : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900"
+                                      ? "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm"
+                                      : "border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200"
                                   }`}
                                 >
                                   <span className="font-semibold">{mode.label}</span>
-                                  <span className={`text-xs ${isActive ? "text-slate-100" : "text-slate-500"}`}>
+                                  <span className={`text-xs ${isActive ? "text-slate-600 dark:text-slate-300" : "text-slate-500"}`}>
                                     {mode.description}
                                   </span>
                                 </button>
@@ -1400,10 +1490,10 @@ export default function Home() {
                           </p>
                         </div>
 
-                        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                        <div className="rounded border border-slate-300 dark:border-slate-700 bg-slate-100/50 dark:bg-slate-100 dark:bg-slate-800/50 px-4 py-3">
                           <div className="flex items-center justify-between gap-4">
                             <div>
-                              <p className="text-sm font-semibold text-slate-700">{translate("Refine script with GPT-5")}</p>
+                              <p className="text-sm font-semibold text-slate-600 dark:text-slate-300">{translate("Refine script with GPT-5")}</p>
                               <p className="text-xs text-slate-500">
                                 {translate("Use GPT-5 to polish the storyboard before planning scenes.")}
                               </p>
@@ -1413,17 +1503,17 @@ export default function Home() {
                               onClick={() => setRefineWorkflowWithGpt5((value) => !value)}
                               className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold transition ${
                                 refineWorkflowWithGpt5
-                                  ? "border-slate-900 bg-slate-900 text-white"
-                                  : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900"
+                                  ? "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-slate-100"
+                                  : "border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200"
                               }`}
                             >
                               <span
                                 className={`relative inline-flex h-5 w-10 items-center rounded-full border transition ${
-                                  refineWorkflowWithGpt5 ? "border-slate-700 bg-slate-800" : "border-slate-300 bg-white"
+                                  refineWorkflowWithGpt5 ? "border-slate-500 bg-slate-600" : "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700"
                                 }`}
                               >
                                 <span
-                                  className={`absolute left-1 h-3 rounded-full bg-white transition ${
+                                  className={`absolute left-1 h-3 rounded-full bg-slate-200 transition ${
                                     refineWorkflowWithGpt5 ? "translate-x-4 w-4" : "w-3"
                                   }`}
                                 />
@@ -1435,7 +1525,7 @@ export default function Home() {
 
                         {useSceneImages ? (
                           <div className="space-y-3">
-                            <label className="text-sm font-semibold text-slate-600">{translate("Upload reference stills")}</label>
+                            <label className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Upload reference stills")}</label>
                             <input
                               type="file"
                               accept="image/png,image/jpeg"
@@ -1448,7 +1538,7 @@ export default function Home() {
                                 {sceneImagePreviews.map((preview, index) => (
                                   <div
                                     key={`${preview}-${index}`}
-                                    className="flex h-28 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-white"
+                                    className="flex h-28 items-center justify-center overflow-hidden rounded-md border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800"
                                   >
                                     <Image
                                       src={preview}
@@ -1471,7 +1561,7 @@ export default function Home() {
                           <button
                             type="submit"
                             disabled={isSubmittingCombined}
-                            className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white shadow-sm shadow-slate-300/50 transition hover:bg-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400 disabled:cursor-not-allowed disabled:opacity-60"
+                            className="inline-flex items-center justify-center gap-2 rounded-md bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white dark:bg-slate-100 dark:text-slate-900 shadow-sm shadow-slate-900/50 transition hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400 disabled:cursor-not-allowed disabled:opacity-60"
                           >
                             {isSubmittingCombined ? (
                               <>
@@ -1496,12 +1586,12 @@ export default function Home() {
                       <div className={`${panelCardClass}`}>
                         <div className="flex flex-wrap items-start justify-between gap-4">
                           <div>
-                            <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
-                              <FilmIcon className="h-5 w-5 text-slate-600" />
+                            <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
+                              <FilmIcon className="h-5 w-5 text-slate-500 dark:text-slate-400" />
                               {translate("Workflow Status")}
                             </h2>
-                            <p className="mt-1 text-sm text-slate-500">{stageLabel(job.stage, language)}</p>
-                            <p className="text-xs uppercase tracking-wide text-slate-400">
+                            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{stageLabel(job.stage, language)}</p>
+                            <p className="text-xs uppercase tracking-wide text-slate-500">
                               {translate("Mode:")} {translate(job.generation_mode === "sequence" ? "Sequence" : "Parallel")}
                             </p>
                           </div>
@@ -1509,48 +1599,48 @@ export default function Home() {
                         </div>
 
                         <div className="mt-6 space-y-3">
-                          <div className="flex items-center justify-between text-xs text-slate-500">
+                          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
                             <span>{translate("Progress")}</span>
                             <span>{combinedProgressPercent}%</span>
                           </div>
-                          <div className="h-2.5 overflow-hidden rounded-full border border-slate-200 bg-white">
+                          <div className="h-2.5 overflow-hidden rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800">
                             <div
-                              className="h-full rounded-full bg-slate-900 transition-all duration-500 ease-out"
+                              className="h-full rounded-full bg-slate-100 transition-all duration-500 ease-out"
                               style={{ width: `${combinedProgressPercent}%` }}
                             />
                           </div>
                           {job.error && (
-                            <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                            <div className="flex items-center gap-2 rounded-md border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 text-xs text-rose-400">
                               <ExclamationTriangleIcon className="h-4 w-4" />
                               {job.error}
                             </div>
                           )}
                         </div>
 
-                        <dl className="mt-6 grid gap-4 text-sm text-slate-600 sm:grid-cols-3">
+                        <dl className="mt-6 grid gap-4 text-sm text-slate-500 dark:text-slate-400 sm:grid-cols-3">
                           <div>
                             <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Started")}</dt>
-                            <dd className="mt-1 text-slate-600">{formatTimeDistance(job.started_at)}</dd>
+                            <dd className="mt-1 text-slate-600 dark:text-slate-300">{formatTimeDistance(job.started_at)}</dd>
                           </div>
                           <div>
                             <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Completed")}</dt>
-                            <dd className="mt-1 text-slate-600">{job.completed_at ? formatTimeDistance(job.completed_at) : "—"}</dd>
+                            <dd className="mt-1 text-slate-600 dark:text-slate-300">{job.completed_at ? formatTimeDistance(job.completed_at) : "—"}</dd>
                           </div>
                           <div>
                             <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Resolution")}</dt>
-                            <dd className="mt-1 text-slate-600">{job.resolution}</dd>
+                            <dd className="mt-1 text-slate-600 dark:text-slate-300">{job.resolution}</dd>
                           </div>
                         </dl>
 
                         {finalVideoUrl && (
                           <div className="mt-8 space-y-3">
                             <div className="flex items-center justify-between gap-3">
-                              <h3 className="text-sm font-semibold text-slate-600">{translate("Final Video")}</h3>
+                              <h3 className="text-sm font-semibold text-slate-600 dark:text-slate-300">{translate("Final Video")}</h3>
                               <button
                                 type="button"
                                 onClick={handleRecompose}
                                 disabled={!canRecompose || isRecomposing}
-                                className="inline-flex items-center gap-2 rounded-xl border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-400 disabled:cursor-not-allowed disabled:opacity-60"
+                                className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 disabled:cursor-not-allowed disabled:opacity-60"
                               >
                                 {isRecomposing ? <ArrowPathIcon className="h-4 w-4 animate-spin" /> : <ArrowPathIcon className="h-4 w-4" />}
                                 {translate("Regenerate Final Video")}
@@ -1558,7 +1648,7 @@ export default function Home() {
                             </div>
                             <video
                               controls
-                              className="max-h-[420px] w-full rounded-2xl border border-slate-200 bg-black/60"
+                              className="max-h-[420px] w-full rounded border border-slate-200 dark:border-slate-800 bg-black/60"
                               src={finalVideoUrl}
                             >
                               {translate("Your browser does not support HTML5 video.")}
@@ -1567,7 +1657,7 @@ export default function Home() {
                               href={finalVideoUrl}
                               target="_blank"
                               rel="noreferrer"
-                              className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-slate-900"
+                              className="inline-flex items-center gap-2 text-sm font-medium text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-slate-100"
                             >
                               <PlayCircleIcon className="h-4 w-4" />
                               {translate("Open MP4 in new tab")}
@@ -1579,8 +1669,8 @@ export default function Home() {
 
                     {job?.scenes?.length ? (
                       <div className={`${panelCardClass}`}>
-                        <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
-                          <PlayCircleIcon className="h-5 w-5 text-slate-600" />
+                        <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
+                          <PlayCircleIcon className="h-5 w-5 text-slate-500 dark:text-slate-400" />
                           {translate("Scene Renders")}
                         </h2>
                         <div className="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-[repeat(auto-fit,minmax(360px,1fr))]">
@@ -1594,16 +1684,16 @@ export default function Home() {
                             return (
                               <div
                                 key={scene.order}
-                                className="rounded-2xl border border-slate-200 bg-white p-4 shadow-inner shadow-slate-200/60"
+                                className="rounded border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/50 p-4 shadow-inner shadow-black/20"
                               >
                                 <div className="flex items-start justify-between gap-2">
                                   <div>
-                                    <h3 className="text-sm font-semibold text-slate-900">{scene.label}</h3>
-                                    <p className="text-xs text-slate-500">
+                                    <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{scene.label}</h3>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400">
                                       {scene.duration_seconds} {translate("seconds")}
                                     </p>
                                   </div>
-                                  <span className="rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] uppercase tracking-wide text-slate-600">
+                                  <span className="rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
                                     {translate("Scene")} {scene.order}
                                   </span>
                                 </div>
@@ -1620,35 +1710,35 @@ export default function Home() {
                                         <video
                                           key={`${scene.order}-${sceneVideoUrl}`}
                                           controls
-                                          className="max-h-56 w-full rounded-xl border border-slate-200 bg-black/60"
+                                          className="max-h-56 w-full rounded-md border border-slate-200 dark:border-slate-800 bg-black/60"
                                           src={sceneVideoUrl}
                                         >
                                           {translate("Video unavailable.")}
                                         </video>
                                       ) : (
-                                        <div className="flex h-40 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-100 text-xs text-slate-500">
+                                        <div className="flex h-40 items-center justify-center rounded-md border border-dashed border-slate-300 dark:border-slate-700 bg-slate-100/50 dark:bg-slate-100 dark:bg-slate-800/50 text-xs text-slate-500">
                                           {translate("Clip pending...")}
                                         </div>
                                       )}
                                     </div>
                                     {showSequenceReferences && sceneLastFrameUrl ? (
-                                      <div className="flex flex-col rounded-xl border border-slate-200 bg-white/80 p-3 text-center shadow-inner shadow-slate-200/60">
+                                      <div className="flex flex-col rounded-md border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/80 p-3 text-center shadow-inner">
                                         <Image
                                           src={sceneLastFrameUrl}
                                           alt={`${scene.label} ${translate("Last frame reference")}`}
                                           width={320}
                                           height={240}
                                           unoptimized
-                                          className="h-40 w-full rounded-lg object-cover"
+                                          className="h-40 w-full rounded object-cover"
                                         />
-                                        <p className="mt-2 text-xs text-slate-500">
+                                        <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
                                           {translate("Last frame reference")}
                                         </p>
                                       </div>
                                     ) : null}
                                   </div>
                                 ) : (
-                                  <div className="mt-3 flex h-40 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-100 text-xs text-slate-500">
+                                  <div className="mt-3 flex h-40 items-center justify-center rounded-md border border-dashed border-slate-300 dark:border-slate-700 bg-slate-100/50 dark:bg-slate-100 dark:bg-slate-800/50 text-xs text-slate-500">
                                     {translate("Clip pending...")}
                                   </div>
                                 )}
@@ -1669,15 +1759,15 @@ export default function Home() {
                                       return (
                                         <div
                                           key={version.version_id}
-                                          className={`rounded-2xl border p-3 ${
+                                          className={`rounded border p-3 ${
                                             isActive
-                                              ? "border-slate-900 bg-slate-50"
-                                              : "border-slate-200 bg-white"
+                                              ? "border-slate-400 dark:border-slate-600 bg-slate-100 dark:bg-slate-800"
+                                              : "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30"
                                           }`}
                                         >
                                           <div className="flex items-start justify-between gap-3">
                                             <div>
-                                              <p className="text-sm font-semibold text-slate-900">{version.label}</p>
+                                              <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">{version.label}</p>
                                               <p className="text-xs text-slate-500">
                                                 {version.source} • {formatTimeDistance(version.created_at)}
                                               </p>
@@ -1686,10 +1776,10 @@ export default function Home() {
                                               type="button"
                                               onClick={() => handleSelectVersion(scene.order, version.version_id)}
                                               disabled={isActive || isBusy}
-                                              className={`rounded-xl border px-3 py-1 text-xs font-semibold transition ${
+                                              className={`rounded-md border px-3 py-1 text-xs font-semibold transition ${
                                                 isActive
-                                                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                                                  : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 disabled:opacity-60"
+                                                  ? "border-emerald-200 dark:border-emerald-900/50 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-400"
+                                                  : "border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200 disabled:opacity-60"
                                               }`}
                                             >
                                               {isActive
@@ -1703,14 +1793,14 @@ export default function Home() {
                                             <video
                                               key={`${version.version_id}-${versionVideoUrl}`}
                                               controls
-                                              className="mt-2 max-h-40 w-full rounded-xl border border-slate-200 bg-black/60"
+                                              className="mt-2 max-h-40 w-full rounded-md border border-slate-200 dark:border-slate-800 bg-black/60"
                                               src={versionVideoUrl}
                                             >
                                               {translate("Version video unavailable.")}
                                             </video>
                                           ) : null}
                                           {versionLastFrameUrl ? (
-                                            <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-2">
+                                            <div className="mt-2 rounded-md border border-slate-300 dark:border-slate-700 bg-slate-100/50 dark:bg-slate-100 dark:bg-slate-800/50 p-2">
                                               <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                                                 {translate("Last frame reference")}
                                               </p>
@@ -1720,17 +1810,17 @@ export default function Home() {
                                                 width={280}
                                                 height={200}
                                                 unoptimized
-                                                className="mt-2 h-28 w-full rounded-lg object-cover"
+                                                className="mt-2 h-28 w-full rounded object-cover"
                                               />
                                             </div>
                                           ) : null}
                                           {version.prompt ? (
-                                            <p className="mt-2 text-xs text-slate-600">
+                                            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
                                               {translate("Prompt:")} <span className="font-mono text-[11px] text-slate-500">{version.prompt}</span>
                                             </p>
                                           ) : null}
                                           {version.video_id ? (
-                                            <p className="text-[11px] text-slate-400">{translate("Azure video ID:")} {version.video_id}</p>
+                                            <p className="text-[11px] text-slate-500">{translate("Azure video ID:")} {version.video_id}</p>
                                           ) : null}
                                         </div>
                                       );
@@ -1743,7 +1833,7 @@ export default function Home() {
                                     {translate("Remix prompt")}
                                   </label>
                                   <textarea
-                                    className="min-h-[80px] w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                                    className="min-h-[80px] w-full rounded-md border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-800"
                                     placeholder={translate("Describe how you want to remix this scene...")}
                                     value={remixPrompts[scene.order] ?? ""}
                                     onChange={(event) =>
@@ -1757,7 +1847,7 @@ export default function Home() {
                                     <button
                                       type="submit"
                                       disabled={!selectedVersion?.video_id || remixSubmitting[scene.order]}
-                                      className="inline-flex items-center gap-1 rounded-xl border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-700 transition hover:border-slate-400 disabled:cursor-not-allowed disabled:opacity-60"
+                                      className="inline-flex items-center gap-1 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1 text-xs font-semibold text-slate-500 dark:text-slate-400 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
                                     >
                                       {remixSubmitting[scene.order] ? (
                                         <ArrowPathIcon className="h-4 w-4 animate-spin" />
@@ -1779,8 +1869,8 @@ export default function Home() {
                   <aside className="space-y-8">
                     {job?.messages?.length ? (
                       <div className={`${panelCardClass}`}>
-                        <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
-                          <ClockIcon className="h-5 w-5 text-slate-600" />
+                        <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
+                          <ClockIcon className="h-5 w-5 text-slate-500 dark:text-slate-400" />
                           {translate("Workflow Timeline")}
                         </h2>
                         <ol className="mt-6 space-y-4">
@@ -1789,13 +1879,13 @@ export default function Home() {
                             return (
                               <li
                                 key={`${message.timestamp}-${index}`}
-                                className="relative flex gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-inner shadow-slate-200/60"
+                                className="relative flex gap-3 rounded border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/50 p-3 shadow-inner shadow-black/20"
                               >
-                                <div className="relative mt-0.5 flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-slate-100">
-                                  <Icon className="h-4 w-4 text-slate-600" />
+                                <div className="relative mt-0.5 flex h-7 w-7 items-center justify-center rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800">
+                                  <Icon className="h-4 w-4 text-slate-500 dark:text-slate-400" />
                                 </div>
                                 <div>
-                                  <p className="text-sm text-slate-600">{message.text}</p>
+                                  <p className="text-sm text-slate-600 dark:text-slate-300">{message.text}</p>
                                   <p className="text-xs text-slate-500">
                                     {formatTimestamp(message.timestamp)} · {stageLabel(message.stage, language)}
                                   </p>
@@ -1806,107 +1896,15 @@ export default function Home() {
                         </ol>
                       </div>
                     ) : null}
-
-                    <div className={`${panelCardClass}`}>
-                      <div className="flex items-center justify-between">
-                        <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
-                          <ArrowPathIcon className="h-5 w-5 text-slate-600" />
-                          {translate("Workflow Runs")}
-                        </h2>
-                        <button
-                          type="button"
-                          onClick={handleDeleteCombinedJobs}
-                          disabled={!selectedCombinedJobs.size}
-                          className="inline-flex items-center gap-1 rounded-lg border border-rose-500/50 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 transition disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          <TrashIcon className="h-4 w-4" />
-                          {translate("Delete Selected")}
-                        </button>
-                      </div>
-                      {jobs.length === 0 ? (
-                        <p className="mt-4 text-sm text-slate-500">{translate("Start your first workflow to see it listed here.")}</p>
-                      ) : (
-                        <>
-                          <p className="mt-4 text-xs text-slate-500">{translate("Tap a row to view job details.")}</p>
-                          <div className="mt-3 overflow-x-auto">
-                            <table className="min-w-full divide-y divide-slate-200 text-sm">
-                              <thead className="bg-slate-100 text-[11px] uppercase tracking-wide text-slate-500">
-                                <tr>
-                                  <th scope="col" className="px-3 py-2 text-left">
-                                    <span className="sr-only">{translate("Select workflows")}</span>
-                                  </th>
-                                  <th scope="col" className="px-3 py-2 text-left">{translate("Job ID")}</th>
-                                  <th scope="col" className="px-3 py-2 text-left">{translate("Status")}</th>
-                                  <th scope="col" className="px-3 py-2 text-left">{translate("Mode")}</th>
-                                  <th scope="col" className="px-3 py-2 text-left">{translate("Resolution")}</th>
-                                  <th scope="col" className="px-3 py-2 text-left">{translate("Progress")}</th>
-                                  <th scope="col" className="px-3 py-2 text-left">{translate("Started")}</th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-slate-100">
-                                {jobs.map((item) => {
-                                  const token = getStatusToken(item.status, language);
-                                  const isActive = item.job_id === activeJobId;
-                                  const isSelected = selectedCombinedJobs.has(item.job_id);
-                                  const progressPercent = Math.min(100, Math.max(0, Math.round((item.progress ?? 0) * 100)));
-                                  return (
-                                    <tr
-                                      key={item.job_id}
-                                      onClick={() => {
-                                        setActiveJobId(item.job_id);
-                                        setJob(item);
-                                      }}
-                                      className={`cursor-pointer transition ${isActive ? "bg-slate-100/80" : "bg-white hover:bg-slate-50"}`}
-                                    >
-                                      <td className="px-3 py-2">
-                                        <input
-                                          type="checkbox"
-                                          checked={isSelected}
-                                          onChange={() => toggleCombinedSelection(item.job_id)}
-                                          onClick={(event) => event.stopPropagation()}
-                                          className="h-4 w-4 rounded border-slate-200 text-slate-900 focus:ring-slate-400"
-                                        />
-                                      </td>
-                                      <td className="whitespace-nowrap px-3 py-2 font-mono text-xs text-slate-600">{item.job_id.slice(0, 12)}</td>
-                                      <td className="px-3 py-2">
-                                        <div className="flex flex-col gap-1">
-                                          <span className={`${pillButtonClass} ${token.className}`}>{token.label}</span>
-                                          <span className="text-[11px] text-slate-500">{stageLabel(item.stage, language)}</span>
-                                        </div>
-                                      </td>
-                                      <td className="px-3 py-2 text-xs text-slate-600">
-                                        {translate(item.generation_mode === "sequence" ? "Sequence" : "Parallel")}
-                                      </td>
-                                      <td className="px-3 py-2 text-xs text-slate-600">{item.resolution}</td>
-                                      <td className="px-3 py-2">
-                                        <div className="flex items-center gap-2">
-                                          <div className="h-2 w-24 rounded-full bg-slate-100">
-                                            <div
-                                              className="h-full rounded-full bg-slate-900 transition-all"
-                                              style={{ width: `${progressPercent}%` }}
-                                            />
-                                          </div>
-                                          <span className="text-xs font-medium text-slate-600">{progressPercent}%</span>
-                                        </div>
-                                      </td>
-                                      <td className="whitespace-nowrap px-3 py-2 text-xs text-slate-500">{formatTimeDistance(item.started_at)}</td>
-                                    </tr>
-                                  );
-                                })}
-                              </tbody>
-                            </table>
-                          </div>
-                        </>
-                      )}
-                    </div>
                   </aside>
                 </div>
+
               </>
             ) : (
               <>
                 {singleError && (
-                  <div className="flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 shadow-md shadow-rose-200/40">
-                    <ExclamationTriangleIcon className="h-5 w-5 flex-none text-rose-700" />
+                  <div className="flex items-start gap-3 rounded border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30 px-4 py-3 text-sm text-rose-400 shadow-md shadow-rose-900/20">
+                    <ExclamationTriangleIcon className="h-5 w-5 flex-none text-rose-500" />
                     <span>{translate(singleError)}</span>
                   </div>
                 )}
@@ -1914,16 +1912,16 @@ export default function Home() {
                 <div className="grid gap-8 xl:grid-cols-[1.05fr,0.95fr]">
                   <section className="space-y-8">
                     <div className={`${panelCardClass}`}>
-                      <div className="flex items-center gap-2 text-lg font-semibold text-slate-900">
-                        <FilmIcon className="h-5 w-5 text-slate-600" />
+                      <div className="flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
+                        <FilmIcon className="h-5 w-5 text-slate-500 dark:text-slate-400" />
                         {translate("Generate Single Clip")}
                       </div>
-                      <p className="mt-2 text-sm text-slate-500">
+                      <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
                         {translate("Submit a single prompt directly to the Sora2 API. Optionally attach a still reference, select the render resolution, and choose a supported clip duration.")}
                       </p>
                       <form className="mt-5 space-y-5" onSubmit={handleSingleSubmit}>
                         <textarea
-                          className="min-h-[220px] w-full resize-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-[0_30px_100px_-80px_rgba(15,23,42,0.12)] placeholder:text-slate-500 transition focus:border-slate-400 focus:outline-none focus:ring-4 focus:ring-slate-200"
+                          className="min-h-[220px] w-full resize-none rounded border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-4 py-3 text-sm text-slate-900 dark:text-slate-100 shadow-inner placeholder:text-slate-500 transition focus:border-slate-500 focus:outline-none focus:ring-4 focus:ring-slate-800"
                           placeholder={translate("Describe the scene, motion, cinematography, and mood for Sora2...")}
                           value={singlePrompt}
                           onChange={(event) => setSinglePrompt(event.target.value)}
@@ -1931,11 +1929,11 @@ export default function Home() {
 
                         <div className="grid gap-4 sm:grid-cols-2">
                           <div className="space-y-2">
-                            <label className="text-sm font-semibold text-slate-600">{translate("Resolution")}</label>
+                            <label className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Resolution")}</label>
                             <select
                               value={singleResolution}
                               onChange={(event) => setSingleResolution(event.target.value as (typeof resolutionOptions)[number])}
-                              className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-inner shadow-slate-200/50 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                              className="w-full rounded border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 shadow-inner focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-800"
                             >
                               {resolutionOptions.map((option) => (
                                 <option key={option} value={option}>
@@ -1945,17 +1943,17 @@ export default function Home() {
                             </select>
                           </div>
                           <div className="space-y-2">
-                            <span className="text-sm font-semibold text-slate-600">{translate("Duration")}</span>
+                            <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Duration")}</span>
                             <div className="flex gap-2">
                               {durationOptions.map((option) => {
                                 const isActive = singleDuration === option;
                                 return (
                                   <label
                                     key={option}
-                                    className={`flex-1 cursor-pointer rounded-xl border px-3 py-2 text-center text-sm font-semibold transition ${
+                                    className={`flex-1 cursor-pointer rounded-md border px-3 py-2 text-center text-sm font-semibold transition ${
                                       isActive
-                                        ? "border-slate-300 bg-slate-900 text-white shadow-sm"
-                                        : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900"
+                                        ? "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm"
+                                        : "border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200"
                                     }`}
                                   >
                                     <input
@@ -1975,10 +1973,10 @@ export default function Home() {
                           </div>
                         </div>
 
-                        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                        <div className="rounded border border-slate-300 dark:border-slate-700 bg-slate-100/50 dark:bg-slate-100 dark:bg-slate-800/50 px-4 py-3">
                           <div className="flex items-center justify-between gap-4">
                             <div>
-                              <p className="text-sm font-semibold text-slate-700">{translate("Refine prompt with GPT-5")}</p>
+                              <p className="text-sm font-semibold text-slate-600 dark:text-slate-300">{translate("Refine prompt with GPT-5")}</p>
                               <p className="text-xs text-slate-500">
                                 {translate("Let GPT-5 tighten the single-scene prompt before submitting.")}
                               </p>
@@ -1988,17 +1986,17 @@ export default function Home() {
                               onClick={() => setRefineSingleWithGpt5((value) => !value)}
                               className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold transition ${
                                 refineSingleWithGpt5
-                                  ? "border-slate-900 bg-slate-900 text-white"
-                                  : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900"
+                                  ? "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-slate-100"
+                                  : "border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200"
                               }`}
                             >
                               <span
                                 className={`relative inline-flex h-5 w-10 items-center rounded-full border transition ${
-                                  refineSingleWithGpt5 ? "border-slate-700 bg-slate-800" : "border-slate-300 bg-white"
+                                  refineSingleWithGpt5 ? "border-slate-500 bg-slate-600" : "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700"
                                 }`}
                               >
                                 <span
-                                  className={`absolute left-1 h-3 rounded-full bg-white transition ${
+                                  className={`absolute left-1 h-3 rounded-full bg-slate-200 transition ${
                                     refineSingleWithGpt5 ? "translate-x-4 w-4" : "w-3"
                                   }`}
                                 />
@@ -2009,7 +2007,7 @@ export default function Home() {
                         </div>
 
                         <div className="space-y-3">
-                          <label className="text-sm font-semibold text-slate-600">{translate("Reference image (optional)")}</label>
+                          <label className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Reference image (optional)")}</label>
                           <input
                             type="file"
                             accept="image/png,image/jpeg"
@@ -2017,7 +2015,7 @@ export default function Home() {
                             className="max-w-xs text-xs text-slate-500"
                           />
                           {singleReferencePreview && (
-                            <div className="mt-2 flex h-40 w-32 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-white">
+                            <div className="mt-2 flex h-40 w-32 items-center justify-center overflow-hidden rounded-md border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800">
                               <Image
                                 src={singleReferencePreview}
                                 alt={translate("Reference preview")}
@@ -2034,7 +2032,7 @@ export default function Home() {
                           <button
                             type="submit"
                             disabled={isSubmittingSingle}
-                            className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white shadow-sm shadow-slate-300/50 transition hover:bg-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400 disabled:cursor-not-allowed disabled:opacity-60"
+                            className="inline-flex items-center justify-center gap-2 rounded-md bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white dark:bg-slate-100 dark:text-slate-900 shadow-sm shadow-slate-900/50 transition hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400 disabled:cursor-not-allowed disabled:opacity-60"
                           >
                             {isSubmittingSingle ? (
                               <>
@@ -2059,66 +2057,66 @@ export default function Home() {
                       <div className={`${panelCardClass}`}>
                         <div className="flex flex-wrap items-start justify-between gap-4">
                           <div>
-                            <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
-                              <FilmIcon className="h-5 w-5 text-slate-600" />
+                            <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
+                              <FilmIcon className="h-5 w-5 text-slate-500 dark:text-slate-400" />
                               {translate("Single Video Status")}
                             </h2>
-                            <p className="mt-1 text-sm text-slate-500">{stageLabel(singleJob.status, language)}</p>
+                            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{stageLabel(singleJob.status, language)}</p>
                           </div>
                           <span className={`${pillButtonClass} ${singleStatusToken.className}`}>{singleStatusToken.label}</span>
                         </div>
 
                         <div className="mt-6 space-y-3">
-                          <div className="flex items-center justify-between text-xs text-slate-500">
+                          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
                             <span>{translate("Progress")}</span>
                             <span>{singleProgressPercent}%</span>
                           </div>
-                          <div className="h-2.5 overflow-hidden rounded-full border border-slate-200 bg-white">
+                          <div className="h-2.5 overflow-hidden rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800">
                             <div
-                              className="h-full rounded-full bg-slate-900 transition-all duration-500 ease-out"
+                              className="h-full rounded-full bg-slate-100 transition-all duration-500 ease-out"
                               style={{ width: `${singleProgressPercent}%` }}
                             />
                           </div>
                           {singleJob.error && (
-                            <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                            <div className="flex items-center gap-2 rounded-md border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 text-xs text-rose-400">
                               <ExclamationTriangleIcon className="h-4 w-4" />
                               {singleJob.error}
                             </div>
                           )}
                         </div>
 
-                        <dl className="mt-6 grid gap-4 text-sm text-slate-600 sm:grid-cols-2 md:grid-cols-5">
+                        <dl className="mt-6 grid gap-4 text-sm text-slate-500 dark:text-slate-400 sm:grid-cols-2 md:grid-cols-5">
                           <div>
                             <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Started")}</dt>
-                            <dd className="mt-1 text-slate-600">{formatTimeDistance(singleJob.started_at)}</dd>
+                            <dd className="mt-1 text-slate-600 dark:text-slate-300">{formatTimeDistance(singleJob.started_at)}</dd>
                           </div>
                           <div>
                             <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Completed")}</dt>
-                            <dd className="mt-1 text-slate-600">{singleJob.completed_at ? formatTimeDistance(singleJob.completed_at) : "—"}</dd>
+                            <dd className="mt-1 text-slate-600 dark:text-slate-300">{singleJob.completed_at ? formatTimeDistance(singleJob.completed_at) : "—"}</dd>
                           </div>
                           <div>
                             <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Resolution")}</dt>
-                            <dd className="mt-1 text-slate-600">{singleJob.resolution}</dd>
+                            <dd className="mt-1 text-slate-600 dark:text-slate-300">{singleJob.resolution}</dd>
                           </div>
                           <div>
                             <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Duration")}</dt>
-                            <dd className="mt-1 text-slate-600">
+                            <dd className="mt-1 text-slate-600 dark:text-slate-300">
                               {singleJob.duration}
                               {translate("s")}
                             </dd>
                           </div>
                           <div>
                             <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Azure video ID:")}</dt>
-                            <dd className="mt-1 text-slate-600">{singleJob.video_id ?? translate("Unavailable")}</dd>
+                            <dd className="mt-1 text-slate-600 dark:text-slate-300">{singleJob.video_id ?? translate("Unavailable")}</dd>
                           </div>
                         </dl>
 
                         {singleVideoUrl ? (
                           <div className="mt-8 space-y-3">
-                            <h3 className="text-sm font-semibold text-slate-600">{translate("Generated Video")}</h3>
+                            <h3 className="text-sm font-semibold text-slate-600 dark:text-slate-300">{translate("Generated Video")}</h3>
                             <video
                               controls
-                              className="max-h-[360px] w-full rounded-2xl border border-slate-200 bg-black/60"
+                              className="max-h-[360px] w-full rounded border border-slate-200 dark:border-slate-800 bg-black/60"
                               src={singleVideoUrl}
                             >
                               {translate("Your browser does not support HTML5 video.")}
@@ -2127,14 +2125,14 @@ export default function Home() {
                               href={singleVideoUrl}
                               target="_blank"
                               rel="noreferrer"
-                              className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-slate-900"
+                              className="inline-flex items-center gap-2 text-sm font-medium text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-slate-100"
                             >
                               <PlayCircleIcon className="h-4 w-4" />
                               {translate("Open MP4 in new tab")}
                             </a>
                           </div>
                         ) : (
-                          <div className="mt-8 flex h-40 items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-100 text-xs text-slate-500">
+                          <div className="mt-8 flex h-40 items-center justify-center rounded border border-dashed border-slate-300 dark:border-slate-700 bg-slate-100/50 dark:bg-slate-100 dark:bg-slate-800/50 text-xs text-slate-500">
                             {translate("Video pending...")}
                           </div>
                         )}
@@ -2142,13 +2140,13 @@ export default function Home() {
                         {singleJob.video_id ? (
                           <form className="mt-6 space-y-2" onSubmit={handleSingleRemixSubmit}>
                             <div className="flex flex-wrap items-center justify-between gap-3">
-                              <h3 className="text-sm font-semibold text-slate-600">{translate("Remix Single Video")}</h3>
+                              <h3 className="text-sm font-semibold text-slate-600 dark:text-slate-300">{translate("Remix Single Video")}</h3>
                               <span className="text-[11px] text-slate-500">
                                 {translate("Uses previous video ID:")} {singleJob.video_id}
                               </span>
                             </div>
                             <textarea
-                              className="min-h-[80px] w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                              className="min-h-[80px] w-full rounded-md border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-800"
                               placeholder={translate("Describe how you want to remix this clip...")}
                               value={singleRemixPrompt}
                               onChange={(event) => setSingleRemixPrompt(event.target.value)}
@@ -2157,7 +2155,7 @@ export default function Home() {
                               <button
                                 type="submit"
                                 disabled={singleRemixSubmitting}
-                                className="inline-flex items-center gap-2 rounded-xl border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-400 disabled:cursor-not-allowed disabled:opacity-60"
+                                className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-4 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
                               >
                                 {singleRemixSubmitting ? (
                                   <ArrowPathIcon className="h-4 w-4 animate-spin" />
@@ -2172,7 +2170,7 @@ export default function Home() {
 
                         {singleJob.versions?.length ? (
                           <div className="mt-8 space-y-3">
-                            <h3 className="text-sm font-semibold text-slate-600">{translate("Versions")}</h3>
+                            <h3 className="text-sm font-semibold text-slate-600 dark:text-slate-300">{translate("Versions")}</h3>
                             <div className="space-y-3">
                               {singleJob.versions.map((version) => {
                                 const versionVideoUrl = buildAssetUrl(version.video_url);
@@ -2180,19 +2178,19 @@ export default function Home() {
                                 return (
                                   <div
                                     key={version.version_id}
-                                    className={`rounded-2xl border p-3 ${
-                                      isActive ? "border-slate-900 bg-slate-50" : "border-slate-200 bg-white"
+                                    className={`rounded border p-3 ${
+                                      isActive ? "border-slate-400 dark:border-slate-600 bg-slate-100 dark:bg-slate-800" : "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30"
                                     }`}
                                   >
                                     <div className="flex items-start justify-between gap-3">
                                       <div>
-                                        <p className="text-sm font-semibold text-slate-900">{version.label}</p>
+                                        <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">{version.label}</p>
                                         <p className="text-xs text-slate-500">
                                           {version.source} • {formatTimeDistance(version.created_at)}
                                         </p>
                                       </div>
                                       {isActive ? (
-                                        <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+                                        <span className="rounded-full border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50 dark:bg-emerald-950/30 px-2 py-0.5 text-[11px] font-semibold text-emerald-400">
                                           {translate("Selected")}
                                         </span>
                                       ) : null}
@@ -2201,7 +2199,7 @@ export default function Home() {
                                       <video
                                         key={`${version.version_id}-${versionVideoUrl}`}
                                         controls
-                                        className="mt-2 max-h-48 w-full rounded-xl border border-slate-200 bg-black/60"
+                                        className="mt-2 max-h-48 w-full rounded-md border border-slate-200 dark:border-slate-800 bg-black/60"
                                         src={versionVideoUrl}
                                       >
                                         {translate("Version video unavailable.")}
@@ -2210,7 +2208,7 @@ export default function Home() {
                                     <p className="mt-2 text-[11px] text-slate-500">
                                       {translate("Azure video ID:")} {version.video_id ?? translate("Unavailable")}
                                     </p>
-                                    <p className="mt-1 text-xs text-slate-600">
+                                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                                       {translate("Prompt:")} <span className="font-mono text-[11px] text-slate-500">{version.prompt}</span>
                                     </p>
                                   </div>
@@ -2226,8 +2224,8 @@ export default function Home() {
                   <aside className="space-y-8">
                     {singleJob?.messages?.length ? (
                       <div className={`${panelCardClass}`}>
-                        <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
-                          <ClockIcon className="h-5 w-5 text-slate-600" />
+                        <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
+                          <ClockIcon className="h-5 w-5 text-slate-500 dark:text-slate-400" />
                           {translate("Job Timeline")}
                         </h2>
                         <ol className="mt-6 space-y-4">
@@ -2236,13 +2234,13 @@ export default function Home() {
                             return (
                               <li
                                 key={`${message.timestamp}-${index}`}
-                                className="relative flex gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-inner shadow-slate-200/60"
+                                className="relative flex gap-3 rounded border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/50 p-3 shadow-inner shadow-black/20"
                               >
-                                <div className="relative mt-0.5 flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-slate-100">
-                                  <Icon className="h-4 w-4 text-slate-600" />
+                                <div className="relative mt-0.5 flex h-7 w-7 items-center justify-center rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800">
+                                  <Icon className="h-4 w-4 text-slate-500 dark:text-slate-400" />
                                 </div>
                                 <div>
-                                  <p className="text-sm text-slate-600">{message.text}</p>
+                                  <p className="text-sm text-slate-600 dark:text-slate-300">{message.text}</p>
                                   <p className="text-xs text-slate-500">
                                     {formatTimestamp(message.timestamp)} · {stageLabel(message.stage, language)}
                                   </p>
@@ -2256,15 +2254,15 @@ export default function Home() {
 
                     <div className={`${panelCardClass}`}>
                       <div className="flex items-center justify-between">
-                        <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
-                          <ArrowPathIcon className="h-5 w-5 text-slate-600" />
+                        <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
+                          <ArrowPathIcon className="h-5 w-5 text-slate-500 dark:text-slate-400" />
                           {translate("Recent Single Jobs")}
                         </h2>
                         <button
                           type="button"
                           onClick={handleDeleteSingleJobs}
                           disabled={!selectedSingleJobs.size}
-                          className="inline-flex items-center gap-1 rounded-lg border border-rose-500/50 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 transition disabled:cursor-not-allowed disabled:opacity-50"
+                          className="inline-flex items-center gap-1 rounded border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30 px-3 py-1.5 text-xs font-semibold text-rose-400 transition disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           <TrashIcon className="h-4 w-4" />
                           {translate("Delete Selected")}
@@ -2276,8 +2274,8 @@ export default function Home() {
                         <>
                           <p className="mt-4 text-xs text-slate-500">{translate("Tap a row to view job details.")}</p>
                           <div className="mt-3 overflow-x-auto">
-                            <table className="min-w-full divide-y divide-slate-200 text-sm">
-                              <thead className="bg-slate-100 text-[11px] uppercase tracking-wide text-slate-500">
+                            <table className="min-w-full divide-y divide-slate-800 text-sm">
+                              <thead className="bg-slate-100/50 dark:bg-slate-100 dark:bg-slate-800/50 text-[11px] uppercase tracking-wide text-slate-500">
                                 <tr>
                                   <th scope="col" className="px-3 py-2 text-left">
                                     <span className="sr-only">{translate("Select workflows")}</span>
@@ -2290,7 +2288,7 @@ export default function Home() {
                                   <th scope="col" className="px-3 py-2 text-left">{translate("Started")}</th>
                                 </tr>
                               </thead>
-                              <tbody className="divide-y divide-slate-100">
+                              <tbody className="divide-y divide-slate-800">
                                 {singleJobs.map((item) => {
                                   const token = getStatusToken(item.status, language);
                                   const isActive = item.job_id === activeSingleJobId;
@@ -2303,7 +2301,7 @@ export default function Home() {
                                         setActiveSingleJobId(item.job_id);
                                         setSingleJob(item);
                                       }}
-                                      className={`cursor-pointer transition ${isActive ? "bg-slate-100/80" : "bg-white hover:bg-slate-50"}`}
+                                      className={`cursor-pointer transition ${isActive ? "bg-slate-100 dark:bg-slate-800" : "bg-transparent hover:bg-slate-100/50 dark:bg-slate-100 dark:bg-slate-800/50"}`}
                                     >
                                       <td className="px-3 py-2">
                                         <input
@@ -2311,30 +2309,30 @@ export default function Home() {
                                           checked={isSelected}
                                           onChange={() => toggleSingleSelection(item.job_id)}
                                           onClick={(event) => event.stopPropagation()}
-                                          className="h-4 w-4 rounded border-slate-200 text-slate-900 focus:ring-slate-400"
+                                          className="h-4 w-4 rounded border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700 text-indigo-500 focus:ring-indigo-500"
                                         />
                                       </td>
-                                      <td className="whitespace-nowrap px-3 py-2 font-mono text-xs text-slate-600">{item.job_id.slice(0, 12)}</td>
+                                      <td className="whitespace-nowrap px-3 py-2 font-mono text-xs text-slate-500 dark:text-slate-400">{item.job_id.slice(0, 12)}</td>
                                       <td className="px-3 py-2">
                                         <div className="flex flex-col gap-1">
                                           <span className={`${pillButtonClass} ${token.className}`}>{token.label}</span>
                                           <span className="text-[11px] text-slate-500">{stageLabel(item.status, language)}</span>
                                         </div>
                                       </td>
-                                      <td className="px-3 py-2 text-xs text-slate-600">{item.resolution}</td>
-                                      <td className="px-3 py-2 text-xs text-slate-600">
+                                      <td className="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">{item.resolution}</td>
+                                      <td className="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">
                                         {item.duration}
                                         {translate("s")}
                                       </td>
                                       <td className="px-3 py-2">
                                         <div className="flex items-center gap-2">
-                                          <div className="h-2 w-24 rounded-full bg-slate-100">
+                                          <div className="h-2 w-24 rounded-full bg-slate-100 dark:bg-slate-800">
                                             <div
-                                              className="h-full rounded-full bg-slate-900 transition-all"
+                                              className="h-full rounded-full bg-slate-400 transition-all"
                                               style={{ width: `${progressPercent}%` }}
                                             />
                                           </div>
-                                          <span className="text-xs font-medium text-slate-600">{progressPercent}%</span>
+                                          <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{progressPercent}%</span>
                                         </div>
                                       </td>
                                       <td className="whitespace-nowrap px-3 py-2 text-xs text-slate-500">{formatTimeDistance(item.started_at)}</td>
