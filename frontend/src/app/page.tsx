@@ -111,19 +111,19 @@ type SingleVideoJob = {
 const STATUS_TOKENS: Record<string, { label: string; className: string }> = {
   queued: {
     label: "Queued",
-    className: "border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300",
+    className: "text-slate-600 dark:text-slate-300",
   },
   running: {
     label: "In Progress",
-    className: "border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300",
+    className: "text-slate-600 dark:text-slate-300",
   },
   completed: {
     label: "Completed",
-    className: "border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-400",
+    className: "text-emerald-600 dark:text-emerald-400",
   },
   failed: {
     label: "Failed",
-    className: "border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30 text-rose-400",
+    className: "text-rose-600 dark:text-rose-400",
   },
 };
 
@@ -1326,7 +1326,7 @@ export default function Home() {
                                   <td className="whitespace-nowrap px-3 py-2 font-mono text-xs text-slate-500 dark:text-slate-400">{item.job_id.slice(0, 12)}</td>
                                   <td className="px-3 py-2">
                                     <div className="flex flex-col gap-1">
-                                      <span className={`${pillButtonClass} ${token.className}`}>{token.label}</span>
+                                      <span className={`text-xs font-semibold uppercase tracking-wide ${token.className}`}>{token.label}</span>
                                       <span className="text-[11px] text-slate-500">{stageLabel(item.stage, language)}</span>
                                     </div>
                                   </td>
@@ -1552,12 +1552,11 @@ export default function Home() {
                               <FilmIcon className="h-5 w-5 text-slate-500 dark:text-slate-400" />
                               {translate("Workflow Status")}
                             </h2>
-                            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{stageLabel(job.stage, language)}</p>
                             <p className="text-xs uppercase tracking-wide text-slate-500">
                               {translate("Mode:")} {translate(job.generation_mode === "sequence" ? "Sequence" : "Parallel")}
                             </p>
                           </div>
-                          <span className={`${pillButtonClass} ${currentStatusToken.className}`}>{currentStatusToken.label}</span>
+                          <span className={`text-xs font-semibold uppercase tracking-wide ${currentStatusToken.className}`}>{currentStatusToken.label}</span>
                         </div>
 
                         <div className="mt-6 space-y-3">
@@ -1934,7 +1933,7 @@ export default function Home() {
                                   <td className="whitespace-nowrap px-3 py-2 font-mono text-xs text-slate-500 dark:text-slate-400">{item.job_id.slice(0, 12)}</td>
                                   <td className="px-3 py-2">
                                     <div className="flex flex-col gap-1">
-                                      <span className={`${pillButtonClass} ${token.className}`}>{token.label}</span>
+                                      <span className={`text-xs font-semibold uppercase tracking-wide ${token.className}`}>{token.label}</span>
                                       <span className="text-[11px] text-slate-500">{stageLabel(item.status, language)}</span>
                                     </div>
                                   </td>
@@ -2117,9 +2116,8 @@ export default function Home() {
                               <FilmIcon className="h-5 w-5 text-slate-500 dark:text-slate-400" />
                               {translate("Single Video Status")}
                             </h2>
-                            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{stageLabel(singleJob.status, language)}</p>
                           </div>
-                          <span className={`${pillButtonClass} ${singleStatusToken.className}`}>{singleStatusToken.label}</span>
+                          <span className={`text-xs font-semibold uppercase tracking-wide ${singleStatusToken.className}`}>{singleStatusToken.label}</span>
                         </div>
 
                         <div className="mt-6 space-y-3">
