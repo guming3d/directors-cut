@@ -605,8 +605,13 @@ export default function Home() {
 
         setJob(data);
         setJobs((prev) => {
-          const others = prev.filter((item) => item.job_id !== data.job_id);
-          return [data, ...others];
+          const index = prev.findIndex((item) => item.job_id === data.job_id);
+          if (index !== -1) {
+            const next = [...prev];
+            next[index] = data;
+            return next;
+          }
+          return [data, ...prev];
         });
         setCombinedError(null);
         const delay = terminalStatuses.has(data.status) ? 12000 : 4000;
@@ -650,8 +655,13 @@ export default function Home() {
 
         setSingleJob(data);
         setSingleJobs((prev) => {
-          const others = prev.filter((item) => item.job_id !== data.job_id);
-          return [data, ...others];
+          const index = prev.findIndex((item) => item.job_id === data.job_id);
+          if (index !== -1) {
+            const next = [...prev];
+            next[index] = data;
+            return next;
+          }
+          return [data, ...prev];
         });
         setSingleError(null);
         if (terminalStatuses.has(data.status) && interval) {
