@@ -111,6 +111,19 @@ update_backend() {
     --resource-group "$AZURE_RESOURCE_GROUP" \
     --secrets "${BACKEND_SECRETS[@]}" >/dev/null
 
+  az containerapp registry set \
+    --name "$AZURE_CONTAINERAPPS_BACKEND" \
+    --resource-group "$AZURE_RESOURCE_GROUP" \
+    --server "$REGISTRY_SERVER" \
+    --username "$REGISTRY_USERNAME" \
+    --password "$REGISTRY_PASSWORD" >/dev/null
+
+  az containerapp ingress update \
+    --name "$AZURE_CONTAINERAPPS_BACKEND" \
+    --resource-group "$AZURE_RESOURCE_GROUP" \
+    --type external \
+    --target-port 8000 >/dev/null
+
   BACKEND_ENV_VARS=("AZURE_OPENAI_API_KEY=secretref:sora-openai-api-key")
   [[ -n "${AZURE_OPENAI_ENDPOINT:-}" ]] && BACKEND_ENV_VARS+=("AZURE_OPENAI_ENDPOINT=$AZURE_OPENAI_ENDPOINT")
   [[ -n "${ENDPOINT_URL:-}" ]] && BACKEND_ENV_VARS+=("ENDPOINT_URL=$ENDPOINT_URL")
@@ -129,13 +142,8 @@ update_backend() {
     --name "$AZURE_CONTAINERAPPS_BACKEND" \
     --resource-group "$AZURE_RESOURCE_GROUP" \
     --image "$BACKEND_IMAGE" \
-    --target-port 8000 \
-    --ingress external \
     --min-replicas 1 \
     --max-replicas 2 \
-    --registry-server "$REGISTRY_SERVER" \
-    --registry-username "$REGISTRY_USERNAME" \
-    --registry-password "$REGISTRY_PASSWORD" \
     --cpu 2.0 \
     --memory 4Gi \
     --set-env-vars "${BACKEND_ENV_VARS[@]}" >/dev/null
@@ -155,17 +163,25 @@ update_frontend() {
     "$ROOT_DIR/frontend"
   docker push "$FRONTEND_IMAGE"
 
+  az containerapp registry set \
+    --name "$AZURE_CONTAINERAPPS_FRONTEND" \
+    --resource-group "$AZURE_RESOURCE_GROUP" \
+    --server "$REGISTRY_SERVER" \
+    --username "$REGISTRY_USERNAME" \
+    --password "$REGISTRY_PASSWORD" >/dev/null
+
+  az containerapp ingress update \
+    --name "$AZURE_CONTAINERAPPS_FRONTEND" \
+    --resource-group "$AZURE_RESOURCE_GROUP" \
+    --type external \
+    --target-port 3000 >/dev/null
+
   az containerapp update \
     --name "$AZURE_CONTAINERAPPS_FRONTEND" \
     --resource-group "$AZURE_RESOURCE_GROUP" \
     --image "$FRONTEND_IMAGE" \
-    --target-port 3000 \
-    --ingress external \
     --min-replicas 1 \
     --max-replicas 2 \
-    --registry-server "$REGISTRY_SERVER" \
-    --registry-username "$REGISTRY_USERNAME" \
-    --registry-password "$REGISTRY_PASSWORD" \
     --cpu 1.0 \
     --memory 2Gi \
     --set-env-vars "NEXT_PUBLIC_API_BASE_URL=$FRONTEND_API_BASE_URL" >/dev/null
