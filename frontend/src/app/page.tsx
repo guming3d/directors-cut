@@ -3,6 +3,8 @@
 import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState, useRef } from "react";
 import {
   ArrowPathIcon,
+  ArrowsPointingInIcon,
+  ArrowsPointingOutIcon,
   CheckCircleIcon,
   ClockIcon,
   DocumentTextIcon,
@@ -403,6 +405,8 @@ export default function Home() {
   // Resizable sidebar state
   const [sidebarWidth, setSidebarWidth] = useState(400);
   const [isResizing, setIsResizing] = useState(false);
+  const [isLeftCollapsed, setIsLeftCollapsed] = useState(false);
+  const [isRightCollapsed, setIsRightCollapsed] = useState(false);
   const sidebarRef = useRef<HTMLElement>(null);
 
   const startResizing = useCallback(() => {
@@ -1187,7 +1191,7 @@ export default function Home() {
         <div className="absolute right-[-12%] top-[40%] h-[380px] w-[380px] rounded-full bg-gradient-to-tr from-blue-500/10 via-cyan-500/5 to-transparent blur-[140px]" />
       </div>
 
-      <header className="sticky top-0 z-20 flex items-center justify-between border-b border-slate-200 bg-white/80 px-6 py-3 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/50">
+      <header className="sticky top-0 z-20 flex items-center justify-between border-b border-slate-300 bg-slate-200/90 px-6 py-3 backdrop-blur-xl dark:border-slate-700 dark:bg-slate-800/90">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-3">
             <Image
@@ -1202,8 +1206,8 @@ export default function Home() {
               <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-500">{translate("Sora2 Studio")}</p>
             </div>
           </div>
-          <div className="h-6 w-px bg-slate-200 dark:bg-slate-800" />
-          <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-1 dark:bg-slate-800">
+          <div className="h-6 w-px bg-slate-400 dark:bg-slate-600" />
+          <div className="flex items-center gap-1 rounded-lg bg-white p-1 dark:bg-slate-900">
             {TABS.map(({ id, label }) => {
               const isActive = activeTab === id;
               return (
@@ -1216,7 +1220,7 @@ export default function Home() {
                   }}
                   className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
                     isActive
-                      ? "bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-slate-100"
+                      ? "bg-slate-100 text-slate-900 shadow-sm dark:bg-slate-700 dark:text-slate-100"
                       : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
                   }`}
                 >
@@ -1245,25 +1249,50 @@ export default function Home() {
       <div className="relative mx-auto flex min-h-screen w-full gap-4 px-4 pb-10 pt-6 xl:flex-row">
         <aside
           ref={sidebarRef}
-          className="hidden flex-col gap-6 xl:flex shrink-0"
-          style={{ width: sidebarWidth }}
+          className={`relative flex flex-col gap-6 transition-all duration-300 ease-in-out ${
+            isLeftCollapsed ? "w-[60px] items-center" : "hidden xl:flex"
+          } shrink-0`}
+          style={{ width: isLeftCollapsed ? 60 : sidebarWidth }}
         >
-          {activeTab === "combined" && (
+          {isLeftCollapsed && (
+            <button
+              type="button"
+              onClick={() => setIsLeftCollapsed(false)}
+              className="absolute top-2 z-10 rounded-full border border-slate-200 bg-white p-1.5 text-slate-500 shadow-sm hover:bg-slate-50 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-100"
+              title={translate("Expand column")}
+            >
+              <ArrowsPointingOutIcon className="h-4 w-4" />
+            </button>
+          )}
+
+          {!isLeftCollapsed && (
+            <div className="flex flex-col gap-6 w-full">
+              {activeTab === "combined" && (
             <div className={`${panelCardClass}`}>
               <div className="flex items-center justify-between">
                 <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
                   <ArrowPathIcon className="h-5 w-5 text-slate-500 dark:text-slate-400" />
                   {translate("Workflow Runs")}
                 </h2>
-                <button
-                  type="button"
-                  onClick={handleDeleteCombinedJobs}
-                  disabled={!selectedCombinedJobs.size}
-                  className="inline-flex items-center gap-1 rounded border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30 px-3 py-1.5 text-xs font-semibold text-rose-400 transition disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <TrashIcon className="h-4 w-4" />
-                  {translate("Delete Selected")}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleDeleteCombinedJobs}
+                    disabled={!selectedCombinedJobs.size}
+                    className="inline-flex items-center gap-1 rounded border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30 px-3 py-1.5 text-xs font-semibold text-rose-400 transition disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <TrashIcon className="h-4 w-4" />
+                    {translate("Delete Selected")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsLeftCollapsed(true)}
+                    className="rounded-full border border-slate-200 bg-white p-1.5 text-slate-500 shadow-sm hover:bg-slate-50 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-100"
+                    title={translate("Minimize column")}
+                  >
+                    <ArrowsPointingInIcon className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
               {jobs.length === 0 ? (
                 <p className="mt-4 text-sm text-slate-500">{translate("Start your first workflow to see it listed here.")}</p>
@@ -1350,15 +1379,25 @@ export default function Home() {
                   <ArrowPathIcon className="h-5 w-5 text-slate-500 dark:text-slate-400" />
                   {translate("Recent Single Jobs")}
                 </h2>
-                <button
-                  type="button"
-                  onClick={handleDeleteSingleJobs}
-                  disabled={!selectedSingleJobs.size}
-                  className="inline-flex items-center gap-1 rounded border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30 px-3 py-1.5 text-xs font-semibold text-rose-400 transition disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <TrashIcon className="h-4 w-4" />
-                  {translate("Delete Selected")}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleDeleteSingleJobs}
+                    disabled={!selectedSingleJobs.size}
+                    className="inline-flex items-center gap-1 rounded border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30 px-3 py-1.5 text-xs font-semibold text-rose-400 transition disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <TrashIcon className="h-4 w-4" />
+                    {translate("Delete Selected")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsLeftCollapsed(true)}
+                    className="rounded-full border border-slate-200 bg-white p-1.5 text-slate-500 shadow-sm hover:bg-slate-50 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-100"
+                    title={translate("Minimize column")}
+                  >
+                    <ArrowsPointingInIcon className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
               {singleJobs.length === 0 ? (
                 <p className="mt-4 text-sm text-slate-500">{translate("Generate a clip to see it listed here.")}</p>
@@ -1438,17 +1477,38 @@ export default function Home() {
               )}
             </div>
           )}
+          </div>
+          )}
         </aside>
 
-        <div
-          className="hidden w-2 cursor-col-resize items-center justify-center hover:bg-slate-200 dark:hover:bg-slate-800 xl:flex rounded transition-colors"
-          onMouseDown={startResizing}
-        >
-          <div className="h-8 w-1 rounded-full bg-slate-300 dark:bg-slate-600" />
-        </div>
+        {!isLeftCollapsed && !isRightCollapsed && (
+          <div
+            className="hidden w-2 cursor-col-resize items-center justify-center rounded transition-colors hover:bg-slate-200 dark:hover:bg-slate-800 xl:flex"
+            onMouseDown={startResizing}
+          >
+            <div className="h-8 w-1 rounded-full bg-slate-300 dark:bg-slate-600" />
+          </div>
+        )}
 
-        <main className="flex-1 space-y-10 min-w-0">
-          <div className="space-y-8">
+        <main
+          className={`relative flex flex-col gap-6 transition-all duration-300 ease-in-out ${
+            isRightCollapsed ? "w-[60px] flex-none items-center" : "flex-1 min-w-0"
+          }`}
+        >
+          {isRightCollapsed && (
+            <button
+              type="button"
+              onClick={() => setIsRightCollapsed(false)}
+              className="absolute top-2 z-10 rounded-full border border-slate-200 bg-white p-1.5 text-slate-500 shadow-sm hover:bg-slate-50 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-100"
+              title={translate("Expand column")}
+            >
+              <ArrowsPointingOutIcon className="h-4 w-4" />
+            </button>
+          )}
+
+          {!isRightCollapsed && (
+            <div className="space-y-10">
+              <div className="space-y-8">
 
 
             {activeTab === "combined" ? (
@@ -1470,6 +1530,14 @@ export default function Home() {
                           <DocumentTextIcon className="h-5 w-5 text-slate-500 dark:text-slate-400" />
                           {translate("Storyboard Script")}
                         </div>
+                        <button
+                          type="button"
+                          onClick={() => setIsRightCollapsed(true)}
+                          className="rounded-full border border-slate-200 bg-white p-1.5 text-slate-500 shadow-sm hover:bg-slate-50 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-100"
+                          title={translate("Minimize column")}
+                        >
+                          <ArrowsPointingInIcon className="h-4 w-4" />
+                        </button>
                       </div>
                       <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
                         {translate("Paste your storyboard with scene headings.")}{" "}
@@ -1934,9 +2002,19 @@ export default function Home() {
                 <div className="grid gap-8 xl:grid-cols-[1.05fr,0.95fr]">
                   <section className="space-y-8">
                     <div className={`${panelCardClass}`}>
-                      <div className="flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
-                        <FilmIcon className="h-5 w-5 text-slate-500 dark:text-slate-400" />
-                        {translate("Generate Single Clip")}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
+                          <FilmIcon className="h-5 w-5 text-slate-500 dark:text-slate-400" />
+                          {translate("Generate Single Clip")}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setIsRightCollapsed(true)}
+                          className="rounded-full border border-slate-200 bg-white p-1.5 text-slate-500 shadow-sm hover:bg-slate-50 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-100"
+                          title={translate("Minimize column")}
+                        >
+                          <ArrowsPointingInIcon className="h-4 w-4" />
+                        </button>
                       </div>
                       <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
                         {translate("Submit a single prompt directly to the Sora2 API. Optionally attach a still reference, select the render resolution, and choose a supported clip duration.")}
@@ -2279,6 +2357,8 @@ export default function Home() {
               </>
             )}
           </div>
+          </div>
+          )}
         </main>
       </div>
     </div>
