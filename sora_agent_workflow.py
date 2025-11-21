@@ -77,8 +77,8 @@ _VIDEO_CLIENT: AsyncOpenAI | None = None
 
 
 def _configure_logging() -> logging.Logger:
-    level_name = (os.getenv("LOG_LEVEL") or "INFO").upper()
-    level = getattr(logging, level_name, logging.INFO)
+    level_name = (os.getenv("LOG_LEVEL") or "ERROR").upper()
+    level = getattr(logging, level_name, logging.ERROR)
     log_path = OUTPUT_DIR / "sora_workflow.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -139,7 +139,7 @@ def _video_client() -> AsyncOpenAI:
         raise RuntimeError("Configure ENDPOINT_URL or AZURE_OPENAI_ENDPOINT before using remix features.")
     if not api_key:
         raise RuntimeError("Configure AZURE_OPENAI_API_KEY or OPENAI_API_KEY before using remix features.")
-    _VIDEO_CLIENT = AsyncOpenAI(api_key=api_key, base_url=f"{endpoint}/openai/v1/")
+    _VIDEO_CLIENT = AsyncOpenAI(api_key=api_key, base_url=f"{endpoint}/openai/v1/", timeout=900.0)
     return _VIDEO_CLIENT
 
 

@@ -183,6 +183,7 @@ async def main() -> None:
     client = AsyncOpenAI(
         api_key=api_key,
         base_url=f"{endpoint}/openai/v1/",
+        timeout=900.0,
     )
 
     try:

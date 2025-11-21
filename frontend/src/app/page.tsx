@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState, useRef } from "react";
 import {
   ArrowPathIcon,
   CheckCircleIcon,
@@ -400,6 +400,42 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<TabId>("combined");
     const [theme, setTheme] = useState<"light" | "dark">("light");
 
+  // Resizable sidebar state
+  const [sidebarWidth, setSidebarWidth] = useState(400);
+  const [isResizing, setIsResizing] = useState(false);
+  const sidebarRef = useRef<HTMLElement>(null);
+
+  const startResizing = useCallback(() => {
+    setIsResizing(true);
+  }, []);
+
+  const stopResizing = useCallback(() => {
+    setIsResizing(false);
+  }, []);
+
+  const resize = useCallback(
+    (mouseMoveEvent: MouseEvent) => {
+      if (isResizing) {
+        const newWidth = mouseMoveEvent.clientX - (sidebarRef.current?.getBoundingClientRect().left || 0);
+        if (newWidth > 300 && newWidth < 800) {
+          setSidebarWidth(newWidth);
+        }
+      }
+    },
+    [isResizing]
+  );
+
+  useEffect(() => {
+    if (isResizing) {
+      window.addEventListener("mousemove", resize);
+      window.addEventListener("mouseup", stopResizing);
+    }
+    return () => {
+      window.removeEventListener("mousemove", resize);
+      window.removeEventListener("mouseup", stopResizing);
+    };
+  }, [isResizing, resize, stopResizing]);
+
   useEffect(() => {
     if (theme === "dark") {
       document.documentElement.classList.add("dark");
@@ -707,21 +743,7 @@ export default function Home() {
   const singleVideoUrl = buildAssetUrl(singleJob?.video_url);
   const singleStatusToken = getStatusToken(singleJob?.status, language);
 
-  const combinedStats = useMemo(() => {
-    const totalJobs = jobs.length;
-    const running = jobs.filter((item) => item.status === "running" || item.status === "queued").length;
-    const completed = jobs.filter((item) => item.status === "completed").length;
-    return { totalJobs, running, completed };
-  }, [jobs]);
 
-  const singleStats = useMemo(() => {
-    const totalJobs = singleJobs.length;
-    const running = singleJobs.filter((item) => item.status === "running" || item.status === "queued").length;
-    const completed = singleJobs.filter((item) => item.status === "completed").length;
-    return { totalJobs, running, completed };
-  }, [singleJobs]);
-
-  const activeScenes = job?.scenes?.length ?? 0;
   const panelCardClass =
     "rounded-md border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/50 p-6 shadow-2xl backdrop-blur-xl";
   const pillButtonClass =
@@ -1165,48 +1187,67 @@ export default function Home() {
         <div className="absolute right-[-12%] top-[40%] h-[380px] w-[380px] rounded-full bg-gradient-to-tr from-blue-500/10 via-cyan-500/5 to-transparent blur-[140px]" />
       </div>
 
-      <div className="relative mx-auto flex min-h-screen w-full flex-col gap-6 px-4 pb-10 pt-6 xl:flex-row xl:gap-6">
-        <aside className="hidden w-[650px] flex-col gap-6 xl:flex">
-          <div className={`${panelCardClass} space-y-6`}>
-            <div className="flex items-center gap-3">
-              <Image
-                src="/sora2_logo.jpg"
-                alt={translate("Sora Agent Workflow logo")}
-                width={56}
-                height={56}
-                className="h-14 w-14 rounded border border-slate-300 dark:border-slate-700 object-cover shadow-sm shadow-black/50"
-                priority
-              />
-              <div>
-                <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-500">{translate("Sora2 Studio")}</p>
-              </div>
-            </div>
-            
-
-
-            <div className="rounded border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/50 p-4">
-              <p className="text-xs uppercase text-slate-500">{translate("Workflow health")}</p>
-              <dl className="mt-4 space-y-3 text-sm text-slate-500 dark:text-slate-400">
-                <div className="flex items-center justify-between">
-                  <dt>{translate("Active workflows")}</dt>
-                  <dd className="text-lg font-semibold text-slate-900 dark:text-slate-100">{combinedStats.running}</dd>
-                </div>
-                <div className="flex items-center justify-between">
-                  <dt>{translate("Completed runs")}</dt>
-                  <dd className="text-lg font-semibold text-slate-900 dark:text-slate-100">{combinedStats.completed}</dd>
-                </div>
-                <div className="flex items-center justify-between">
-                  <dt>{translate("Scenes this run")}</dt>
-                  <dd className="text-lg font-semibold text-slate-900 dark:text-slate-100">{activeScenes}</dd>
-                </div>
-                <div className="flex items-center justify-between">
-                  <dt>{translate("Single queue")}</dt>
-                  <dd className="text-lg font-semibold text-slate-900 dark:text-slate-100">{singleStats.running}</dd>
-                </div>
-              </dl>
+      <header className="sticky top-0 z-20 flex items-center justify-between border-b border-slate-200 bg-white/80 px-6 py-3 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/50">
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
+            <Image
+              src="/sora2_logo.jpg"
+              alt={translate("Sora Agent Workflow logo")}
+              width={40}
+              height={40}
+              className="h-10 w-10 rounded border border-slate-300 object-cover shadow-sm shadow-black/50 dark:border-slate-700"
+              priority
+            />
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-500">{translate("Sora2 Studio")}</p>
             </div>
           </div>
+          <div className="h-6 w-px bg-slate-200 dark:bg-slate-800" />
+          <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-1 dark:bg-slate-800">
+            {TABS.map(({ id, label }) => {
+              const isActive = activeTab === id;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => {
+                    setActiveTab(id);
+                    scrollToWorkspaceTop();
+                  }}
+                  className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
+                    isActive
+                      ? "bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-slate-100"
+                      : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
+                  }`}
+                >
+                  {translate(label)}
+                </button>
+              );
+            })}
+          </div>
+        </div>
 
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3"><ThemeToggle /><LanguageToggle /></div>
+          <span className={`${pillButtonClass} whitespace-nowrap`}>
+            {translate("API ·")} <span className="font-mono text-[11px] text-slate-500">{displayApiBase || API_BASE}</span>
+          </span>
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="rounded-full border border-slate-300 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500 transition hover:border-slate-400 hover:text-slate-900 dark:border-slate-700 dark:text-slate-400 dark:hover:border-slate-600 dark:hover:text-slate-100"
+          >
+            {translate("Sign out")}
+          </button>
+        </div>
+      </header>
+
+      <div className="relative mx-auto flex min-h-screen w-full gap-4 px-4 pb-10 pt-6 xl:flex-row">
+        <aside
+          ref={sidebarRef}
+          className="hidden flex-col gap-6 xl:flex shrink-0"
+          style={{ width: sidebarWidth }}
+        >
           {activeTab === "combined" && (
             <div className={`${panelCardClass}`}>
               <div className="flex items-center justify-between">
@@ -1399,45 +1440,14 @@ export default function Home() {
           )}
         </aside>
 
-        <main className="flex-1 space-y-10">
-          <header className="flex items-center justify-between rounded-md border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/50 px-6 py-4 backdrop-blur-xl">
-            <div className="flex items-center gap-1 rounded-lg bg-slate-100 dark:bg-slate-800 p-1">
-              {TABS.map(({ id, label }) => {
-                const isActive = activeTab === id;
-                return (
-                  <button
-                    key={id}
-                    type="button"
-                    onClick={() => {
-                      setActiveTab(id);
-                      scrollToWorkspaceTop();
-                    }}
-                    className={`rounded-md px-4 py-2 text-sm font-semibold transition ${
-                      isActive
-                        ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm"
-                        : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
-                    }`}
-                  >
-                    {translate(label)}
-                  </button>
-                );
-              })}
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-3"><ThemeToggle /><LanguageToggle /></div>
-              <span className={`${pillButtonClass} whitespace-nowrap`}>
-                {translate("API ·")} <span className="font-mono text-[11px] text-slate-500">{displayApiBase || API_BASE}</span>
-              </span>
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="rounded-full border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-900 dark:text-slate-100"
-              >
-                {translate("Sign out")}
-              </button>
-            </div>
-          </header>
+        <div
+          className="hidden w-2 cursor-col-resize items-center justify-center hover:bg-slate-200 dark:hover:bg-slate-800 xl:flex rounded transition-colors"
+          onMouseDown={startResizing}
+        >
+          <div className="h-8 w-1 rounded-full bg-slate-300 dark:bg-slate-600" />
+        </div>
 
+        <main className="flex-1 space-y-10 min-w-0">
           <div className="space-y-8">
 
 
@@ -1734,10 +1744,7 @@ export default function Home() {
                           {job.scenes.map((scene) => {
                             const versions = scene.versions ?? [];
                             const selectedVersion = versions.find((version) => version.version_id === scene.selected_version_id) ?? versions[0];
-                            const sceneVideoUrl = buildAssetUrl(selectedVersion?.video_url ?? scene.video_url);
-                            const sceneLastFrameUrl = showSequenceReferences
-                              ? buildAssetUrl(selectedVersion?.last_frame_url ?? scene.last_frame_url)
-                              : null;
+
                             return (
                               <div
                                 key={scene.order}
@@ -1754,51 +1761,7 @@ export default function Home() {
                                     {translate("Scene")} {scene.order}
                                   </span>
                                 </div>
-                                {sceneVideoUrl || (showSequenceReferences && sceneLastFrameUrl) ? (
-                                  <div
-                                    className={`mt-3 grid gap-3 ${
-                                      showSequenceReferences && sceneLastFrameUrl && sceneVideoUrl
-                                        ? "md:grid-cols-[1.2fr,0.8fr]"
-                                        : ""
-                                    }`}
-                                  >
-                                    <div>
-                                      {sceneVideoUrl ? (
-                                        <video
-                                          key={`${scene.order}-${sceneVideoUrl}`}
-                                          controls
-                                          className="max-h-56 w-full rounded-md border border-slate-200 dark:border-slate-800 bg-black/60"
-                                          src={sceneVideoUrl}
-                                        >
-                                          {translate("Video unavailable.")}
-                                        </video>
-                                      ) : (
-                                        <div className="flex h-40 items-center justify-center rounded-md border border-dashed border-slate-300 dark:border-slate-700 bg-slate-100/50 dark:bg-slate-100 dark:bg-slate-800/50 text-xs text-slate-500">
-                                          {translate("Clip pending...")}
-                                        </div>
-                                      )}
-                                    </div>
-                                    {showSequenceReferences && sceneLastFrameUrl ? (
-                                      <div className="flex flex-col rounded-md border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/80 p-3 text-center shadow-inner">
-                                        <Image
-                                          src={sceneLastFrameUrl}
-                                          alt={`${scene.label} ${translate("Last frame reference")}`}
-                                          width={320}
-                                          height={240}
-                                          unoptimized
-                                          className="h-40 w-full rounded object-cover"
-                                        />
-                                        <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                                          {translate("Last frame reference")}
-                                        </p>
-                                      </div>
-                                    ) : null}
-                                  </div>
-                                ) : (
-                                  <div className="mt-3 flex h-40 items-center justify-center rounded-md border border-dashed border-slate-300 dark:border-slate-700 bg-slate-100/50 dark:bg-slate-100 dark:bg-slate-800/50 text-xs text-slate-500">
-                                    {translate("Clip pending...")}
-                                  </div>
-                                )}
+
                                 <p className="mt-2 text-[11px] text-slate-500">
                                   {translate("Video ID:")} {selectedVersion?.video_id ?? translate("Unavailable")}
                                 </p>
@@ -1930,13 +1893,13 @@ export default function Home() {
                           <ClockIcon className="h-5 w-5 text-slate-500 dark:text-slate-400" />
                           {translate("Workflow Timeline")}
                         </h2>
-                        <ol className="mt-6 space-y-4">
+                        <ol className="mt-4 space-y-2 max-h-60 overflow-y-auto pr-2">
                           {job.messages.map((message, index) => {
                             const Icon = stageIcons[message.stage] ?? ArrowPathIcon;
                             return (
                               <li
                                 key={`${message.timestamp}-${index}`}
-                                className="relative flex gap-3 rounded border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/50 p-3 shadow-inner shadow-black/20"
+                                className="relative flex gap-3 rounded border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/50 p-2 shadow-inner shadow-black/20"
                               >
                                 <div className="relative mt-0.5 flex h-7 w-7 items-center justify-center rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800">
                                   <Icon className="h-4 w-4 text-slate-500 dark:text-slate-400" />
@@ -2286,13 +2249,13 @@ export default function Home() {
                           <ClockIcon className="h-5 w-5 text-slate-500 dark:text-slate-400" />
                           {translate("Job Timeline")}
                         </h2>
-                        <ol className="mt-6 space-y-4">
+                        <ol className="mt-4 space-y-2 max-h-60 overflow-y-auto pr-2">
                           {singleJob.messages.map((message, index) => {
                             const Icon = stageIcons[message.stage] ?? ArrowPathIcon;
                             return (
                               <li
                                 key={`${message.timestamp}-${index}`}
-                                className="relative flex gap-3 rounded border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/50 p-3 shadow-inner shadow-black/20"
+                                className="relative flex gap-3 rounded border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/50 p-2 shadow-inner shadow-black/20"
                               >
                                 <div className="relative mt-0.5 flex h-7 w-7 items-center justify-center rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800">
                                   <Icon className="h-4 w-4 text-slate-500 dark:text-slate-400" />
