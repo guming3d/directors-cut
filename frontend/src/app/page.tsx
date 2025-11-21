@@ -1530,14 +1530,6 @@ export default function Home() {
                           <DocumentTextIcon className="h-5 w-5 text-slate-500 dark:text-slate-400" />
                           {translate("Storyboard Script")}
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => setIsRightCollapsed(true)}
-                          className="rounded-full border border-slate-200 bg-white p-1.5 text-slate-500 shadow-sm hover:bg-slate-50 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-100"
-                          title={translate("Minimize column")}
-                        >
-                          <ArrowsPointingInIcon className="h-4 w-4" />
-                        </button>
                       </div>
                       <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
                         {translate("Paste your storyboard with scene headings.")}{" "}
@@ -2007,14 +1999,6 @@ export default function Home() {
                           <FilmIcon className="h-5 w-5 text-slate-500 dark:text-slate-400" />
                           {translate("Generate Single Clip")}
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => setIsRightCollapsed(true)}
-                          className="rounded-full border border-slate-200 bg-white p-1.5 text-slate-500 shadow-sm hover:bg-slate-50 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-100"
-                          title={translate("Minimize column")}
-                        >
-                          <ArrowsPointingInIcon className="h-4 w-4" />
-                        </button>
                       </div>
                       <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
                         {translate("Submit a single prompt directly to the Sora2 API. Optionally attach a still reference, select the render resolution, and choose a supported clip duration.")}
@@ -2361,6 +2345,9 @@ export default function Home() {
           )}
         </main>
       </div>
+      <footer className="border-t border-slate-200 bg-slate-100/90 py-4 text-center text-xs text-slate-500 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 dark:text-slate-400">
+        <p>Powered by Sora2 on Microsoft Azure, author Ming Gu from AI GBB team.</p>
+      </footer>
     </div>
   );
 }
