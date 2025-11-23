@@ -1,10 +1,9 @@
 "use client";
 
 import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState, useRef } from "react";
+import Modal from "@/components/Modal";
 import {
   ArrowPathIcon,
-  ArrowsPointingInIcon,
-  ArrowsPointingOutIcon,
   CheckCircleIcon,
   ClockIcon,
   DocumentTextIcon,
@@ -402,44 +401,6 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<TabId>("combined");
     const [theme, setTheme] = useState<"light" | "dark">("light");
 
-  // Resizable sidebar state
-  const [sidebarWidth, setSidebarWidth] = useState(400);
-  const [isResizing, setIsResizing] = useState(false);
-  const [isLeftCollapsed, setIsLeftCollapsed] = useState(false);
-  const [isRightCollapsed, setIsRightCollapsed] = useState(false);
-  const sidebarRef = useRef<HTMLElement>(null);
-
-  const startResizing = useCallback(() => {
-    setIsResizing(true);
-  }, []);
-
-  const stopResizing = useCallback(() => {
-    setIsResizing(false);
-  }, []);
-
-  const resize = useCallback(
-    (mouseMoveEvent: MouseEvent) => {
-      if (isResizing) {
-        const newWidth = mouseMoveEvent.clientX - (sidebarRef.current?.getBoundingClientRect().left || 0);
-        if (newWidth > 300 && newWidth < 800) {
-          setSidebarWidth(newWidth);
-        }
-      }
-    },
-    [isResizing]
-  );
-
-  useEffect(() => {
-    if (isResizing) {
-      window.addEventListener("mousemove", resize);
-      window.addEventListener("mouseup", stopResizing);
-    }
-    return () => {
-      window.removeEventListener("mousemove", resize);
-      window.removeEventListener("mouseup", stopResizing);
-    };
-  }, [isResizing, resize, stopResizing]);
-
   useEffect(() => {
     if (theme === "dark") {
       document.documentElement.classList.add("dark");
@@ -533,6 +494,11 @@ export default function Home() {
   const [refineSingleWithGpt5, setRefineSingleWithGpt5] = useState(false);
   const [singleRemixPrompt, setSingleRemixPrompt] = useState("");
   const [singleRemixSubmitting, setSingleRemixSubmitting] = useState(false);
+
+  // Modal states
+  const [isCreateWorkflowModalOpen, setIsCreateWorkflowModalOpen] = useState(false);
+  const [isCreateSingleVideoModalOpen, setIsCreateSingleVideoModalOpen] = useState(false);
+  const [isJobDetailModalOpen, setIsJobDetailModalOpen] = useState(false);
 
   const loadCombinedJobs = useCallback(async () => {
     try {
@@ -957,6 +923,7 @@ export default function Home() {
         return [data, ...others];
       });
       setSelectedCombinedJobs(new Set());
+      setIsCreateWorkflowModalOpen(false);
     } catch (err) {
       console.error(err);
       setCombinedError(
@@ -1009,6 +976,7 @@ export default function Home() {
         return [data, ...others];
       });
       setSelectedSingleJobs(new Set());
+      setIsCreateSingleVideoModalOpen(false);
     } catch (err) {
       console.error(err);
       setSingleError("Unable to start the single-video job. Verify the backend is reachable.");
@@ -1246,35 +1214,23 @@ export default function Home() {
         </div>
       </header>
 
-      <div className="relative mx-auto flex min-h-screen w-full gap-4 px-4 pb-10 pt-6 xl:flex-row">
-        <aside
-          ref={sidebarRef}
-          className={`relative flex flex-col gap-6 transition-all duration-300 ease-in-out ${
-            isLeftCollapsed ? "w-[60px] items-center" : "hidden xl:flex"
-          } shrink-0`}
-          style={{ width: isLeftCollapsed ? 60 : sidebarWidth }}
-        >
-          {isLeftCollapsed && (
-            <button
-              type="button"
-              onClick={() => setIsLeftCollapsed(false)}
-              className="absolute top-2 z-10 rounded-full border border-slate-200 bg-white p-1.5 text-slate-500 shadow-sm hover:bg-slate-50 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-100"
-              title={translate("Expand column")}
-            >
-              <ArrowsPointingOutIcon className="h-4 w-4" />
-            </button>
-          )}
+      <div className="relative mx-auto min-h-screen w-full px-4 pb-10 pt-6 max-w-7xl">
+        <div className="mb-6 flex justify-between items-center">
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
+            {activeTab === "combined" ? translate("Workflow Runs") : translate("Recent Single Jobs")}
+          </h1>
+          <button
+            onClick={() => activeTab === "combined" ? setIsCreateWorkflowModalOpen(true) : setIsCreateSingleVideoModalOpen(true)}
+            className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white dark:bg-slate-100 dark:text-slate-900 shadow-sm hover:bg-slate-700 transition"
+          >
+            {activeTab === "combined" ? translate("Start Workflow") : translate("Generate Single Clip")}
+          </button>
+        </div>
 
-          {!isLeftCollapsed && (
-            <div className="flex flex-col gap-6 w-full">
-              {activeTab === "combined" && (
-            <div className={`${panelCardClass}`}>
-              <div className="flex items-center justify-between">
-                <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
-                  <ArrowPathIcon className="h-5 w-5 text-slate-500 dark:text-slate-400" />
-                  {translate("Workflow Runs")}
-                </h2>
-                <div className="flex items-center gap-2">
+        <div className={`${panelCardClass} overflow-hidden`}>
+          {activeTab === "combined" && (
+            <>
+              <div className="flex items-center justify-end mb-4">
                   <button
                     type="button"
                     onClick={handleDeleteCombinedJobs}
@@ -1284,102 +1240,85 @@ export default function Home() {
                     <TrashIcon className="h-4 w-4" />
                     {translate("Delete Selected")}
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsLeftCollapsed(true)}
-                    className="rounded-full border border-slate-200 bg-white p-1.5 text-slate-500 shadow-sm hover:bg-slate-50 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-100"
-                    title={translate("Minimize column")}
-                  >
-                    <ArrowsPointingInIcon className="h-4 w-4" />
-                  </button>
-                </div>
               </div>
               {jobs.length === 0 ? (
-                <p className="mt-4 text-sm text-slate-500">{translate("Start your first workflow to see it listed here.")}</p>
+                <p className="text-sm text-slate-500 p-4">{translate("Start your first workflow to see it listed here.")}</p>
               ) : (
-                <>
-                  <p className="mt-4 text-xs text-slate-500">{translate("Tap a row to view job details.")}</p>
-                  <div className="mt-3 overflow-x-auto">
-                    <table className="min-w-full divide-y divide-slate-800 text-sm">
-                      <thead className="bg-slate-100/50 dark:bg-slate-100 dark:bg-slate-800/50 text-[11px] uppercase tracking-wide text-slate-500">
-                        <tr>
-                          <th scope="col" className="px-3 py-2 text-left">
-                            <span className="sr-only">{translate("Select workflows")}</span>
-                          </th>
-                          <th scope="col" className="px-3 py-2 text-left">{translate("Job ID")}</th>
-                          <th scope="col" className="px-3 py-2 text-left">{translate("Status")}</th>
-                          <th scope="col" className="px-3 py-2 text-left">{translate("Mode")}</th>
-                          <th scope="col" className="px-3 py-2 text-left">{translate("Resolution")}</th>
-                          <th scope="col" className="px-3 py-2 text-left">{translate("Progress")}</th>
-                          <th scope="col" className="px-3 py-2 text-left">{translate("Started")}</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-800">
-                        {jobs.map((item) => {
-                          const token = getStatusToken(item.status, language);
-                          const isActive = item.job_id === activeJobId;
-                          const isSelected = selectedCombinedJobs.has(item.job_id);
-                          const progressPercent = Math.min(100, Math.max(0, Math.round((item.progress ?? 0) * 100)));
-                          return (
-                            <tr
-                              key={item.job_id}
-                              onClick={() => {
-                                setActiveJobId(item.job_id);
-                                setJob(item);
-                              }}
-                              className={`cursor-pointer transition ${isActive ? "bg-slate-100 dark:bg-slate-800" : "bg-transparent hover:bg-slate-100/50 dark:bg-slate-100 dark:bg-slate-800/50"}`}
-                            >
-                              <td className="px-3 py-2">
-                                <input
-                                  type="checkbox"
-                                  checked={isSelected}
-                                  onChange={() => toggleCombinedSelection(item.job_id)}
-                                  onClick={(event) => event.stopPropagation()}
-                                  className="h-4 w-4 rounded border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700 text-indigo-500 focus:ring-indigo-500"
-                                />
-                              </td>
-                              <td className="whitespace-nowrap px-3 py-2 font-mono text-xs text-slate-500 dark:text-slate-400">{item.job_id.slice(0, 12)}</td>
-                              <td className="px-3 py-2">
-                                <div className="flex flex-col gap-1">
-                                  <span className={`text-xs font-semibold uppercase tracking-wide ${token.className}`}>{token.label}</span>
-                                  <span className="text-[11px] text-slate-500">{stageLabel(item.stage, language)}</span>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800 text-sm">
+                    <thead className="bg-slate-50 dark:bg-slate-800/50 text-[11px] uppercase tracking-wide text-slate-500">
+                      <tr>
+                        <th scope="col" className="px-6 py-3 text-left">
+                          <span className="sr-only">{translate("Select workflows")}</span>
+                        </th>
+                        <th scope="col" className="px-6 py-3 text-left">{translate("Job ID")}</th>
+                        <th scope="col" className="px-6 py-3 text-left">{translate("Status")}</th>
+                        <th scope="col" className="px-6 py-3 text-left">{translate("Mode")}</th>
+                        <th scope="col" className="px-6 py-3 text-left">{translate("Resolution")}</th>
+                        <th scope="col" className="px-6 py-3 text-left">{translate("Progress")}</th>
+                        <th scope="col" className="px-6 py-3 text-left">{translate("Started")}</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 dark:divide-slate-800 bg-white dark:bg-slate-900">
+                      {jobs.map((item) => {
+                        const token = getStatusToken(item.status, language);
+                        const isSelected = selectedCombinedJobs.has(item.job_id);
+                        const progressPercent = Math.min(100, Math.max(0, Math.round((item.progress ?? 0) * 100)));
+                        return (
+                          <tr
+                            key={item.job_id}
+                            onClick={() => {
+                              setActiveJobId(item.job_id);
+                              setJob(item);
+                              setIsJobDetailModalOpen(true);
+                            }}
+                            className="cursor-pointer transition hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                          >
+                            <td className="px-6 py-4">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => toggleCombinedSelection(item.job_id)}
+                                onClick={(event) => event.stopPropagation()}
+                                className="h-4 w-4 rounded border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700 text-indigo-500 focus:ring-indigo-500"
+                              />
+                            </td>
+                            <td className="whitespace-nowrap px-6 py-4 font-mono text-xs text-slate-500 dark:text-slate-400">{item.job_id.slice(0, 12)}</td>
+                            <td className="px-6 py-4">
+                              <div className="flex flex-col gap-1">
+                                <span className={`text-xs font-semibold uppercase tracking-wide ${token.className}`}>{token.label}</span>
+                                <span className="text-[11px] text-slate-500">{stageLabel(item.stage, language)}</span>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 text-xs text-slate-500 dark:text-slate-400">
+                              {translate(item.generation_mode === "sequence" ? "Sequence" : "Parallel")}
+                            </td>
+                            <td className="px-6 py-4 text-xs text-slate-500 dark:text-slate-400">{item.resolution}</td>
+                            <td className="px-6 py-4">
+                              <div className="flex items-center gap-2">
+                                <div className="h-2 w-24 rounded-full bg-slate-100 dark:bg-slate-800">
+                                  <div
+                                    className="h-full rounded-full bg-slate-400 transition-all"
+                                    style={{ width: `${progressPercent}%` }}
+                                  />
                                 </div>
-                              </td>
-                              <td className="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">
-                                {translate(item.generation_mode === "sequence" ? "Sequence" : "Parallel")}
-                              </td>
-                              <td className="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">{item.resolution}</td>
-                              <td className="px-3 py-2">
-                                <div className="flex items-center gap-2">
-                                  <div className="h-2 w-24 rounded-full bg-slate-100 dark:bg-slate-800">
-                                    <div
-                                      className="h-full rounded-full bg-slate-400 transition-all"
-                                      style={{ width: `${progressPercent}%` }}
-                                    />
-                                  </div>
-                                  <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{progressPercent}%</span>
-                                </div>
-                              </td>
-                              <td className="whitespace-nowrap px-3 py-2 text-xs text-slate-500">{formatTimeDistance(item.started_at)}</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </>
+                                <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{progressPercent}%</span>
+                              </div>
+                            </td>
+                            <td className="whitespace-nowrap px-6 py-4 text-xs text-slate-500">{formatTimeDistance(item.started_at)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               )}
-            </div>
+            </>
           )}
 
           {activeTab === "single" && (
-            <div className={`${panelCardClass}`}>
-              <div className="flex items-center justify-between">
-                <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
-                  <ArrowPathIcon className="h-5 w-5 text-slate-500 dark:text-slate-400" />
-                  {translate("Recent Single Jobs")}
-                </h2>
-                <div className="flex items-center gap-2">
+            <>
+              <div className="flex items-center justify-end mb-4">
                   <button
                     type="button"
                     onClick={handleDeleteSingleJobs}
@@ -1389,880 +1328,548 @@ export default function Home() {
                     <TrashIcon className="h-4 w-4" />
                     {translate("Delete Selected")}
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsLeftCollapsed(true)}
-                    className="rounded-full border border-slate-200 bg-white p-1.5 text-slate-500 shadow-sm hover:bg-slate-50 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-100"
-                    title={translate("Minimize column")}
-                  >
-                    <ArrowsPointingInIcon className="h-4 w-4" />
-                  </button>
-                </div>
               </div>
               {singleJobs.length === 0 ? (
-                <p className="mt-4 text-sm text-slate-500">{translate("Generate a clip to see it listed here.")}</p>
+                <p className="text-sm text-slate-500 p-4">{translate("Generate a clip to see it listed here.")}</p>
               ) : (
-                <>
-                  <p className="mt-4 text-xs text-slate-500">{translate("Tap a row to view job details.")}</p>
-                  <div className="mt-3 overflow-x-auto">
-                    <table className="min-w-full divide-y divide-slate-800 text-sm">
-                      <thead className="bg-slate-100/50 dark:bg-slate-100 dark:bg-slate-800/50 text-[11px] uppercase tracking-wide text-slate-500">
-                        <tr>
-                          <th scope="col" className="px-3 py-2 text-left">
-                            <span className="sr-only">{translate("Select workflows")}</span>
-                          </th>
-                          <th scope="col" className="px-3 py-2 text-left">{translate("Job ID")}</th>
-                          <th scope="col" className="px-3 py-2 text-left">{translate("Status")}</th>
-                          <th scope="col" className="px-3 py-2 text-left">{translate("Resolution")}</th>
-                          <th scope="col" className="px-3 py-2 text-left">{translate("Duration")}</th>
-                          <th scope="col" className="px-3 py-2 text-left">{translate("Progress")}</th>
-                          <th scope="col" className="px-3 py-2 text-left">{translate("Started")}</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-800">
-                        {singleJobs.map((item) => {
-                          const token = getStatusToken(item.status, language);
-                          const isActive = item.job_id === activeSingleJobId;
-                          const isSelected = selectedSingleJobs.has(item.job_id);
-                          const progressPercent = Math.min(100, Math.max(0, Math.round((item.progress ?? 0) * 100)));
-                          return (
-                            <tr
-                              key={item.job_id}
-                              onClick={() => {
-                                setActiveSingleJobId(item.job_id);
-                                setSingleJob(item);
-                              }}
-                              className={`cursor-pointer transition ${isActive ? "bg-slate-100 dark:bg-slate-800" : "bg-transparent hover:bg-slate-100/50 dark:bg-slate-100 dark:bg-slate-800/50"}`}
-                            >
-                              <td className="px-3 py-2">
-                                <input
-                                  type="checkbox"
-                                  checked={isSelected}
-                                  onChange={() => toggleSingleSelection(item.job_id)}
-                                  onClick={(event) => event.stopPropagation()}
-                                  className="h-4 w-4 rounded border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700 text-indigo-500 focus:ring-indigo-500"
-                                />
-                              </td>
-                              <td className="whitespace-nowrap px-3 py-2 font-mono text-xs text-slate-500 dark:text-slate-400">{item.job_id.slice(0, 12)}</td>
-                              <td className="px-3 py-2">
-                                <div className="flex flex-col gap-1">
-                                  <span className={`text-xs font-semibold uppercase tracking-wide ${token.className}`}>{token.label}</span>
-                                  <span className="text-[11px] text-slate-500">{stageLabel(item.status, language)}</span>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800 text-sm">
+                    <thead className="bg-slate-50 dark:bg-slate-800/50 text-[11px] uppercase tracking-wide text-slate-500">
+                      <tr>
+                        <th scope="col" className="px-6 py-3 text-left">
+                          <span className="sr-only">{translate("Select workflows")}</span>
+                        </th>
+                        <th scope="col" className="px-6 py-3 text-left">{translate("Job ID")}</th>
+                        <th scope="col" className="px-6 py-3 text-left">{translate("Status")}</th>
+                        <th scope="col" className="px-6 py-3 text-left">{translate("Resolution")}</th>
+                        <th scope="col" className="px-6 py-3 text-left">{translate("Duration")}</th>
+                        <th scope="col" className="px-6 py-3 text-left">{translate("Progress")}</th>
+                        <th scope="col" className="px-6 py-3 text-left">{translate("Started")}</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 dark:divide-slate-800 bg-white dark:bg-slate-900">
+                      {singleJobs.map((item) => {
+                        const token = getStatusToken(item.status, language);
+                        const isSelected = selectedSingleJobs.has(item.job_id);
+                        const progressPercent = Math.min(100, Math.max(0, Math.round((item.progress ?? 0) * 100)));
+                        return (
+                          <tr
+                            key={item.job_id}
+                            onClick={() => {
+                              setActiveSingleJobId(item.job_id);
+                              setSingleJob(item);
+                              setIsJobDetailModalOpen(true);
+                            }}
+                            className="cursor-pointer transition hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                          >
+                            <td className="px-6 py-4">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => toggleSingleSelection(item.job_id)}
+                                onClick={(event) => event.stopPropagation()}
+                                className="h-4 w-4 rounded border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700 text-indigo-500 focus:ring-indigo-500"
+                              />
+                            </td>
+                            <td className="whitespace-nowrap px-6 py-4 font-mono text-xs text-slate-500 dark:text-slate-400">{item.job_id.slice(0, 12)}</td>
+                            <td className="px-6 py-4">
+                              <div className="flex flex-col gap-1">
+                                <span className={`text-xs font-semibold uppercase tracking-wide ${token.className}`}>{token.label}</span>
+                                <span className="text-[11px] text-slate-500">{stageLabel(item.status, language)}</span>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 text-xs text-slate-500 dark:text-slate-400">{item.resolution}</td>
+                            <td className="px-6 py-4 text-xs text-slate-500 dark:text-slate-400">
+                              {item.duration}
+                              {translate("s")}
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="flex items-center gap-2">
+                                <div className="h-2 w-24 rounded-full bg-slate-100 dark:bg-slate-800">
+                                  <div
+                                    className="h-full rounded-full bg-slate-400 transition-all"
+                                    style={{ width: `${progressPercent}%` }}
+                                  />
                                 </div>
-                              </td>
-                              <td className="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">{item.resolution}</td>
-                              <td className="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">
-                                {item.duration}
-                                {translate("s")}
-                              </td>
-                              <td className="px-3 py-2">
-                                <div className="flex items-center gap-2">
-                                  <div className="h-2 w-24 rounded-full bg-slate-100 dark:bg-slate-800">
-                                    <div
-                                      className="h-full rounded-full bg-slate-400 transition-all"
-                                      style={{ width: `${progressPercent}%` }}
-                                    />
-                                  </div>
-                                  <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{progressPercent}%</span>
-                                </div>
-                              </td>
-                              <td className="whitespace-nowrap px-3 py-2 text-xs text-slate-500">{formatTimeDistance(item.started_at)}</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </>
+                                <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{progressPercent}%</span>
+                              </div>
+                            </td>
+                            <td className="whitespace-nowrap px-6 py-4 text-xs text-slate-500">{formatTimeDistance(item.started_at)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               )}
+            </>
+          )}
+        </div>
+
+        {/* Modals */}
+        <Modal isOpen={isCreateWorkflowModalOpen} onClose={() => setIsCreateWorkflowModalOpen(false)} title={translate("Start Workflow")}>
+          {combinedError && (
+            <div className="mb-4 flex items-start gap-3 rounded border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30 px-4 py-3 text-sm text-rose-400 shadow-md shadow-rose-900/20">
+              <ExclamationTriangleIcon className="h-5 w-5 flex-none text-rose-500" />
+              <span>{translate(combinedError)}</span>
             </div>
           )}
-          </div>
-          )}
-        </aside>
+          <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
+            {translate("Paste your storyboard with scene headings.")}{" "}
+            <span className="font-mono text-xs text-slate-500">**Scene 1 (Title)**</span>{" "}
+            {translate("The Director agent will refine prompts following Sora2 best practices.")}
+          </p>
+          <form className="space-y-5" onSubmit={handleCombinedSubmit}>
+            <textarea
+              className="min-h-[260px] w-full resize-none rounded border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-4 py-3 text-sm text-slate-900 dark:text-slate-100 shadow-inner placeholder:text-slate-500 transition focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-800"
+              placeholder={translate("Enter script or storyboard prompt")}
+              value={script}
+              onChange={(event) => setScript(event.target.value)}
+            />
 
-        {!isLeftCollapsed && !isRightCollapsed && (
-          <div
-            className="hidden w-2 cursor-col-resize items-center justify-center rounded transition-colors hover:bg-slate-200 dark:hover:bg-slate-800 xl:flex"
-            onMouseDown={startResizing}
-          >
-            <div className="h-8 w-1 rounded-full bg-slate-300 dark:bg-slate-600" />
-          </div>
-        )}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Resolution")}</label>
+                <select
+                  value={combinedResolution}
+                  onChange={(event) => setCombinedResolution(event.target.value as (typeof resolutionOptions)[number])}
+                  className="w-full rounded border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 shadow-inner focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-800"
+                >
+                  {resolutionOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Scene references")}</span>
+                <button
+                  type="button"
+                  onClick={() => setUseSceneImages((value) => !value)}
+                  className={`flex items-center gap-3 rounded border px-4 py-3 text-sm font-semibold transition ${
+                    useSceneImages
+                      ? "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm"
+                      : "border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200"
+                  }`}
+                >
+                  <span className={`inline-flex h-5 w-10 items-center rounded-full border transition ${
+                    useSceneImages
+                      ? "border-slate-500 bg-slate-600"
+                      : "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700"
+                  }`}>
+                    <span
+                      className={`ml-1 inline-block h-3.5 w-3.5 rounded-full bg-slate-200 transition ${
+                        useSceneImages ? "translate-x-4" : "translate-x-0"
+                      }`}
+                    />
+                  </span>
+                  {useSceneImages ? translate("Scene images enabled") : translate("No scene references")}
+                </button>
+              </div>
+            </div>
 
-        <main
-          className={`relative flex flex-col gap-6 transition-all duration-300 ease-in-out ${
-            isRightCollapsed ? "w-[60px] flex-none items-center" : "flex-1 min-w-0"
-          }`}
-        >
-          {isRightCollapsed && (
-            <button
-              type="button"
-              onClick={() => setIsRightCollapsed(false)}
-              className="absolute top-2 z-10 rounded-full border border-slate-200 bg-white p-1.5 text-slate-500 shadow-sm hover:bg-slate-50 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-100"
-              title={translate("Expand column")}
-            >
-              <ArrowsPointingOutIcon className="h-4 w-4" />
-            </button>
-          )}
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Generation mode")}</label>
+              <div className="flex flex-wrap gap-3">
+                {[
+                  { id: "parallel" as const, label: translate("Parallel"), description: translate("Render scenes concurrently") },
+                  { id: "sequence" as const, label: translate("Sequence"), description: translate("Chain scenes sequentially") },
+                ].map((mode) => {
+                  const isActive = generationMode === mode.id;
+                  return (
+                    <button
+                      key={mode.id}
+                      type="button"
+                      onClick={() => setGenerationMode(mode.id)}
+                      className={`flex flex-col rounded border px-4 py-2 text-left text-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400 ${
+                        isActive
+                          ? "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm"
+                          : "border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200"
+                      }`}
+                    >
+                      <span className="font-semibold">{mode.label}</span>
+                      <span className={`text-xs ${isActive ? "text-slate-600 dark:text-slate-300" : "text-slate-500"}`}>
+                        {mode.description}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-slate-500">
+                {translate("Sequence mode accepts a single starting still, then reuses the last frame of each clip to guide the next scene for smoother continuity.")}
+              </p>
+            </div>
 
-          {!isRightCollapsed && (
-            <div className="space-y-10">
-              <div className="space-y-8">
-
-
-            {activeTab === "combined" ? (
-              <>
-                {combinedError && (
-                  <div className="flex items-start gap-3 rounded border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30 px-4 py-3 text-sm text-rose-400 shadow-md shadow-rose-900/20">
-                    <ExclamationTriangleIcon className="h-5 w-5 flex-none text-rose-500" />
-                    <span>{translate(combinedError)}</span>
-                  </div>
-                )}
-
-
-
-                <div className="grid gap-8 xl:grid-cols-[1.15fr,0.85fr]">
-                  <section className="space-y-8">
-                    <div className={`${panelCardClass}`}>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
-                          <DocumentTextIcon className="h-5 w-5 text-slate-500 dark:text-slate-400" />
-                          {translate("Storyboard Script")}
-                        </div>
-                      </div>
-                      <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-                        {translate("Paste your storyboard with scene headings.")}{" "}
-                        <span className="font-mono text-xs text-slate-500">**Scene 1 (Title)**</span>{" "}
-                        {translate("The Director agent will refine prompts following Sora2 best practices.")}
-                      </p>
-                      <form className="mt-5 space-y-5" onSubmit={handleCombinedSubmit}>
-                        <textarea
-                          className="min-h-[260px] w-full resize-none rounded border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-4 py-3 text-sm text-slate-900 dark:text-slate-100 shadow-inner placeholder:text-slate-500 transition focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-800"
-                          placeholder={translate("Enter script or storyboard prompt")}
-                          value={script}
-                          onChange={(event) => setScript(event.target.value)}
-                        />
-
-                        <div className="grid gap-4 sm:grid-cols-2">
-                          <div className="space-y-2">
-                            <label className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Resolution")}</label>
-                            <select
-                              value={combinedResolution}
-                              onChange={(event) => setCombinedResolution(event.target.value as (typeof resolutionOptions)[number])}
-                              className="w-full rounded border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 shadow-inner focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-800"
-                            >
-                              {resolutionOptions.map((option) => (
-                                <option key={option} value={option}>
-                                  {option}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                          <div className="space-y-2">
-                            <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Scene references")}</span>
-                            <button
-                              type="button"
-                              onClick={() => setUseSceneImages((value) => !value)}
-                              className={`flex items-center gap-3 rounded border px-4 py-3 text-sm font-semibold transition ${
-                                useSceneImages
-                                  ? "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm"
-                                  : "border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200"
-                              }`}
-                            >
-                              <span className={`inline-flex h-5 w-10 items-center rounded-full border transition ${
-                                useSceneImages
-                                  ? "border-slate-500 bg-slate-600"
-                                  : "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700"
-                              }`}>
-                                <span
-                                  className={`ml-1 inline-block h-3.5 w-3.5 rounded-full bg-slate-200 transition ${
-                                    useSceneImages ? "translate-x-4" : "translate-x-0"
-                                  }`}
-                                />
-                              </span>
-                              {useSceneImages ? translate("Scene images enabled") : translate("No scene references")}
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="space-y-2">
-                          <label className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Generation mode")}</label>
-                          <div className="flex flex-wrap gap-3">
-                            {[
-                              { id: "parallel" as const, label: translate("Parallel"), description: translate("Render scenes concurrently") },
-                              { id: "sequence" as const, label: translate("Sequence"), description: translate("Chain scenes sequentially") },
-                            ].map((mode) => {
-                              const isActive = generationMode === mode.id;
-                              return (
-                                <button
-                                  key={mode.id}
-                                  type="button"
-                                  onClick={() => setGenerationMode(mode.id)}
-                                  className={`flex flex-col rounded border px-4 py-2 text-left text-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400 ${
-                                    isActive
-                                      ? "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm"
-                                      : "border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200"
-                                  }`}
-                                >
-                                  <span className="font-semibold">{mode.label}</span>
-                                  <span className={`text-xs ${isActive ? "text-slate-600 dark:text-slate-300" : "text-slate-500"}`}>
-                                    {mode.description}
-                                  </span>
-                                </button>
-                              );
-                            })}
-                          </div>
-                          <p className="text-xs text-slate-500">
-                            {translate("Sequence mode accepts a single starting still, then reuses the last frame of each clip to guide the next scene for smoother continuity.")}
-                          </p>
-                        </div>
-
-                        <div className="rounded border border-slate-300 dark:border-slate-700 bg-slate-100/50 dark:bg-slate-100 dark:bg-slate-800/50 px-4 py-3">
-                          <div className="flex items-center justify-between gap-4">
-                            <div>
-                              <p className="text-sm font-semibold text-slate-600 dark:text-slate-300">{translate("Refine script with GPT-5")}</p>
-                              <p className="text-xs text-slate-500">
-                                {translate("Use GPT-5 to polish the storyboard before planning scenes.")}
-                              </p>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => setRefineWorkflowWithGpt5((value) => !value)}
-                              className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold transition ${
-                                refineWorkflowWithGpt5
-                                  ? "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-slate-100"
-                                  : "border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200"
-                              }`}
-                            >
-                              <span
-                                className={`relative inline-flex h-5 w-10 items-center rounded-full border transition ${
-                                  refineWorkflowWithGpt5 ? "border-slate-500 bg-slate-600" : "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700"
-                                }`}
-                              >
-                                <span
-                                  className={`absolute left-1 h-3 rounded-full bg-slate-200 transition ${
-                                    refineWorkflowWithGpt5 ? "translate-x-4 w-4" : "w-3"
-                                  }`}
-                                />
-                              </span>
-                              {translate(refineWorkflowWithGpt5 ? "Enabled" : "Disabled")}
-                            </button>
-                          </div>
-                        </div>
-
-                        {useSceneImages ? (
-                          <div className="space-y-3">
-                            <label className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Upload reference stills")}</label>
-                            <input
-                              type="file"
-                              accept="image/png,image/jpeg"
-                              multiple={generationMode !== "sequence"}
-                              onChange={handleSceneImagesChange}
-                              className="max-w-xs text-xs text-slate-500"
-                            />
-                            {sceneImagePreviews.length ? (
-                              <div className="grid grid-cols-3 gap-3 md:grid-cols-4">
-                                {sceneImagePreviews.map((preview, index) => (
-                                  <div
-                                    key={`${preview}-${index}`}
-                                    className="flex h-28 items-center justify-center overflow-hidden rounded-md border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800"
-                                  >
-                                    <Image
-                                      src={preview}
-                                      alt={`${translate("Scene reference")} ${index + 1}`}
-                                      width={160}
-                                      height={160}
-                                      unoptimized
-                                      className="h-full w-full object-cover"
-                                    />
-                                  </div>
-                                ))}
-                              </div>
-                            ) : (
-                              <p className="text-xs text-slate-500">{translate("Accepted formats: PNG, JPG. Images remain local until submission.")}</p>
-                            )}
-                          </div>
-                        ) : null}
-
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                          <button
-                            type="submit"
-                            disabled={isSubmittingCombined}
-                            className="inline-flex items-center justify-center gap-2 rounded-md bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white dark:bg-slate-100 dark:text-slate-900 shadow-sm shadow-slate-900/50 transition hover:bg-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400 disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            {isSubmittingCombined ? (
-                              <>
-                                <ArrowPathIcon className="h-5 w-5 animate-spin" />
-                                {translate("Starting Workflow...")}
-                              </>
-                            ) : (
-                              <>
-                                <PaperAirplaneIcon className="h-5 w-5" />
-                                {translate("Start Workflow")}
-                              </>
-                            )}
-                          </button>
-                          <p className="text-xs text-slate-500">
-                            {translate("API target:")} <span className="font-mono text-[11px] text-slate-500">{API_BASE}/api/workflows</span>
-                          </p>
-                        </div>
-                      </form>
-                    </div>
-
-                    {job && (
-                      <div className={`${panelCardClass}`}>
-                        <div className="flex flex-wrap items-start justify-between gap-4">
-                          <div>
-                            <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
-                              <FilmIcon className="h-5 w-5 text-slate-500 dark:text-slate-400" />
-                              {translate("Workflow Status")}
-                            </h2>
-                            <p className="text-xs uppercase tracking-wide text-slate-500">
-                              {translate("Mode:")} {translate(job.generation_mode === "sequence" ? "Sequence" : "Parallel")}
-                            </p>
-                          </div>
-                          <span className={`text-xs font-semibold uppercase tracking-wide ${currentStatusToken.className}`}>{currentStatusToken.label}</span>
-                        </div>
-
-                        <div className="mt-6 space-y-3">
-                          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-                            <span>{translate("Progress")}</span>
-                            <span>{combinedProgressPercent}%</span>
-                          </div>
-                          <div className="h-2.5 overflow-hidden rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800">
-                            <div
-                              className="h-full rounded-full bg-slate-100 transition-all duration-500 ease-out"
-                              style={{ width: `${combinedProgressPercent}%` }}
-                            />
-                          </div>
-                          {job.error && (
-                            <div className="flex items-center gap-2 rounded-md border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 text-xs text-rose-400">
-                              <ExclamationTriangleIcon className="h-4 w-4" />
-                              {job.error}
-                            </div>
-                          )}
-                        </div>
-
-                        <dl className="mt-6 grid gap-4 text-sm text-slate-500 dark:text-slate-400 sm:grid-cols-3">
-                          <div>
-                            <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Started")}</dt>
-                            <dd className="mt-1 text-slate-600 dark:text-slate-300">{formatTimeDistance(job.started_at)}</dd>
-                          </div>
-                          <div>
-                            <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Completed")}</dt>
-                            <dd className="mt-1 text-slate-600 dark:text-slate-300">{job.completed_at ? formatTimeDistance(job.completed_at) : "—"}</dd>
-                          </div>
-                          <div>
-                            <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Resolution")}</dt>
-                            <dd className="mt-1 text-slate-600 dark:text-slate-300">{job.resolution}</dd>
-                          </div>
-                        </dl>
-
-                        {finalVideoUrl && (
-                          <div className="mt-8 space-y-3">
-                            <div className="flex items-center justify-between gap-3">
-                              <h3 className="text-sm font-semibold text-slate-600 dark:text-slate-300">{translate("Final Video")}</h3>
-                              <button
-                                type="button"
-                                onClick={handleRecompose}
-                                disabled={!canRecompose || isRecomposing}
-                                className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 disabled:cursor-not-allowed disabled:opacity-60"
-                              >
-                                {isRecomposing ? <ArrowPathIcon className="h-4 w-4 animate-spin" /> : <ArrowPathIcon className="h-4 w-4" />}
-                                {translate("Regenerate Final Video")}
-                              </button>
-                            </div>
-                            <video
-                              controls
-                              className="max-h-[420px] w-full rounded border border-slate-200 dark:border-slate-800 bg-black/60"
-                              src={finalVideoUrl}
-                            >
-                              {translate("Your browser does not support HTML5 video.")}
-                            </video>
-                            <a
-                              href={finalVideoUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="inline-flex items-center gap-2 text-sm font-medium text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-slate-100"
-                            >
-                              <PlayCircleIcon className="h-4 w-4" />
-                              {translate("Open MP4 in new tab")}
-                            </a>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {job?.scenes?.length ? (
-                      <div className={`${panelCardClass}`}>
-                        <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
-                          <PlayCircleIcon className="h-5 w-5 text-slate-500 dark:text-slate-400" />
-                          {translate("Scene Renders")}
-                        </h2>
-                        <div className="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-[repeat(auto-fit,minmax(360px,1fr))]">
-                          {job.scenes.map((scene) => {
-                            const versions = scene.versions ?? [];
-                            const selectedVersion = versions.find((version) => version.version_id === scene.selected_version_id) ?? versions[0];
-
-                            return (
-                              <div
-                                key={scene.order}
-                                className="rounded border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/50 p-4 shadow-inner shadow-black/20"
-                              >
-                                <div className="flex items-start justify-between gap-2">
-                                  <div>
-                                    <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{scene.label}</h3>
-                                    <p className="text-xs text-slate-500 dark:text-slate-400">
-                                      {scene.duration_seconds} {translate("seconds")}
-                                    </p>
-                                  </div>
-                                  <span className="rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                                    {translate("Scene")} {scene.order}
-                                  </span>
-                                </div>
-
-                                <p className="mt-2 text-[11px] text-slate-500">
-                                  {translate("Video ID:")} {selectedVersion?.video_id ?? translate("Unavailable")}
-                                </p>
-
-                                {versions.length ? (
-                                  <div className="mt-4 space-y-3">
-                                    <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                      {translate("Versions")}
-                                    </h4>
-                                    {versions.map((version) => {
-                                      const versionVideoUrl = buildAssetUrl(version.video_url);
-                                      const versionLastFrameUrl = showSequenceReferences ? buildAssetUrl(version.last_frame_url) : null;
-                                      const isActive = version.version_id === scene.selected_version_id;
-                                      const isBusy = Boolean(selectionSubmitting[version.version_id]);
-                                      return (
-                                        <div
-                                          key={version.version_id}
-                                          className={`rounded border p-3 ${
-                                            isActive
-                                              ? "border-slate-400 dark:border-slate-600 bg-slate-100 dark:bg-slate-800"
-                                              : "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30"
-                                          }`}
-                                        >
-                                          <div className="flex items-start justify-between gap-3">
-                                            <div>
-                                              <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">{version.label}</p>
-                                              <p className="text-xs text-slate-500">
-                                                {version.source} • {formatTimeDistance(version.created_at)}
-                                              </p>
-                                            </div>
-                                            <button
-                                              type="button"
-                                              onClick={() => handleSelectVersion(scene.order, version.version_id)}
-                                              disabled={isActive || isBusy}
-                                              className={`rounded-md border px-3 py-1 text-xs font-semibold transition ${
-                                                isActive
-                                                  ? "border-emerald-200 dark:border-emerald-900/50 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-400"
-                                                  : "border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200 disabled:opacity-60"
-                                              }`}
-                                            >
-                                              {isActive
-                                                ? translate("Selected")
-                                                : isBusy
-                                                  ? translate("Selecting...")
-                                                  : translate("Use this version")}
-                                            </button>
-                                          </div>
-                                          {versionVideoUrl ? (
-                                            <video
-                                              key={`${version.version_id}-${versionVideoUrl}`}
-                                              controls
-                                              className="mt-2 max-h-40 w-full rounded-md border border-slate-200 dark:border-slate-800 bg-black/60"
-                                              src={versionVideoUrl}
-                                            >
-                                              {translate("Version video unavailable.")}
-                                            </video>
-                                          ) : null}
-                                          {versionLastFrameUrl ? (
-                                            <div className="mt-2 rounded-md border border-slate-300 dark:border-slate-700 bg-slate-100/50 dark:bg-slate-100 dark:bg-slate-800/50 p-2">
-                                              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                                                {translate("Last frame reference")}
-                                              </p>
-                                              <Image
-                                                src={versionLastFrameUrl}
-                                                alt={`${version.label} ${translate("Last frame reference")}`}
-                                                width={280}
-                                                height={200}
-                                                unoptimized
-                                                className="mt-2 h-28 w-full rounded object-cover"
-                                              />
-                                            </div>
-                                          ) : null}
-                                          {version.prompt ? (
-                                            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                                              {translate("Prompt:")} <span className="font-mono text-[11px] text-slate-500">{version.prompt}</span>
-                                            </p>
-                                          ) : null}
-                                          {version.video_id ? (
-                                            <p className="text-[11px] text-slate-500">{translate("Azure video ID:")} {version.video_id}</p>
-                                          ) : null}
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
-                                ) : null}
-
-                                <form className="mt-4 space-y-2" onSubmit={(event) => handleRemixSubmit(event, scene.order)}>
-                                  <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                    {translate("Remix prompt")}
-                                  </label>
-                                  <textarea
-                                    className="min-h-[80px] w-full rounded-md border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-800"
-                                    placeholder={translate("Describe how you want to remix this scene...")}
-                                    value={remixPrompts[scene.order] ?? ""}
-                                    onChange={(event) =>
-                                      setRemixPrompts((prev) => ({ ...prev, [scene.order]: event.target.value }))
-                                    }
-                                  />
-                                  <div className="flex items-center justify-between gap-2 text-xs text-slate-500">
-                                    <span>
-                                      {translate("Uses previous video ID:")} {selectedVersion?.video_id ?? translate("Unavailable")}
-                                    </span>
-                                    <button
-                                      type="submit"
-                                      disabled={!selectedVersion?.video_id || remixSubmitting[scene.order]}
-                                      className="inline-flex items-center gap-1 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1 text-xs font-semibold text-slate-500 dark:text-slate-400 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
-                                    >
-                                      {remixSubmitting[scene.order] ? (
-                                        <ArrowPathIcon className="h-4 w-4 animate-spin" />
-                                      ) : (
-                                        <ArrowPathIcon className="h-4 w-4" />
-                                      )}
-                                      {translate("Remix Scene")}
-                                    </button>
-                                  </div>
-                                </form>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    ) : null}
-                  </section>
-
-                  <aside className="space-y-8">
-                    {job?.messages?.length ? (
-                      <div className={`${panelCardClass}`}>
-                        <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
-                          <ClockIcon className="h-5 w-5 text-slate-500 dark:text-slate-400" />
-                          {translate("Workflow Timeline")}
-                        </h2>
-                        <ol className="mt-4 space-y-2 max-h-60 overflow-y-auto pr-2">
-                          {job.messages.map((message, index) => {
-                            const Icon = stageIcons[message.stage] ?? ArrowPathIcon;
-                            return (
-                              <li
-                                key={`${message.timestamp}-${index}`}
-                                className="relative flex gap-3 rounded border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/50 p-2 shadow-inner shadow-black/20"
-                              >
-                                <div className="relative mt-0.5 flex h-7 w-7 items-center justify-center rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800">
-                                  <Icon className="h-4 w-4 text-slate-500 dark:text-slate-400" />
-                                </div>
-                                <div>
-                                  <p className="text-sm text-slate-600 dark:text-slate-300">{message.text}</p>
-                                  <p className="text-xs text-slate-500">
-                                    {formatTimestamp(message.timestamp)} · {stageLabel(message.stage, language)}
-                                  </p>
-                                </div>
-                              </li>
-                            );
-                          })}
-                        </ol>
-                      </div>
-                    ) : null}
-                  </aside>
+            <div className="rounded border border-slate-300 dark:border-slate-700 bg-slate-100/50 dark:bg-slate-100 dark:bg-slate-800/50 px-4 py-3">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm font-semibold text-slate-600 dark:text-slate-300">{translate("Refine script with GPT-5")}</p>
+                  <p className="text-xs text-slate-500">
+                    {translate("Use GPT-5 to polish the storyboard before planning scenes.")}
+                  </p>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setRefineWorkflowWithGpt5((value) => !value)}
+                  className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold transition ${
+                    refineWorkflowWithGpt5
+                      ? "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-slate-100"
+                      : "border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200"
+                  }`}
+                >
+                  <span
+                    className={`relative inline-flex h-5 w-10 items-center rounded-full border transition ${
+                      refineWorkflowWithGpt5 ? "border-slate-500 bg-slate-600" : "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700"
+                    }`}
+                  >
+                    <span
+                      className={`absolute left-1 h-3 rounded-full bg-slate-200 transition ${
+                        refineWorkflowWithGpt5 ? "translate-x-4 w-4" : "w-3"
+                      }`}
+                    />
+                  </span>
+                  {translate(refineWorkflowWithGpt5 ? "Enabled" : "Disabled")}
+                </button>
+              </div>
+            </div>
 
-              </>
-            ) : (
-              <>
-                {singleError && (
-                  <div className="flex items-start gap-3 rounded border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30 px-4 py-3 text-sm text-rose-400 shadow-md shadow-rose-900/20">
-                    <ExclamationTriangleIcon className="h-5 w-5 flex-none text-rose-500" />
-                    <span>{translate(singleError)}</span>
+            {useSceneImages ? (
+              <div className="space-y-3">
+                <label className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Upload reference stills")}</label>
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg"
+                  multiple={generationMode !== "sequence"}
+                  onChange={handleSceneImagesChange}
+                  className="max-w-xs text-xs text-slate-500"
+                />
+                {sceneImagePreviews.length ? (
+                  <div className="grid grid-cols-3 gap-3 md:grid-cols-4">
+                    {sceneImagePreviews.map((preview, index) => (
+                      <div
+                        key={`${preview}-${index}`}
+                        className="flex h-28 items-center justify-center overflow-hidden rounded-md border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800"
+                      >
+                        <Image
+                          src={preview}
+                          alt={`${translate("Scene reference")} ${index + 1}`}
+                          width={160}
+                          height={160}
+                          unoptimized
+                          className="h-full w-full object-cover"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-500">{translate("Accepted formats: PNG, JPG. Images remain local until submission.")}</p>
+                )}
+              </div>
+            ) : null}
+
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <button
+                type="submit"
+                disabled={isSubmittingCombined}
+                className="inline-flex items-center justify-center gap-2 rounded-md bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white dark:bg-slate-100 dark:text-slate-900 shadow-sm shadow-slate-900/50 transition hover:bg-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isSubmittingCombined ? (
+                  <>
+                    <ArrowPathIcon className="h-5 w-5 animate-spin" />
+                    {translate("Starting Workflow...")}
+                  </>
+                ) : (
+                  <>
+                    <PaperAirplaneIcon className="h-5 w-5" />
+                    {translate("Start Workflow")}
+                  </>
+                )}
+              </button>
+              <p className="text-xs text-slate-500">
+                {translate("API target:")} <span className="font-mono text-[11px] text-slate-500">{API_BASE}/api/workflows</span>
+              </p>
+            </div>
+          </form>
+        </Modal>
+
+        <Modal isOpen={isCreateSingleVideoModalOpen} onClose={() => setIsCreateSingleVideoModalOpen(false)} title={translate("Generate Single Clip")}>
+          {singleError && (
+            <div className="mb-4 flex items-start gap-3 rounded border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30 px-4 py-3 text-sm text-rose-400 shadow-md shadow-rose-900/20">
+              <ExclamationTriangleIcon className="h-5 w-5 flex-none text-rose-500" />
+              <span>{translate(singleError)}</span>
+            </div>
+          )}
+          <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
+            {translate("Submit a single prompt directly to the Sora2 API. Optionally attach a still reference, select the render resolution, and choose a supported clip duration.")}
+          </p>
+          <form className="space-y-5" onSubmit={handleSingleSubmit}>
+            <textarea
+              className="min-h-[220px] w-full resize-none rounded border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-4 py-3 text-sm text-slate-900 dark:text-slate-100 shadow-inner placeholder:text-slate-500 transition focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-800"
+              placeholder={translate("Describe the scene, motion, cinematography, and mood for Sora2...")}
+              value={singlePrompt}
+              onChange={(event) => setSinglePrompt(event.target.value)}
+            />
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Resolution")}</label>
+                <select
+                  value={singleResolution}
+                  onChange={(event) => setSingleResolution(event.target.value as (typeof resolutionOptions)[number])}
+                  className="w-full rounded border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 shadow-inner focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-800"
+                >
+                  {resolutionOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Duration")}</span
+>
+                <div className="flex gap-2">
+                  {durationOptions.map((option) => {
+                    const isActive = singleDuration === option;
+                    return (
+                      <label
+                        key={option}
+                        className={`flex-1 cursor-pointer rounded-md border px-3 py-2 text-center text-sm font-semibold transition ${
+                          isActive
+                            ? "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm"
+                            : "border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200"
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="single-duration"
+                          value={option}
+                          checked={isActive}
+                          onChange={(event) => setSingleDuration(event.target.value as (typeof durationOptions)[number])}
+                          className="sr-only"
+                        />
+                        {option}
+                        {translate("s")}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded border border-slate-300 dark:border-slate-700 bg-slate-100/50 dark:bg-slate-100 dark:bg-slate-800/50 px-4 py-3">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm font-semibold text-slate-600 dark:text-slate-300">{translate("Refine prompt with GPT-5")}</p>
+                  <p className="text-xs text-slate-500">
+                    {translate("Let GPT-5 tighten the single-scene prompt before submitting.")}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setRefineSingleWithGpt5((value) => !value)}
+                  className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold transition ${
+                    refineSingleWithGpt5
+                      ? "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-slate-100"
+                      : "border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200"
+                  }`}
+                >
+                  <span
+                    className={`relative inline-flex h-5 w-10 items-center rounded-full border transition ${
+                      refineSingleWithGpt5 ? "border-slate-500 bg-slate-600" : "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700"
+                    }`}
+                  >
+                    <span
+                      className={`absolute left-1 h-3 rounded-full bg-slate-200 transition ${
+                        refineSingleWithGpt5 ? "translate-x-4 w-4" : "w-3"
+                      }`}
+                    />
+                  </span>
+                  {translate(refineSingleWithGpt5 ? "Enabled" : "Disabled")}
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <label className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Reference image (optional)")}</label>
+              <input
+                type="file"
+                accept="image/png,image/jpeg"
+                onChange={handleReferenceImageChange}
+                className="max-w-xs text-xs text-slate-500"
+              />
+              {singleReferencePreview && (
+                <div className="mt-2 flex h-40 w-32 items-center justify-center overflow-hidden rounded-md border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800">
+                  <Image
+                    src={singleReferencePreview}
+                    alt={translate("Reference preview")}
+                    width={160}
+                    height={200}
+                    unoptimized
+                    className="h-full w-full object-cover"
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <button
+                type="submit"
+                disabled={isSubmittingSingle}
+                className="inline-flex items-center justify-center gap-2 rounded-md bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white dark:bg-slate-100 dark:text-slate-900 shadow-sm shadow-slate-900/50 transition hover:bg-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isSubmittingSingle ? (
+                  <>
+                    <ArrowPathIcon className="h-5 w-5 animate-spin" />
+                    {translate("Sending Prompt...")}
+                  </>
+                ) : (
+                  <>
+                    <PaperAirplaneIcon className="h-5 w-5" />
+                    {translate("Generate Clip")}
+                  </>
+                )}
+              </button>
+              <p className="text-xs text-slate-500">
+                {translate("API target:")} <span className="font-mono text-[11px] text-slate-500">{API_BASE}/api/single-videos</span>
+              </p>
+            </div>
+          </form>
+        </Modal>
+
+        <Modal isOpen={isJobDetailModalOpen} onClose={() => setIsJobDetailModalOpen(false)} title={translate("Job Details")} maxWidth="max-w-6xl">
+          {activeTab === "combined" && job && (
+            <div className="space-y-8">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
+                    <FilmIcon className="h-5 w-5 text-slate-500 dark:text-slate-400" />
+                    {translate("Workflow Status")}
+                  </h2>
+                  <p className="text-xs uppercase tracking-wide text-slate-500">
+                    {translate("Mode:")} {translate(job.generation_mode === "sequence" ? "Sequence" : "Parallel")}
+                  </p>
+                </div>
+                <span className={`text-xs font-semibold uppercase tracking-wide ${currentStatusToken.className}`}>{currentStatusToken.label}</span>
+              </div>
+
+              <div className="mt-6 space-y-3">
+                <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+                  <span>{translate("Progress")}</span>
+                  <span>{combinedProgressPercent}%</span>
+                </div>
+                <div className="h-2.5 overflow-hidden rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800">
+                  <div
+                    className="h-full rounded-full bg-slate-100 transition-all duration-500 ease-out"
+                    style={{ width: `${combinedProgressPercent}%` }}
+                  />
+                </div>
+                {job.error && (
+                  <div className="flex items-center gap-2 rounded-md border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 text-xs text-rose-400">
+                    <ExclamationTriangleIcon className="h-4 w-4" />
+                    {job.error}
                   </div>
                 )}
+              </div>
 
+              <dl className="mt-6 grid gap-4 text-sm text-slate-500 dark:text-slate-400 sm:grid-cols-3">
+                <div>
+                  <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Started")}</dt>
+                  <dd className="mt-1 text-slate-600 dark:text-slate-300">{formatTimeDistance(job.started_at)}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Completed")}</dt>
+                  <dd className="mt-1 text-slate-600 dark:text-slate-300">{job.completed_at ? formatTimeDistance(job.completed_at) : "—"}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Resolution")}</dt>
+                  <dd className="mt-1 text-slate-600 dark:text-slate-300">{job.resolution}</dd>
+                </div>
+              </dl>
 
+              {finalVideoUrl && (
+                <div className="mt-8 space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className="text-sm font-semibold text-slate-600 dark:text-slate-300">{translate("Final Video")}</h3>
+                    <button
+                      type="button"
+                      onClick={handleRecompose}
+                      disabled={!canRecompose || isRecomposing}
+                      className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {isRecomposing ? <ArrowPathIcon className="h-4 w-4 animate-spin" /> : <ArrowPathIcon className="h-4 w-4" />}
+                      {translate("Regenerate Final Video")}
+                    </button>
+                  </div>
+                  <video
+                    controls
+                    className="max-h-[420px] w-full rounded border border-slate-200 dark:border-slate-800 bg-black/60"
+                    src={finalVideoUrl}
+                  >
+                    {translate("Your browser does not support HTML5 video.")}
+                  </video>
+                  <a
+                    href={finalVideoUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-2 text-sm font-medium text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-slate-100"
+                  >
+                    <PlayCircleIcon className="h-4 w-4" />
+                    {translate("Open MP4 in new tab")}
+                  </a>
+                </div>
+              )}
 
-                <div className="grid gap-8 xl:grid-cols-[1.05fr,0.95fr]">
-                  <section className="space-y-8">
-                    <div className={`${panelCardClass}`}>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
-                          <FilmIcon className="h-5 w-5 text-slate-500 dark:text-slate-400" />
-                          {translate("Generate Single Clip")}
-                        </div>
-                      </div>
-                      <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-                        {translate("Submit a single prompt directly to the Sora2 API. Optionally attach a still reference, select the render resolution, and choose a supported clip duration.")}
-                      </p>
-                      <form className="mt-5 space-y-5" onSubmit={handleSingleSubmit}>
-                        <textarea
-                          className="min-h-[220px] w-full resize-none rounded border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-4 py-3 text-sm text-slate-900 dark:text-slate-100 shadow-inner placeholder:text-slate-500 transition focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-800"
-                          placeholder={translate("Describe the scene, motion, cinematography, and mood for Sora2...")}
-                          value={singlePrompt}
-                          onChange={(event) => setSinglePrompt(event.target.value)}
-                        />
+              {job.scenes?.length ? (
+                <div className="mt-8">
+                  <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
+                    <PlayCircleIcon className="h-5 w-5 text-slate-500 dark:text-slate-400" />
+                    {translate("Scene Renders")}
+                  </h2>
+                  <div className="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-[repeat(auto-fit,minmax(360px,1fr))]">
+                    {job.scenes.map((scene) => {
+                      const versions = scene.versions ?? [];
+                      const selectedVersion = versions.find((version) => version.version_id === scene.selected_version_id) ?? versions[0];
 
-                        <div className="grid gap-4 sm:grid-cols-2">
-                          <div className="space-y-2">
-                            <label className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Resolution")}</label>
-                            <select
-                              value={singleResolution}
-                              onChange={(event) => setSingleResolution(event.target.value as (typeof resolutionOptions)[number])}
-                              className="w-full rounded border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 shadow-inner focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-800"
-                            >
-                              {resolutionOptions.map((option) => (
-                                <option key={option} value={option}>
-                                  {option}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                          <div className="space-y-2">
-                            <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Duration")}</span>
-                            <div className="flex gap-2">
-                              {durationOptions.map((option) => {
-                                const isActive = singleDuration === option;
-                                return (
-                                  <label
-                                    key={option}
-                                    className={`flex-1 cursor-pointer rounded-md border px-3 py-2 text-center text-sm font-semibold transition ${
-                                      isActive
-                                        ? "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm"
-                                        : "border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200"
-                                    }`}
-                                  >
-                                    <input
-                                      type="radio"
-                                      name="single-duration"
-                                      value={option}
-                                    checked={isActive}
-                                    onChange={(event) => setSingleDuration(event.target.value as (typeof durationOptions)[number])}
-                                    className="sr-only"
-                                  />
-                                  {option}
-                                  {translate("s")}
-                                </label>
-                              );
-                            })}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="rounded border border-slate-300 dark:border-slate-700 bg-slate-100/50 dark:bg-slate-100 dark:bg-slate-800/50 px-4 py-3">
-                          <div className="flex items-center justify-between gap-4">
+                      return (
+                        <div
+                          key={scene.order}
+                          className="rounded border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/50 p-4 shadow-inner shadow-black/20"
+                        >
+                          <div className="flex items-start justify-between gap-2">
                             <div>
-                              <p className="text-sm font-semibold text-slate-600 dark:text-slate-300">{translate("Refine prompt with GPT-5")}</p>
-                              <p className="text-xs text-slate-500">
-                                {translate("Let GPT-5 tighten the single-scene prompt before submitting.")}
+                              <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{scene.label}</h3>
+                              <p className="text-xs text-slate-500 dark:text-slate-400">
+                                {scene.duration_seconds} {translate("seconds")}
                               </p>
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => setRefineSingleWithGpt5((value) => !value)}
-                              className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold transition ${
-                                refineSingleWithGpt5
-                                  ? "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-slate-100"
-                                  : "border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200"
-                              }`}
-                            >
-                              <span
-                                className={`relative inline-flex h-5 w-10 items-center rounded-full border transition ${
-                                  refineSingleWithGpt5 ? "border-slate-500 bg-slate-600" : "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700"
-                                }`}
-                              >
-                                <span
-                                  className={`absolute left-1 h-3 rounded-full bg-slate-200 transition ${
-                                    refineSingleWithGpt5 ? "translate-x-4 w-4" : "w-3"
-                                  }`}
-                                />
-                              </span>
-                              {translate(refineSingleWithGpt5 ? "Enabled" : "Disabled")}
-                            </button>
+                            <span className="rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                              {translate("Scene")} {scene.order}
+                            </span>
                           </div>
-                        </div>
 
-                        <div className="space-y-3">
-                          <label className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Reference image (optional)")}</label>
-                          <input
-                            type="file"
-                            accept="image/png,image/jpeg"
-                            onChange={handleReferenceImageChange}
-                            className="max-w-xs text-xs text-slate-500"
-                          />
-                          {singleReferencePreview && (
-                            <div className="mt-2 flex h-40 w-32 items-center justify-center overflow-hidden rounded-md border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800">
-                              <Image
-                                src={singleReferencePreview}
-                                alt={translate("Reference preview")}
-                                width={160}
-                                height={200}
-                                unoptimized
-                                className="h-full w-full object-cover"
-                              />
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                          <button
-                            type="submit"
-                            disabled={isSubmittingSingle}
-                            className="inline-flex items-center justify-center gap-2 rounded-md bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white dark:bg-slate-100 dark:text-slate-900 shadow-sm shadow-slate-900/50 transition hover:bg-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400 disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            {isSubmittingSingle ? (
-                              <>
-                                <ArrowPathIcon className="h-5 w-5 animate-spin" />
-                                {translate("Sending Prompt...")}
-                              </>
-                            ) : (
-                              <>
-                                <PaperAirplaneIcon className="h-5 w-5" />
-                                {translate("Generate Clip")}
-                              </>
-                            )}
-                          </button>
-                          <p className="text-xs text-slate-500">
-                            {translate("API target:")} <span className="font-mono text-[11px] text-slate-500">{API_BASE}/api/single-videos</span>
+                          <p className="mt-2 text-[11px] text-slate-500">
+                            {translate("Video ID:")} {selectedVersion?.video_id ?? translate("Unavailable")}
                           </p>
-                        </div>
-                      </form>
-                    </div>
 
-                    {singleJob && (
-                      <div className={`${panelCardClass}`}>
-                        <div className="flex flex-wrap items-start justify-between gap-4">
-                          <div>
-                            <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
-                              <FilmIcon className="h-5 w-5 text-slate-500 dark:text-slate-400" />
-                              {translate("Single Video Status")}
-                            </h2>
-                          </div>
-                          <span className={`text-xs font-semibold uppercase tracking-wide ${singleStatusToken.className}`}>{singleStatusToken.label}</span>
-                        </div>
-
-                        <div className="mt-6 space-y-3">
-                          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-                            <span>{translate("Progress")}</span>
-                            <span>{singleProgressPercent}%</span>
-                          </div>
-                          <div className="h-2.5 overflow-hidden rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800">
-                            <div
-                              className="h-full rounded-full bg-slate-100 transition-all duration-500 ease-out"
-                              style={{ width: `${singleProgressPercent}%` }}
-                            />
-                          </div>
-                          {singleJob.error && (
-                            <div className="flex items-center gap-2 rounded-md border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 text-xs text-rose-400">
-                              <ExclamationTriangleIcon className="h-4 w-4" />
-                              {singleJob.error}
-                            </div>
-                          )}
-                        </div>
-
-                        <dl className="mt-6 grid gap-4 text-sm text-slate-500 dark:text-slate-400 sm:grid-cols-2 md:grid-cols-5">
-                          <div>
-                            <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Started")}</dt>
-                            <dd className="mt-1 text-slate-600 dark:text-slate-300">{formatTimeDistance(singleJob.started_at)}</dd>
-                          </div>
-                          <div>
-                            <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Completed")}</dt>
-                            <dd className="mt-1 text-slate-600 dark:text-slate-300">{singleJob.completed_at ? formatTimeDistance(singleJob.completed_at) : "—"}</dd>
-                          </div>
-                          <div>
-                            <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Resolution")}</dt>
-                            <dd className="mt-1 text-slate-600 dark:text-slate-300">{singleJob.resolution}</dd>
-                          </div>
-                          <div>
-                            <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Duration")}</dt>
-                            <dd className="mt-1 text-slate-600 dark:text-slate-300">
-                              {singleJob.duration}
-                              {translate("s")}
-                            </dd>
-                          </div>
-                          <div>
-                            <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Azure video ID:")}</dt>
-                            <dd className="mt-1 text-slate-600 dark:text-slate-300">{singleJob.video_id ?? translate("Unavailable")}</dd>
-                          </div>
-                        </dl>
-
-                        {singleVideoUrl ? (
-                          <div className="mt-8 space-y-3">
-                            <h3 className="text-sm font-semibold text-slate-600 dark:text-slate-300">{translate("Generated Video")}</h3>
-                            <video
-                              controls
-                              className="max-h-[360px] w-full rounded border border-slate-200 dark:border-slate-800 bg-black/60"
-                              src={singleVideoUrl}
-                            >
-                              {translate("Your browser does not support HTML5 video.")}
-                            </video>
-                            <a
-                              href={singleVideoUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="inline-flex items-center gap-2 text-sm font-medium text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-slate-100"
-                            >
-                              <PlayCircleIcon className="h-4 w-4" />
-                              {translate("Open MP4 in new tab")}
-                            </a>
-                          </div>
-                        ) : (
-                          <div className="mt-8 flex h-40 items-center justify-center rounded border border-dashed border-slate-300 dark:border-slate-700 bg-slate-100/50 dark:bg-slate-100 dark:bg-slate-800/50 text-xs text-slate-500">
-                            {translate("Video pending...")}
-                          </div>
-                        )}
-
-                        {singleJob.video_id ? (
-                          <form className="mt-6 space-y-2" onSubmit={handleSingleRemixSubmit}>
-                            <div className="flex flex-wrap items-center justify-between gap-3">
-                              <h3 className="text-sm font-semibold text-slate-600 dark:text-slate-300">{translate("Remix Single Video")}</h3>
-                              <span className="text-[11px] text-slate-500">
-                                {translate("Uses previous video ID:")} {singleJob.video_id}
-                              </span>
-                            </div>
-                            <textarea
-                              className="min-h-[80px] w-full rounded-md border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-800"
-                              placeholder={translate("Describe how you want to remix this clip...")}
-                              value={singleRemixPrompt}
-                              onChange={(event) => setSingleRemixPrompt(event.target.value)}
-                            />
-                            <div className="flex items-center justify-end">
-                              <button
-                                type="submit"
-                                disabled={singleRemixSubmitting}
-                                className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-4 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
-                              >
-                                {singleRemixSubmitting ? (
-                                  <ArrowPathIcon className="h-4 w-4 animate-spin" />
-                                ) : (
-                                  <ArrowPathIcon className="h-4 w-4" />
-                                )}
-                                {translate("Remix Clip")}
-                              </button>
-                            </div>
-                          </form>
-                        ) : null}
-
-                        {singleJob.versions?.length ? (
-                          <div className="mt-8 space-y-3">
-                            <h3 className="text-sm font-semibold text-slate-600 dark:text-slate-300">{translate("Versions")}</h3>
-                            <div className="space-y-3">
-                              {singleJob.versions.map((version) => {
+                          {versions.length ? (
+                            <div className="mt-4 space-y-3">
+                              <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                {translate("Versions")}
+                              </h4>
+                              {versions.map((version) => {
                                 const versionVideoUrl = buildAssetUrl(version.video_url);
-                                const isActive = version.version_id === singleJob.selected_version_id;
+                                const versionLastFrameUrl = showSequenceReferences ? buildAssetUrl(version.last_frame_url) : null;
+                                const isActive = version.version_id === scene.selected_version_id;
+                                const isBusy = Boolean(selectionSubmitting[version.version_id]);
                                 return (
                                   <div
                                     key={version.version_id}
                                     className={`rounded border p-3 ${
-                                      isActive ? "border-slate-400 dark:border-slate-600 bg-slate-100 dark:bg-slate-800" : "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30"
+                                      isActive
+                                        ? "border-slate-400 dark:border-slate-600 bg-slate-100 dark:bg-slate-800"
+                                        : "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30"
                                     }`}
                                   >
                                     <div className="flex items-start justify-between gap-3">
@@ -2272,79 +1879,330 @@ export default function Home() {
                                           {version.source} • {formatTimeDistance(version.created_at)}
                                         </p>
                                       </div>
-                                      {isActive ? (
-                                        <span className="rounded-full border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50 dark:bg-emerald-950/30 px-2 py-0.5 text-[11px] font-semibold text-emerald-400">
-                                          {translate("Selected")}
-                                        </span>
-                                      ) : null}
+                                      <button
+                                        type="button"
+                                        onClick={() => handleSelectVersion(scene.order, version.version_id)}
+                                        disabled={isActive || isBusy}
+                                        className={`rounded-md border px-3 py-1 text-xs font-semibold transition ${
+                                          isActive
+                                            ? "border-emerald-200 dark:border-emerald-900/50 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-400"
+                                            : "border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200 disabled:opacity-60"
+                                        }`}
+                                      >
+                                        {isActive
+                                          ? translate("Selected")
+                                          : isBusy
+                                            ? translate("Selecting...")
+                                            : translate("Use this version")}
+                                      </button>
                                     </div>
                                     {versionVideoUrl ? (
                                       <video
                                         key={`${version.version_id}-${versionVideoUrl}`}
                                         controls
-                                        className="mt-2 max-h-48 w-full rounded-md border border-slate-200 dark:border-slate-800 bg-black/60"
+                                        className="mt-2 max-h-40 w-full rounded-md border border-slate-200 dark:border-slate-800 bg-black/60"
                                         src={versionVideoUrl}
                                       >
                                         {translate("Version video unavailable.")}
                                       </video>
                                     ) : null}
-                                    <p className="mt-2 text-[11px] text-slate-500">
-                                      {translate("Azure video ID:")} {version.video_id ?? translate("Unavailable")}
-                                    </p>
-                                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                      {translate("Prompt:")} <span className="font-mono text-[11px] text-slate-500">{version.prompt}</span>
-                                    </p>
+                                    {versionLastFrameUrl ? (
+                                      <div className="mt-2 rounded-md border border-slate-300 dark:border-slate-700 bg-slate-100/50 dark:bg-slate-100 dark:bg-slate-800/50 p-2">
+                                        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                                          {translate("Last frame reference")}
+                                        </p>
+                                        <Image
+                                          src={versionLastFrameUrl}
+                                          alt={`${version.label} ${translate("Last frame reference")}`}
+                                          width={280}
+                                          height={200}
+                                          unoptimized
+                                          className="mt-2 h-28 w-full rounded object-cover"
+                                        />
+                                      </div>
+                                    ) : null}
+                                    {version.prompt ? (
+                                      <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                                        {translate("Prompt:")} <span className="font-mono text-[11px] text-slate-500">{version.prompt}</span>
+                                      </p>
+                                    ) : null}
+                                    {version.video_id ? (
+                                      <p className="text-[11px] text-slate-500">{translate("Azure video ID:")} {version.video_id}</p>
+                                    ) : null}
                                   </div>
                                 );
                               })}
                             </div>
-                          </div>
-                        ) : null}
-                      </div>
-                    )}
-                  </section>
+                          ) : null}
 
-                  <aside className="space-y-8">
-                    {singleJob?.messages?.length ? (
-                      <div className={`${panelCardClass}`}>
-                        <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
-                          <ClockIcon className="h-5 w-5 text-slate-500 dark:text-slate-400" />
-                          {translate("Job Timeline")}
-                        </h2>
-                        <ol className="mt-4 space-y-2 max-h-60 overflow-y-auto pr-2">
-                          {singleJob.messages.map((message, index) => {
-                            const Icon = stageIcons[message.stage] ?? ArrowPathIcon;
-                            return (
-                              <li
-                                key={`${message.timestamp}-${index}`}
-                                className="relative flex gap-3 rounded border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/50 p-2 shadow-inner shadow-black/20"
+                          <form className="mt-4 space-y-2" onSubmit={(event) => handleRemixSubmit(event, scene.order)}>
+                            <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                              {translate("Remix prompt")}
+                            </label>
+                            <textarea
+                              className="min-h-[80px] w-full rounded-md border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-800"
+                              placeholder={translate("Describe how you want to remix this scene...")}
+                              value={remixPrompts[scene.order] ?? ""}
+                              onChange={(event) =>
+                                setRemixPrompts((prev) => ({ ...prev, [scene.order]: event.target.value }))
+                              }
+                            />
+                            <div className="flex items-center justify-between gap-2 text-xs text-slate-500">
+                              <span>
+                                {translate("Uses previous video ID:")} {selectedVersion?.video_id ?? translate("Unavailable")}
+                              </span>
+                              <button
+                                type="submit"
+                                disabled={!selectedVersion?.video_id || remixSubmitting[scene.order]}
+                                className="inline-flex items-center gap-1 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1 text-xs font-semibold text-slate-500 dark:text-slate-400 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
                               >
-                                <div className="relative mt-0.5 flex h-7 w-7 items-center justify-center rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800">
-                                  <Icon className="h-4 w-4 text-slate-500 dark:text-slate-400" />
-                                </div>
-                                <div>
-                                  <p className="text-sm text-slate-600 dark:text-slate-300">{message.text}</p>
-                                  <p className="text-xs text-slate-500">
-                                    {formatTimestamp(message.timestamp)} · {stageLabel(message.stage, language)}
-                                  </p>
-                                </div>
-                              </li>
-                            );
-                          })}
-                        </ol>
-                      </div>
-                    ) : null}
-
-
-                  </aside>
+                                {remixSubmitting[scene.order] ? (
+                                  <ArrowPathIcon className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <ArrowPathIcon className="h-4 w-4" />
+                                )}
+                                {translate("Remix Scene")}
+                              </button>
+                            </div>
+                          </form>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-              </>
-            )}
-          </div>
-          </div>
+              ) : null}
+
+              {job.messages?.length ? (
+                <div className="mt-8">
+                  <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
+                    <ClockIcon className="h-5 w-5 text-slate-500 dark:text-slate-400" />
+                    {translate("Workflow Timeline")}
+                  </h2>
+                  <ol className="mt-4 space-y-2 max-h-60 overflow-y-auto pr-2">
+                    {job.messages.map((message, index) => {
+                      const Icon = stageIcons[message.stage] ?? ArrowPathIcon;
+                      return (
+                        <li
+                          key={`${message.timestamp}-${index}`}
+                          className="relative flex gap-3 rounded border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/50 p-2 shadow-inner shadow-black/20"
+                        >
+                          <div className="relative mt-0.5 flex h-7 w-7 items-center justify-center rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800">
+                            <Icon className="h-4 w-4 text-slate-500 dark:text-slate-400" />
+                          </div>
+                          <div>
+                            <p className="text-sm text-slate-600 dark:text-slate-300">{message.text}</p>
+                            <p className="text-xs text-slate-500">
+                              {formatTimestamp(message.timestamp)} · {stageLabel(message.stage, language)}
+                            </p>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                </div>
+              ) : null}
+            </div>
           )}
-        </main>
+
+          {activeTab === "single" && singleJob && (
+            <div className="space-y-8">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
+                    <FilmIcon className="h-5 w-5 text-slate-500 dark:text-slate-400" />
+                    {translate("Single Video Status")}
+                  </h2>
+                </div>
+                <span className={`text-xs font-semibold uppercase tracking-wide ${singleStatusToken.className}`}>{singleStatusToken.label}</span>
+              </div>
+
+              <div className="mt-6 space-y-3">
+                <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+                  <span>{translate("Progress")}</span>
+                  <span>{singleProgressPercent}%</span>
+                </div>
+                <div className="h-2.5 overflow-hidden rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800">
+                  <div
+                    className="h-full rounded-full bg-slate-100 transition-all duration-500 ease-out"
+                    style={{ width: `${singleProgressPercent}%` }}
+                  />
+                </div>
+                {singleJob.error && (
+                  <div className="flex items-center gap-2 rounded-md border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 text-xs text-rose-400">
+                    <ExclamationTriangleIcon className="h-4 w-4" />
+                    {singleJob.error}
+                  </div>
+                )}
+              </div>
+
+              <dl className="mt-6 grid gap-4 text-sm text-slate-500 dark:text-slate-400 sm:grid-cols-2 md:grid-cols-5">
+                <div>
+                  <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Started")}</dt>
+                  <dd className="mt-1 text-slate-600 dark:text-slate-300">{formatTimeDistance(singleJob.started_at)}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Completed")}</dt>
+                  <dd className="mt-1 text-slate-600 dark:text-slate-300">{singleJob.completed_at ? formatTimeDistance(singleJob.completed_at) : "—"}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Resolution")}</dt>
+                  <dd className="mt-1 text-slate-600 dark:text-slate-300">{singleJob.resolution}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Duration")}</dt>
+                  <dd className="mt-1 text-slate-600 dark:text-slate-300">
+                    {singleJob.duration}
+                    {translate("s")}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Azure video ID:")}</dt>
+                  <dd className="mt-1 text-slate-600 dark:text-slate-300">{singleJob.video_id ?? translate("Unavailable")}</dd>
+                </div>
+              </dl>
+
+              {singleVideoUrl ? (
+                <div className="mt-8 space-y-3">
+                  <h3 className="text-sm font-semibold text-slate-600 dark:text-slate-300">{translate("Generated Video")}</h3>
+                  <video
+                    controls
+                    className="max-h-[360px] w-full rounded border border-slate-200 dark:border-slate-800 bg-black/60"
+                    src={singleVideoUrl}
+                  >
+                    {translate("Your browser does not support HTML5 video.")}
+                  </video>
+                  <a
+                    href={singleVideoUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-2 text-sm font-medium text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-slate-100"
+                  >
+                    <PlayCircleIcon className="h-4 w-4" />
+                    {translate("Open MP4 in new tab")}
+                  </a>
+                </div>
+              ) : (
+                <div className="mt-8 flex h-40 items-center justify-center rounded border border-dashed border-slate-300 dark:border-slate-700 bg-slate-100/50 dark:bg-slate-100 dark:bg-slate-800/50 text-xs text-slate-500">
+                  {translate("Video pending...")}
+                </div>
+              )}
+
+              {singleJob.video_id ? (
+                <form className="mt-6 space-y-2" onSubmit={handleSingleRemixSubmit}>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <h3 className="text-sm font-semibold text-slate-600 dark:text-slate-300">{translate("Remix Single Video")}</h3>
+                    <span className="text-[11px] text-slate-500">
+                      {translate("Uses previous video ID:")} {singleJob.video_id}
+                    </span>
+                  </div>
+                  <textarea
+                    className="min-h-[80px] w-full rounded-md border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-800"
+                    placeholder={translate("Describe how you want to remix this clip...")}
+                    value={singleRemixPrompt}
+                    onChange={(event) => setSingleRemixPrompt(event.target.value)}
+                  />
+                  <div className="flex items-center justify-end">
+                    <button
+                      type="submit"
+                      disabled={singleRemixSubmitting}
+                      className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-4 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {singleRemixSubmitting ? (
+                        <ArrowPathIcon className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <ArrowPathIcon className="h-4 w-4" />
+                      )}
+                      {translate("Remix Clip")}
+                    </button>
+                  </div>
+                </form>
+              ) : null}
+
+              {singleJob.versions?.length ? (
+                <div className="mt-8 space-y-3">
+                  <h3 className="text-sm font-semibold text-slate-600 dark:text-slate-300">{translate("Versions")}</h3>
+                  <div className="space-y-3">
+                    {singleJob.versions.map((version) => {
+                      const versionVideoUrl = buildAssetUrl(version.video_url);
+                      const isActive = version.version_id === singleJob.selected_version_id;
+                      return (
+                        <div
+                          key={version.version_id}
+                          className={`rounded border p-3 ${
+                            isActive ? "border-slate-400 dark:border-slate-600 bg-slate-100 dark:bg-slate-800" : "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30"
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">{version.label}</p>
+                              <p className="text-xs text-slate-500">
+                                {version.source} • {formatTimeDistance(version.created_at)}
+                              </p>
+                            </div>
+                            {isActive ? (
+                              <span className="rounded-full border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50 dark:bg-emerald-950/30 px-2 py-0.5 text-[11px] font-semibold text-emerald-400">
+                                {translate("Selected")}
+                              </span>
+                            ) : null}
+                          </div>
+                          {versionVideoUrl ? (
+                            <video
+                              key={`${version.version_id}-${versionVideoUrl}`}
+                              controls
+                              className="mt-2 max-h-48 w-full rounded-md border border-slate-200 dark:border-slate-800 bg-black/60"
+                              src={versionVideoUrl}
+                            >
+                              {translate("Version video unavailable.")}
+                            </video>
+                          ) : null}
+                          <p className="mt-2 text-[11px] text-slate-500">
+                            {translate("Azure video ID:")} {version.video_id ?? translate("Unavailable")}
+                          </p>
+                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                            {translate("Prompt:")} <span className="font-mono text-[11px] text-slate-500">{version.prompt}</span>
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
+
+              {singleJob.messages?.length ? (
+                <div className="mt-8">
+                  <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
+                    <ClockIcon className="h-5 w-5 text-slate-500 dark:text-slate-400" />
+                    {translate("Job Timeline")}
+                  </h2>
+                  <ol className="mt-4 space-y-2 max-h-60 overflow-y-auto pr-2">
+                    {singleJob.messages.map((message, index) => {
+                      const Icon = stageIcons[message.stage] ?? ArrowPathIcon;
+                      return (
+                        <li
+                          key={`${message.timestamp}-${index}`}
+                          className="relative flex gap-3 rounded border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/50 p-2 shadow-inner shadow-black/20"
+                        >
+                          <div className="relative mt-0.5 flex h-7 w-7 items-center justify-center rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800">
+                            <Icon className="h-4 w-4 text-slate-500 dark:text-slate-400" />
+                          </div>
+                          <div>
+                            <p className="text-sm text-slate-600 dark:text-slate-300">{message.text}</p>
+                            <p className="text-xs text-slate-500">
+                              {formatTimestamp(message.timestamp)} · {stageLabel(message.stage, language)}
+                            </p>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                </div>
+              ) : null}
+            </div>
+          )}
+        </Modal>
+
       </div>
+
       <footer className="border-t border-slate-200 bg-slate-100/90 py-4 text-center text-xs text-slate-500 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 dark:text-slate-400">
         <p>Powered by Sora2 on Microsoft Azure, author Ming Gu from AI GBB team.</p>
       </footer>
