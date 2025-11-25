@@ -9,7 +9,7 @@ from typing import Optional, Sequence
 
 from agent_framework import Executor, WorkflowContext, handler
 
-from .config import ROOT, SCENE_IMAGE_DIR, SORA_CLIP_DURATION_SECONDS, logger
+from .config import ROOT, SCENE_IMAGE_DIR, logger
 from .images import prepare_scene_start_images
 from .models import (
     ScenePlan,
@@ -72,11 +72,11 @@ class DirectorAgent(Executor):
 
         plans: list[ScenePlan] = []
         for idx, draft in enumerate(drafts, start=1):
-            duration = SORA_CLIP_DURATION_SECONDS
+            duration = request.scene_duration
             description = "\n".join(draft.description_lines)
             slug = slugify(f"{draft.scene_number:02d}-{draft.title}")
             prompt_path = prompt_dir / f"scene_{idx:02d}_{slug}.txt"
-            refined_description = await refine_scene_description(draft.title, description)
+            refined_description = await refine_scene_description(draft.title, description, duration)
             prompt_text = build_prompt_text(
                 draft.title, refined_description, duration, request.resolution
             )

@@ -2,6 +2,7 @@ import argparse
 import asyncio
 import json
 import os
+import sys
 import tempfile
 from datetime import datetime
 from typing import Optional
@@ -251,14 +252,26 @@ async def main() -> None:
                 json.dump(log_data, log_file, indent=2)
             print(f'Wrote run log to "{log_path}".')
         else:
-            print(
-                "Video generation did not complete successfully.",
-                f"Status: {status}",
-                f"Job ID: {job_id}",
-            )
+            status_label = status or "unknown"
+            job_label = job_id or "unknown"
             error_info = getattr(video, "error", None)
             if error_info:
-                print("Error details:", error_info)
+                print(
+                    "Video generation failed.",
+                    f"Status: {status_label}",
+                    f"Job ID: {job_label}",
+                    f"Error: {error_info}",
+                    file=sys.stderr,
+                )
+            else:
+                print(
+                    "Video generation failed.",
+                    f"Status: {status_label}",
+                    f"Job ID: {job_label}",
+                    "No additional error details were returned.",
+                    file=sys.stderr,
+                )
+            raise SystemExit(2)
     finally:
         await client.close()
 

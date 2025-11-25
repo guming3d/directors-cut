@@ -85,6 +85,7 @@ type JobStatus = {
   messages: JobMessage[];
   scenes: SceneStatus[];
   generation_mode: "parallel" | "sequence";
+  scene_duration?: number;
 };
 
 type SingleVideoJob = {
@@ -107,6 +108,12 @@ type SingleVideoJob = {
   selected_version_id: string | null;
   versions: SingleVideoVersion[];
   messages: JobMessage[];
+};
+
+type PromptPreview = {
+  sceneLabel: string;
+  versionLabel: string;
+  prompt: string;
 };
 
 const STATUS_TOKENS: Record<string, { label: string; className: string }> = {
@@ -187,6 +194,7 @@ const zhTranslations: Record<string, string> = {
   "English": "英文",
   "Failed to refresh single-video status. Confirm the backend is reachable.": "无法刷新单视频状态，请确认后端可访问。",
   "Failed to refresh workflow status. Check that the FastAPI server is reachable.": "无法刷新工作流状态，请检查 FastAPI 服务是否可访问。",
+  "Failed to regenerate this scene. Confirm the backend is reachable.": "无法重新生成该场景，请确认后端可用。",
   "Failed": "失败",
   "Final Video": "最终视频",
   "Generate a clip to see it listed here.": "先生成一个片段即可在此查看。",
@@ -230,6 +238,7 @@ const zhTranslations: Record<string, string> = {
   "Scene images enabled": "已启用场景参考图",
   "Scene reference": "场景参考图",
   "Scene references": "场景参考图",
+  "Scene duration": "场景时长",
   "Scene Renders": "场景渲染",
   "Scene": "场景",
   "seconds": "秒",
@@ -237,6 +246,7 @@ const zhTranslations: Record<string, string> = {
   "Scenes this workflow": "当前工作流场景数",
   "Current storyboard": "当前分镜",
   "Script-to-Video Control Room": "脚本到视频操控室",
+  "System prompt": "系统提示词",
   "Since session start": "自会话开始以来",
   "Select workflows": "选择工作流",
   "Selected": "已选择",
@@ -255,6 +265,7 @@ const zhTranslations: Record<string, string> = {
   "Sora2 Studio": "Sora2 工作室",
   "Start Workflow": "启动工作流",
   "Starting Workflow...": "正在启动工作流…",
+  "Start a workflow before regenerating scenes.": "请先启动工作流再重新生成场景。",
   "Start single video": "启动单视频",
   "Started": "开始时间",
   "Storyboard Workflow": "分镜工作流",
@@ -262,6 +273,8 @@ const zhTranslations: Record<string, string> = {
   "Status": "状态",
   "The Director agent will refine prompts following Sora2 best practices.": "导演代理会按照 Sora2 最佳实践优化提示词。",
   "Regenerate Final Video": "重新生成最终视频",
+  "Regenerate Scene": "重新生成场景",
+  "Regenerating...": "重新生成中…",
   "Open MP4 in new tab": "在新标签页打开 MP4",
   "Your browser does not support HTML5 video.": "您的浏览器不支持 HTML5 视频。",
   "Submit reference image": "上传参考图",
@@ -315,6 +328,7 @@ const zhTranslations: Record<string, string> = {
   "Start a single-video job before requesting a remix.": "请先创建单视频任务再尝试重制。",
   "Sending Prompt...": "正在发送提示词…",
   "s": "秒",
+  "View system prompt": "查看系统提示词",
 };
 
 const translateValue = (language: Language, value: string) => (language === "zh" ? zhTranslations[value] ?? value : value);
@@ -465,6 +479,7 @@ export default function Home() {
   const [useSceneImages, setUseSceneImages] = useState(false);
   const [generationMode, setGenerationMode] = useState<"parallel" | "sequence">("parallel");
   const [combinedResolution, setCombinedResolution] = useState<(typeof resolutionOptions)[number]>(resolutionOptions[0]);
+  const [sceneDuration, setSceneDuration] = useState<(typeof durationOptions)[number]>(durationOptions[1]);
   const [sceneImageFiles, setSceneImageFiles] = useState<File[]>([]);
   const [sceneImagePreviews, setSceneImagePreviews] = useState<string[]>([]);
   const [jobs, setJobs] = useState<JobStatus[]>([]);
@@ -478,6 +493,7 @@ export default function Home() {
   const [selectionSubmitting, setSelectionSubmitting] = useState<Record<string, boolean>>({});
   const [isRecomposing, setIsRecomposing] = useState(false);
   const [refineWorkflowWithGpt5, setRefineWorkflowWithGpt5] = useState(false);
+  const [sceneRegenerating, setSceneRegenerating] = useState<Record<number, boolean>>({});
 
   // Single video state
   const [singlePrompt, setSinglePrompt] = useState("");
@@ -494,6 +510,7 @@ export default function Home() {
   const [refineSingleWithGpt5, setRefineSingleWithGpt5] = useState(false);
   const [singleRemixPrompt, setSingleRemixPrompt] = useState("");
   const [singleRemixSubmitting, setSingleRemixSubmitting] = useState(false);
+  const [promptPreview, setPromptPreview] = useState<PromptPreview | null>(null);
 
   // Modal states
   const [isCreateWorkflowModalOpen, setIsCreateWorkflowModalOpen] = useState(false);
@@ -835,6 +852,34 @@ export default function Home() {
     await submitRemix(sceneOrder);
   };
 
+  const handleRegenerateScene = async (sceneOrder: number) => {
+    if (!job?.job_id) {
+      setCombinedError("Start a workflow before regenerating scenes.");
+      return;
+    }
+    setCombinedError(null);
+    setSceneRegenerating((prev) => ({ ...prev, [sceneOrder]: true }));
+    try {
+      const response = await fetch(`${API_BASE}/api/workflows/${job.job_id}/scenes/${sceneOrder}/regenerate`, {
+        method: "POST",
+      });
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      const data: JobStatus = await response.json();
+      setJob(data);
+      setJobs((prev) => {
+        const others = prev.filter((item) => item.job_id !== data.job_id);
+        return [data, ...others];
+      });
+    } catch (err) {
+      console.error(err);
+      setCombinedError("Failed to regenerate this scene. Confirm the backend is reachable.");
+    } finally {
+      setSceneRegenerating((prev) => ({ ...prev, [sceneOrder]: false }));
+    }
+  };
+
   const handleSelectVersion = async (sceneOrder: number, versionId: string) => {
     if (!job?.job_id) {
       setCombinedError("Start a workflow before selecting scene versions.");
@@ -896,6 +941,7 @@ export default function Home() {
       payload.resolution = combinedResolution;
       payload.generationMode = generationMode;
       payload.refineWithGpt5 = refineWorkflowWithGpt5;
+      payload.sceneDuration = Number(sceneDuration);
       if (useSceneImages && sceneImageFiles.length) {
         const uploads = await Promise.all(
           sceneImageFiles.map(async (file) => ({
@@ -1427,7 +1473,7 @@ export default function Home() {
               onChange={(event) => setScript(event.target.value)}
             />
 
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <div className="space-y-2">
                 <label className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Resolution")}</label>
                 <select
@@ -1466,6 +1512,35 @@ export default function Home() {
                   </span>
                   {useSceneImages ? translate("Scene images enabled") : translate("No scene references")}
                 </button>
+              </div>
+              <div className="space-y-2">
+                <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Scene duration")}</span>
+                <div className="flex gap-2">
+                  {durationOptions.map((option) => {
+                    const isActive = sceneDuration === option;
+                    return (
+                      <label
+                        key={option}
+                        className={`flex-1 cursor-pointer rounded-md border px-3 py-2 text-center text-sm font-semibold transition ${
+                          isActive
+                            ? "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm"
+                            : "border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200"
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="scene-duration"
+                          value={option}
+                          checked={isActive}
+                          onChange={(event) => setSceneDuration(event.target.value as (typeof durationOptions)[number])}
+                          className="sr-only"
+                        />
+                        {option}
+                        {translate("s")}
+                      </label>
+                    );
+                  })}
+                </div>
               </div>
             </div>
 
@@ -1831,6 +1906,7 @@ export default function Home() {
                     {job.scenes.map((scene) => {
                       const versions = scene.versions ?? [];
                       const selectedVersion = versions.find((version) => version.version_id === scene.selected_version_id) ?? versions[0];
+                      const isRegenerating = Boolean(sceneRegenerating[scene.order]);
 
                       return (
                         <div
@@ -1849,9 +1925,24 @@ export default function Home() {
                             </span>
                           </div>
 
-                          <p className="mt-2 text-[11px] text-slate-500">
-                            {translate("Video ID:")} {selectedVersion?.video_id ?? translate("Unavailable")}
-                          </p>
+                          <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                              {translate("Video ID:")} {selectedVersion?.video_id ?? translate("Unavailable")}
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => handleRegenerateScene(scene.order)}
+                              disabled={isRegenerating}
+                              className="inline-flex items-center gap-1 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {isRegenerating ? (
+                                <ArrowPathIcon className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <ArrowPathIcon className="h-3.5 w-3.5" />
+                              )}
+                              {isRegenerating ? translate("Regenerating...") : translate("Regenerate Scene")}
+                            </button>
+                          </div>
 
                           {versions.length ? (
                             <div className="mt-4 space-y-3">
@@ -1922,9 +2013,20 @@ export default function Home() {
                                       </div>
                                     ) : null}
                                     {version.prompt ? (
-                                      <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                                        {translate("Prompt:")} <span className="font-mono text-[11px] text-slate-500">{version.prompt}</span>
-                                      </p>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setPromptPreview({
+                                            sceneLabel: scene.label,
+                                            versionLabel: version.label,
+                                            prompt: version.prompt ?? "",
+                                          })
+                                        }
+                                        className="mt-3 inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200"
+                                      >
+                                        <DocumentTextIcon className="h-4 w-4" />
+                                        {translate("View system prompt")}
+                                      </button>
                                     ) : null}
                                     {version.video_id ? (
                                       <p className="text-[11px] text-slate-500">{translate("Azure video ID:")} {version.video_id}</p>
@@ -2199,6 +2301,26 @@ export default function Home() {
               ) : null}
             </div>
           )}
+        </Modal>
+
+        <Modal
+          isOpen={Boolean(promptPreview)}
+          onClose={() => setPromptPreview(null)}
+          title={translate("System prompt")}
+          maxWidth="max-w-3xl"
+        >
+          {promptPreview ? (
+            <div className="space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                {promptPreview.sceneLabel} • {promptPreview.versionLabel}
+              </p>
+              <div className="max-h-[50vh] overflow-y-auto rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 p-3">
+                <pre className="whitespace-pre-wrap break-words font-mono text-[13px] leading-relaxed text-slate-800 dark:text-slate-100">
+                  {promptPreview.prompt}
+                </pre>
+              </div>
+            </div>
+          ) : null}
         </Modal>
 
       </div>

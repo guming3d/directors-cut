@@ -30,7 +30,7 @@ async def test_workflow_runs_with_stubbed_agents(tmp_path, monkeypatch):
 
     workflow = create_sora_video_workflow()
 
-    async def fake_refine(title: str, description: str) -> str:
+    async def fake_refine(title: str, description: str, duration: int) -> str:
         return description
 
     async def fake_invoke(

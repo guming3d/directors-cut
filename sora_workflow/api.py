@@ -36,6 +36,7 @@ from .services import (
     prepare_single_video_job,
     refine_script_for_payload,
     run_recompose_job,
+    run_scene_regeneration_job,
     run_scene_remix_job,
     run_single_video_job,
     run_single_video_remix,
@@ -87,6 +88,7 @@ async def start_workflow(payload: StartWorkflowPayload) -> JobStatusResponse:
         await WORKFLOW_JOB_STORE.set_resolution(job_id, request.resolution)
         await WORKFLOW_JOB_STORE.set_download_variant(job_id, request.download_variant)
         await WORKFLOW_JOB_STORE.set_generation_mode(job_id, request.generation_mode)
+        await WORKFLOW_JOB_STORE.set_scene_duration(job_id, request.scene_duration)
     except ValueError as exc:
         await WORKFLOW_JOB_STORE.mark_failed(job_id, str(exc))
         raise HTTPException(status_code=400, detail=str(exc))
@@ -247,6 +249,23 @@ async def remix_scene_version(
         )
     await WORKFLOW_JOB_STORE.add_message(job_id, "rendering", f"Queued remix for {scene.label}.")
     asyncio.create_task(run_scene_remix_job(job_id, scene_order, prompt))
+    return await WORKFLOW_JOB_STORE.get_status(job_id)
+
+
+@fastapi_app.post(
+    "/api/workflows/{job_id}/scenes/{scene_order}/regenerate",
+    response_model=JobStatusResponse,
+)
+async def regenerate_scene_version(job_id: str, scene_order: int) -> JobStatusResponse:
+    try:
+        scene = await WORKFLOW_JOB_STORE.get_scene(job_id, scene_order)
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Scene {scene_order} not found for job {job_id}.",
+        ) from exc
+    await WORKFLOW_JOB_STORE.add_message(job_id, "rendering", f"Queued regeneration for {scene.label}.")
+    asyncio.create_task(run_scene_regeneration_job(job_id, scene_order))
     return await WORKFLOW_JOB_STORE.get_status(job_id)
 
 
