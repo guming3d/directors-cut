@@ -64,6 +64,7 @@ def prepare_request_for_job(job_id: str, payload: StartWorkflowPayload) -> Video
         raise ValueError(
             "Resolution must be in WIDTHxHEIGHT format, e.g. 720x1280."
         )
+    scene_duration = int(payload.scene_duration)
 
     use_scene_images = payload.use_scene_images
     if use_scene_images is None:
@@ -113,6 +114,7 @@ def prepare_request_for_job(job_id: str, payload: StartWorkflowPayload) -> Video
         scene_image_dir=str(scene_image_dir_path),
         use_scene_images=use_scene_images,
         resolution=resolution,
+        scene_duration=scene_duration,
         thread_count=thread_count,
         download_variant=download_variant,
         job_id=job_id,
@@ -446,6 +448,105 @@ async def run_scene_remix_job(job_id: str, scene_order: int, prompt: str) -> Non
         )
 
 
+async def run_scene_regeneration_job(job_id: str, scene_order: int) -> None:
+    try:
+        scene = await WORKFLOW_JOB_STORE.get_scene(job_id, scene_order)
+        resolution = await WORKFLOW_JOB_STORE.get_resolution(job_id)
+        download_variant = await WORKFLOW_JOB_STORE.get_download_variant(job_id)
+    except KeyError as exc:  # pragma: no cover - defensive logging
+        logger.warning("Regeneration requested for unknown scene %s/%s: %s", job_id, scene_order, exc)
+        return
+
+    prompt_path = Path(scene.prompt_path)
+    if not prompt_path.is_file():
+        await WORKFLOW_JOB_STORE.add_message(
+            job_id,
+            "failed",
+            f"Cannot regenerate {scene.label}; prompt file missing.",
+        )
+        return
+
+    job_dir = job_root(job_id)
+    scenes_dir = Path(job_dir) / "scenes"
+    scenes_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    video_path = scenes_dir / f"scene_{scene_order:02d}_regen_{timestamp}.mp4"
+
+    env = os.environ.copy()
+    env.update(
+        {
+            "VIDEO_OUTPUT_PATH": str(video_path),
+            "VIDEO_DOWNLOAD_VARIANT": download_variant,
+        }
+    )
+
+    cmd = [
+        sys.executable,
+        str(SORA_CLIENT),
+        "--prompt-file",
+        str(prompt_path),
+        "--resolution",
+        resolution,
+        "--duration",
+        str(scene.duration_seconds),
+    ]
+
+    try:
+        stdout, stderr = await run_subprocess(cmd, cwd=ROOT, env=env)
+        client_log_path = video_path.with_suffix(".regen.log")
+        client_log_path.write_text(
+            f"STDOUT:\n{stdout}\nSTDERR:\n{stderr}\n",
+            encoding="utf-8",
+        )
+
+        if not video_path.is_file():
+            raise FileNotFoundError(
+                "Sora client reported success but regenerated video file is missing."
+            )
+
+        log_path = video_path.with_suffix(".json")
+        video_id = None
+        if log_path.is_file():
+            try:
+                metadata = json.loads(log_path.read_text(encoding="utf-8"))
+                video_id = metadata.get("video_id") or metadata.get("job_id")
+            except json.JSONDecodeError:
+                video_id = None
+
+        try:
+            prompt_text = prompt_path.read_text(encoding="utf-8").strip()
+        except OSError:
+            prompt_text = ""
+
+        version = SceneVersionEntry(
+            version_id=uuid.uuid4().hex,
+            label=f"Regenerate {len(scene.versions) + 1}",
+            video_path=str(video_path),
+            log_path=str(log_path) if log_path.is_file() else None,
+            client_log_path=str(client_log_path),
+            video_id=video_id,
+            prompt=prompt_text,
+            prompt_path=str(prompt_path),
+            source="regenerate",
+        )
+        await WORKFLOW_JOB_STORE.add_scene_version(
+            job_id,
+            scene_order,
+            version,
+            make_active=True,
+            message=f"Regenerated {scene.label}.",
+        )
+    except asyncio.CancelledError:  # pragma: no cover - propagation only
+        raise
+    except Exception as exc:  # pragma: no cover - defensive logging
+        logger.exception("Regeneration job for %s scene %s failed: %s", job_id, scene_order, exc)
+        await WORKFLOW_JOB_STORE.add_message(
+            job_id,
+            "failed",
+            f"Regeneration for scene {scene_order} failed: {exc}",
+        )
+
+
 async def run_recompose_job(job_id: str) -> None:
     try:
         status = await WORKFLOW_JOB_STORE.get_status(job_id)
@@ -545,6 +646,7 @@ __all__ = [
     "prepare_single_video_job",
     "refine_script_for_payload",
     "run_recompose_job",
+     "run_scene_regeneration_job",
     "run_scene_remix_job",
     "run_single_video_job",
     "run_single_video_remix",

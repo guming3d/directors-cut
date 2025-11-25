@@ -29,7 +29,7 @@ SCENE_IMAGE_DIR = ROOT / "scene_start_screen"
 
 # Static assets & patterns
 DEFAULT_SORA_RESOLUTION = "720x1280"
-SORA_CLIP_DURATION_SECONDS = 4
+SORA_CLIP_DURATION_SECONDS = 8
 SORA_PROMPT_GUIDE_URL = "https://cookbook.openai.com/examples/sora/sora2_prompting_guide"
 STATIC_URL_PREFIX = "/static"
 SCENE_IMAGE_PATTERN = re.compile(r"scene0*(\d+)\.(?:png|jpe?g)$", re.IGNORECASE)

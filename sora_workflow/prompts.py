@@ -12,7 +12,6 @@ from .config import (
     GPT5_REFINEMENT_DEPLOYMENT,
     HEADER_PATTERN,
     RESOLUTION_PATTERN,
-    SORA_CLIP_DURATION_SECONDS,
     SORA_PROMPT_GUIDE_URL,
     logger,
     azure_text_client,
@@ -88,7 +87,7 @@ def build_prompt_text(
     )
 
 
-async def refine_scene_description(title: str, description: str) -> str:
+async def refine_scene_description(title: str, description: str, duration: int) -> str:
     normalized = description.strip()
     if not normalized:
         return description
@@ -100,14 +99,14 @@ async def refine_scene_description(title: str, description: str) -> str:
     system_prompt = (
         "You are an expert cinematic prompt engineer for Azure OpenAI Sora2. "
         f"Incorporate the best practices from {SORA_PROMPT_GUIDE_URL} to polish scene descriptions. "
-        "Produce concise bullet-point guidance that covers camera direction, subject detail, motion, and audio cues suitable for a 4-second clip."
+        f"Produce concise bullet-point guidance that covers camera direction, subject detail, motion, and audio cues suitable for a {duration}-second clip."
     )
     user_prompt = (
         f"Scene title: {title}\n"
-        "Clip length: 4 seconds.\n"
+        f"Clip length: {duration} seconds.\n"
         "Original storyboard notes:\n"
         f"{normalized}\n\n"
-        "Rewrite the notes into 4-6 focused bullet points optimized for Sora2."
+        f"Rewrite the notes into 4-6 focused bullet points optimized for Sora2 at {duration} seconds."
     )
 
     max_tokens_str = os.getenv("DIRECTOR_REFINEMENT_MAX_TOKENS", "900")

@@ -7,7 +7,7 @@ import asyncio
 from pathlib import Path
 
 from sora_workflow import DEFAULT_SORA_RESOLUTION, SCRIPT_PATH, create_sora_video_workflow, fastapi_app, workflow
-from sora_workflow.config import FINAL_VIDEO_PATH
+from sora_workflow.config import FINAL_VIDEO_PATH, SORA_CLIP_DURATION_SECONDS
 from sora_workflow.models import VideoWorkflowRequest
 
 
@@ -44,6 +44,13 @@ def main() -> None:
     parser.add_argument(
         "--devui-port", type=int, default=8091, help="Port for DevUI (default 8091)."
     )
+    parser.add_argument(
+        "--scene-duration",
+        type=int,
+        choices=(4, 8, 12),
+        default=SORA_CLIP_DURATION_SECONDS,
+        help="Seconds to assign each scene clip (4, 8, or 12).",
+    )
     args = parser.parse_args()
 
     cli_resolution = (args.resolution or "").strip() or DEFAULT_SORA_RESOLUTION
@@ -57,6 +64,7 @@ def main() -> None:
         thread_count=args.threads,
         resolution=DEFAULT_SORA_RESOLUTION,
         final_video_path=str(args.final_video),
+        scene_duration=args.scene_duration,
     )
 
     if args.devui:

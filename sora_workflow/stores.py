@@ -15,6 +15,7 @@ from .config import (
     DEFAULT_SORA_RESOLUTION,
     OUTPUT_DIR,
     SINGLE_VIDEO_DB_PATH,
+    SORA_CLIP_DURATION_SECONDS,
     WORKFLOW_DB_PATH,
     logger,
 )
@@ -162,6 +163,7 @@ def _workflow_state_to_record(job: WorkflowJobState) -> dict[str, Any]:
         "scenes": [_scene_status_to_record(scene) for scene in job.scenes],
         "download_variant": job.download_variant,
         "generation_mode": job.generation_mode,
+        "scene_duration": job.scene_duration,
     }
 
 
@@ -183,6 +185,7 @@ def _workflow_state_from_record(payload: dict[str, Any]) -> WorkflowJobState:
         scenes=[_scene_status_from_record(item) for item in payload.get("scenes", [])],
         download_variant=payload.get("download_variant"),
         generation_mode=payload.get("generation_mode", "parallel"),
+        scene_duration=int(payload.get("scene_duration", SORA_CLIP_DURATION_SECONDS)),
     )
 
 
@@ -295,6 +298,17 @@ class WorkflowJobStore:
             job = self._require(job_id)
             job.generation_mode = generation_mode
             self._persist(job)
+
+    async def set_scene_duration(self, job_id: str, scene_duration: int) -> None:
+        async with self._lock:
+            job = self._require(job_id)
+            job.scene_duration = scene_duration
+            self._persist(job)
+
+    async def get_resolution(self, job_id: str) -> str:
+        async with self._lock:
+            job = self._require(job_id)
+            return job.resolution
 
     async def record_scene_completion(self, job_id: str, render) -> None:
         from .models import SceneRender
@@ -484,6 +498,7 @@ class WorkflowJobStore:
             messages=messages,
             scenes=scenes,
             generation_mode=job.generation_mode,
+            scene_duration=job.scene_duration,
         )
 
     async def get_status(self, job_id: str) -> JobStatusResponse:

@@ -20,6 +20,7 @@ from .config import (
     SCENES_DIR,
     SCRIPT_PATH,
     SORA_CLIENT,
+    SORA_CLIP_DURATION_SECONDS,
     TMP_DIR,
 )
 from .utils import utc_now
@@ -71,6 +72,10 @@ class VideoWorkflowRequest(BaseModel):
     resolution: str = Field(
         default=DEFAULT_SORA_RESOLUTION,
         description="Clip resolution string, e.g. 720x1280.",
+    )
+    scene_duration: Literal[4, 8, 12] = Field(
+        default=SORA_CLIP_DURATION_SECONDS,
+        description="Duration in seconds applied to every scene clip.",
     )
     thread_count: int = Field(
         default=int(os.getenv("SORA_WORKFLOW_THREADS", "3")),
@@ -166,6 +171,7 @@ class WorkflowJobState:
     scenes: list[SceneStatus] = field(default_factory=list)
     download_variant: str = field(default_factory=lambda: os.getenv("VIDEO_DOWNLOAD_VARIANT", "video"))
     generation_mode: str = "parallel"
+    scene_duration: int = SORA_CLIP_DURATION_SECONDS
 
     def add_message(self, stage: str, text: str) -> None:
         self.messages.append(ProgressMessage(timestamp=utc_now(), stage=stage, text=text))
@@ -281,6 +287,7 @@ class JobStatusResponse(BaseModel):
     messages: list[JobMessageModel]
     scenes: list[SceneStatusModel]
     generation_mode: str = "parallel"
+    scene_duration: int = SORA_CLIP_DURATION_SECONDS
 
 
 class SingleVideoVersionModel(BaseModel):
@@ -359,6 +366,11 @@ class StartWorkflowPayload(BaseModel):
         default=False,
         alias="refineWithGpt5",
         description="When true, runs the submitted script through GPT-5 before planning scenes.",
+    )
+    scene_duration: Literal[4, 8, 12] = Field(
+        default=SORA_CLIP_DURATION_SECONDS,
+        alias="sceneDuration",
+        description="Scene runtime in seconds for every rendered clip.",
     )
 
 
