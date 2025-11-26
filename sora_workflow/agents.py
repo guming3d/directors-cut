@@ -27,6 +27,7 @@ from .progress import (
     report_progress,
 )
 from .prompts import build_prompt_text, parse_script, refine_scene_description
+from .stores import WORKFLOW_JOB_STORE
 from .utils import (
     escape_for_concat,
     extract_last_frame,
@@ -146,6 +147,11 @@ class Sora2Agent(Executor):
     def __init__(self) -> None:
         super().__init__(id="sora2_agent")
 
+    @staticmethod
+    def _is_moderation_block(message: str) -> bool:
+        lowered = message.lower()
+        return "moderation_blocked" in lowered or "blocked by our moderation system" in lowered
+
     @handler
     async def handle(
         self, batch: ScenePlanBatch, ctx: WorkflowContext[SceneRenderBatch]
@@ -182,19 +188,47 @@ class Sora2Agent(Executor):
             progress=0.25,
         )
 
-        async def render_scene(plan: ScenePlan) -> SceneRender:
+        errors: list[tuple[ScenePlan, Exception]] = []
+
+        async def render_scene(plan: ScenePlan) -> tuple[str, ScenePlan | SceneRender, Exception | None]:
             async with semaphore:
-                return await self._invoke_sora(plan, request, scenes_dir, scene_images)
+                try:
+                    render = await self._invoke_sora(plan, request, scenes_dir, scene_images)
+                    return ("ok", render, None)
+                except asyncio.CancelledError:  # pragma: no cover - propagation only
+                    raise
+                except Exception as exc:
+                    return ("error", plan, exc)
 
         tasks = [asyncio.create_task(render_scene(plan)) for plan in batch.plans]
         renders: list[SceneRender] = []
         for task in asyncio.as_completed(tasks):
-            render = await task
-            renders.append(render)
-            await record_scene_completion(request, render)
-            await ctx.yield_output(f"Sora completed {render.label} -> {render.video_path}")
+            try:
+                outcome, payload, exc = await task
+            except asyncio.CancelledError:  # pragma: no cover - propagation only
+                raise
+            if outcome == "ok":
+                render = payload  # type: ignore[assignment]
+                assert isinstance(render, SceneRender)
+                renders.append(render)
+                await record_scene_completion(request, render)
+                await ctx.yield_output(f"Sora completed {render.label} -> {render.video_path}")
+            else:
+                assert isinstance(payload, ScenePlan)
+                assert exc is not None
+                errors.append((payload, exc))
+                logger.error("Render failed for %s: %s", payload.label, exc)
+                if request.job_id:
+                    await WORKFLOW_JOB_STORE.add_message(
+                        request.job_id,
+                        "failed",
+                        f"{payload.label} failed after retries: {exc}",
+                    )
 
         renders.sort(key=lambda item: item.order)
+        if errors:
+            details = "; ".join(f"{plan.label}: {exc}" for plan, exc in errors if plan.label)
+            raise RuntimeError(f"{len(errors)} scene(s) failed: {details or 'Unknown scenes'}")
         return renders
 
     async def _render_sequence(
@@ -215,27 +249,44 @@ class Sora2Agent(Executor):
         frame_dir = Path(request.tmp_dir) / "sequence_frames"
         frame_dir.mkdir(parents=True, exist_ok=True)
         renders: list[SceneRender] = []
+        errors: list[tuple[ScenePlan, Exception]] = []
         for plan in batch.plans:
-            render = await self._invoke_sora(
-                plan,
-                request,
-                scenes_dir,
-                scene_images,
-                reference_override=next_reference,
-            )
-            renders.append(render)
-            await record_scene_completion(request, render)
-            await ctx.yield_output(f"Sora completed {render.label} -> {render.video_path}")
-            frame_path = frame_dir / f"scene_{plan.order:02d}_tail.png"
             try:
-                captured = await extract_last_frame(Path(render.video_path), frame_path)
-                render.last_frame_path = str(captured)
-                next_reference = str(captured)
-            except Exception as exc:  # pragma: no cover - diagnostic logging only
-                logger.warning("Failed to capture last frame for %s: %s", render.label, exc)
+                render = await self._invoke_sora(
+                    plan,
+                    request,
+                    scenes_dir,
+                    scene_images,
+                    reference_override=next_reference,
+                )
+                renders.append(render)
+                await record_scene_completion(request, render)
+                await ctx.yield_output(f"Sora completed {render.label} -> {render.video_path}")
+                frame_path = frame_dir / f"scene_{plan.order:02d}_tail.png"
+                try:
+                    captured = await extract_last_frame(Path(render.video_path), frame_path)
+                    render.last_frame_path = str(captured)
+                    next_reference = str(captured)
+                except Exception as exc:  # pragma: no cover - diagnostic logging only
+                    logger.warning("Failed to capture last frame for %s: %s", render.label, exc)
+                    next_reference = None
+            except asyncio.CancelledError:  # pragma: no cover - propagation only
+                raise
+            except Exception as exc:
+                errors.append((plan, exc))
+                logger.error("Sequence render failed for %s: %s", plan.label, exc)
                 next_reference = None
+                if request.job_id:
+                    await WORKFLOW_JOB_STORE.add_message(
+                        request.job_id,
+                        "failed",
+                        f"{plan.label} failed after retries: {exc}",
+                    )
 
         renders.sort(key=lambda item: item.order)
+        if errors:
+            details = "; ".join(f"{plan.label}: {exc}" for plan, exc in errors if plan.label)
+            raise RuntimeError(f"{len(errors)} scene(s) failed: {details or 'Unknown scenes'}")
         return renders
 
     async def _invoke_sora(
@@ -285,7 +336,44 @@ class Sora2Agent(Executor):
         if input_reference:
             cmd.extend(["--input-image", input_reference])
 
-        stdout, stderr = await run_subprocess(cmd, cwd=ROOT, env=env)
+        attempts = max(1, request.blocked_retry_attempts)
+        attempt = 0
+        stdout = ""
+        stderr = ""
+        last_error: RuntimeError | None = None
+        while attempt < attempts:
+            attempt += 1
+            try:
+                stdout, stderr = await run_subprocess(cmd, cwd=ROOT, env=env)
+                break
+            except asyncio.CancelledError:  # pragma: no cover - propagation only
+                raise
+            except RuntimeError as exc:
+                last_error = exc
+                message = str(exc)
+                if not self._is_moderation_block(message):
+                    raise
+                if attempt >= attempts:
+                    await report_progress(
+                        request,
+                        "failed",
+                        f"{plan.label} was blocked by moderation after {attempts} attempt(s).",
+                    )
+                    raise RuntimeError(
+                        f"{plan.label} was blocked by moderation after {attempts} attempt(s)."
+                    ) from exc
+                await report_progress(
+                    request,
+                    "rendering",
+                    f"{plan.label} blocked by moderation; retrying ({attempt}/{attempts}).",
+                )
+                logger.warning(
+                    "Moderation blocked %s (attempt %s/%s); retrying.", plan.label, attempt, attempts
+                )
+                await asyncio.sleep(1.0)
+        else:  # pragma: no cover - defensive guard
+            raise last_error or RuntimeError(f"{plan.label} failed to render.")
+
         client_log_path = video_path.with_suffix(".client.log")
         client_log_path.write_text(
             f"STDOUT:\n{stdout}\nSTDERR:\n{stderr}\n",

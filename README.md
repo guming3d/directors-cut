@@ -11,6 +11,7 @@ Full-stack toolkit for running the Azure Sora2 multi-agent video workflow with a
 - Optional environment variables:
   - `SORA_WORKFLOW_ALLOWED_ORIGINS` — comma-separated list of origins permitted by CORS
   - `SORA_WORKFLOW_THREADS` — default concurrent Sora render jobs (fallback: `3`)
+  - `SORA_BLOCK_RETRIES` — number of times to retry a scene blocked by moderation (fallback: `3`)
   - `VIDEO_DOWNLOAD_VARIANT` — override the variant name sent to the Sora client
 
 ## Backend (FastAPI) Setup
@@ -88,3 +89,4 @@ npm run start
 - Missing clips or prompts usually indicate misformatted script headers; verify they follow `**Scene 1 (Title)**` syntax.
 - If the UI cannot reach the backend, confirm `NEXT_PUBLIC_API_BASE_URL` points to the FastAPI origin and CORS allows the frontend host.
 - Scene rendering requires the prepared `scene_start_screen/scene#.png` assets; the workflow will fail if counts mismatch.
+- Moderation blocks are retried up to `SORA_BLOCK_RETRIES` times. If a job still fails, you can regenerate the blocked scene or use **Compose Available Scenes** in the UI to stitch the clips that completed successfully.

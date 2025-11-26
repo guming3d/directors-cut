@@ -21,6 +21,7 @@ from .config import (
     SCRIPT_PATH,
     SORA_CLIENT,
     SORA_CLIP_DURATION_SECONDS,
+    SORA_BLOCK_RETRIES,
     TMP_DIR,
 )
 from .utils import utc_now
@@ -82,6 +83,11 @@ class VideoWorkflowRequest(BaseModel):
         ge=1,
         le=10,
         description="Parallel Sora job count.",
+    )
+    blocked_retry_attempts: int = Field(
+        default=SORA_BLOCK_RETRIES,
+        ge=1,
+        description="How many times to retry a scene when Sora blocks a request.",
     )
     download_variant: str = Field(
         default=os.getenv("VIDEO_DOWNLOAD_VARIANT", "video"),
