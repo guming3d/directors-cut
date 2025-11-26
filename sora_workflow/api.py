@@ -27,6 +27,7 @@ from .models import (
     SingleVideoJobResponse,
     SingleVideoPayload,
     SingleVideoRemixPayload,
+    SingleVideoSelectionPayload,
     StartWorkflowPayload,
 )
 from .prompts import refine_text_with_gpt5
@@ -219,6 +220,17 @@ async def remix_single_video(job_id: str, payload: SingleVideoRemixPayload) -> S
 
     await SINGLE_VIDEO_STORE.add_message(job_id, "running", "Remix request submitted.")
     asyncio.create_task(run_single_video_remix(job_id, prompt))
+    return await SINGLE_VIDEO_STORE.snapshot(job_id)
+
+@fastapi_app.post("/api/single-videos/{job_id}/select", response_model=SingleVideoJobResponse)
+async def select_single_video_version(job_id: str, payload: SingleVideoSelectionPayload) -> SingleVideoJobResponse:
+    version_id = (payload.version_id or "").strip()
+    if not version_id:
+        raise HTTPException(status_code=400, detail="versionId is required.")
+    try:
+        await SINGLE_VIDEO_STORE.set_single_selection(job_id, version_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Unable to select version {version_id} for job {job_id}.") from exc
     return await SINGLE_VIDEO_STORE.snapshot(job_id)
 
 

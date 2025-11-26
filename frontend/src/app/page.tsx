@@ -510,6 +510,7 @@ export default function Home() {
   const [refineSingleWithGpt5, setRefineSingleWithGpt5] = useState(false);
   const [singleRemixPrompt, setSingleRemixPrompt] = useState("");
   const [singleRemixSubmitting, setSingleRemixSubmitting] = useState(false);
+  const [singleSelectionSubmitting, setSingleSelectionSubmitting] = useState<Record<string, boolean>>({});
   const [promptPreview, setPromptPreview] = useState<PromptPreview | null>(null);
 
   // Modal states
@@ -1066,6 +1067,36 @@ export default function Home() {
       setSingleError("Unable to submit single-video remix. Confirm the backend endpoint is reachable.");
     } finally {
       setSingleRemixSubmitting(false);
+    }
+  };
+
+  const handleSelectSingleVersion = async (versionId: string) => {
+    if (!singleJob?.job_id) {
+      setSingleError("Start a single-video job before selecting versions.");
+      return;
+    }
+    setSingleError(null);
+    setSingleSelectionSubmitting((prev) => ({ ...prev, [versionId]: true }));
+    try {
+      const response = await fetch(`${API_BASE}/api/single-videos/${singleJob.job_id}/select`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ versionId }),
+      });
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      const data: SingleVideoJob = await response.json();
+      setSingleJob(data);
+      setSingleJobs((prev) => {
+        const others = prev.filter((item) => item.job_id !== data.job_id);
+        return [data, ...others];
+      });
+    } catch (err) {
+      console.error(err);
+      setSingleError("Unable to update selected version. Please try again.");
+    } finally {
+      setSingleSelectionSubmitting((prev) => ({ ...prev, [versionId]: false }));
     }
   };
 
@@ -2241,11 +2272,22 @@ export default function Home() {
                                 {version.source} • {formatTimeDistance(version.created_at)}
                               </p>
                             </div>
-                            {isActive ? (
-                              <span className="rounded-full border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50 dark:bg-emerald-950/30 px-2 py-0.5 text-[11px] font-semibold text-emerald-400">
-                                {translate("Selected")}
-                              </span>
-                            ) : null}
+                            <button
+                              type="button"
+                              onClick={() => handleSelectSingleVersion(version.version_id)}
+                              disabled={isActive || singleSelectionSubmitting[version.version_id]}
+                              className={`rounded-md border px-3 py-1 text-xs font-semibold transition ${
+                                isActive
+                                  ? "border-emerald-200 dark:border-emerald-900/50 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-400"
+                                  : "border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200 disabled:opacity-60"
+                              }`}
+                            >
+                              {isActive
+                                ? translate("Selected")
+                                : singleSelectionSubmitting[version.version_id]
+                                  ? translate("Selecting...")
+                                  : translate("Use this version")}
+                            </button>
                           </div>
                           {versionVideoUrl ? (
                             <video
