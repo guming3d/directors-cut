@@ -419,6 +419,11 @@ class SceneSelectionPayload(BaseModel):
         ..., alias="versionId", description="Identifier of the scene version to use in the final cut."
     )
 
+class SingleVideoSelectionPayload(BaseModel):
+    version_id: str = Field(
+        ..., alias="versionId", description="Identifier of the single-video version to activate."
+    )
+
 
 @dataclass
 class SceneDraft:

@@ -736,6 +736,16 @@ class SingleVideoJobStore:
             job.add_message("failed", error)
             self._persist(job)
 
+    async def set_single_selection(self, job_id: str, version_id: str) -> None:
+        async with self._lock:
+            job = self._require(job_id)
+            version = next((v for v in job.versions if v.version_id == version_id), None)
+            if version is None:
+                raise KeyError(version_id)
+            job.set_active_version(version)
+            job.add_message("running", f"Selected {version.label or version.version_id} as active version.")
+            self._persist(job)
+
     async def record_version(
         self,
         job_id: str,
