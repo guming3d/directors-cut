@@ -14,6 +14,7 @@ from typing import Optional
 
 from .config import (
     DEFAULT_SORA_RESOLUTION,
+    HEADER_PATTERN,
     RESOLUTION_PATTERN,
     ROOT,
     SCENE_IMAGE_DIR,
@@ -37,7 +38,7 @@ from .stores import SINGLE_VIDEO_STORE, WORKFLOW_JOB_STORE
 from .utils import escape_for_concat, normalize_script_text, run_subprocess
 from .workflow import workflow
 from .config import SINGLE_VIDEO_JOBS_DIR, OUTPUT_DIR
-from .prompts import refine_text_with_gpt5
+from .prompts import ensure_scene_headers, refine_text_with_gpt5
 from .config import video_client
 
 
@@ -120,6 +121,7 @@ def prepare_request_for_job(job_id: str, payload: StartWorkflowPayload) -> Video
         job_id=job_id,
         generation_mode=generation_mode,
         sequence_initial_image=sequence_initial_image,
+        refine_with_gpt5=payload.refine_with_gpt5,
     )
     return request
 
@@ -160,9 +162,34 @@ def prepare_single_video_job(
     )
 
 
+async def _ensure_script_headers(job_id: str, request: VideoWorkflowRequest) -> None:
+    """Lightweight preflight: confirm script exists and optionally note header state.
+
+    Full normalization and GPT-5 refinement now occur inside DirectorAgent to avoid
+    pre-run failures when the model returns late or empty headers.
+    """
+
+    script_path = Path(request.script_path)
+    if not script_path.is_file():
+        raise FileNotFoundError("Script file missing before planning scenes.")
+
+    script_text = script_path.read_text(encoding="utf-8")
+    has_headers = bool(HEADER_PATTERN.search(script_text))
+    if has_headers:
+        return
+
+    note = (
+        "Storyboard missing explicit scene headers; DirectorAgent will attempt GPT-5 refinement during planning."
+        if request.refine_with_gpt5
+        else "Storyboard missing scene headers; DirectorAgent will parse as-is."
+    )
+    await WORKFLOW_JOB_STORE.add_message(job_id, "planning", note)
+
+
 async def run_workflow_job(job_id: str, request: VideoWorkflowRequest) -> None:
     try:
         await WORKFLOW_JOB_STORE.mark_running(job_id)
+        await _ensure_script_headers(job_id, request)
         await workflow.run(request)
     except Exception as exc:  # pragma: no cover - defensive logging
         logger.exception("Workflow %s failed: %s", job_id, exc)

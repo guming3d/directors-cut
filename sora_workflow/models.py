@@ -105,6 +105,10 @@ class VideoWorkflowRequest(BaseModel):
         default=None,
         description="Optional prepared PNG used to seed the first clip when generation_mode=sequence.",
     )
+    refine_with_gpt5: bool = Field(
+        default=False,
+        description="Indicates whether GPT-5 storyboard refinement was requested.",
+    )
 
 
 @dataclass
