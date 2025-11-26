@@ -179,6 +179,7 @@ const zhTranslations: Record<string, string> = {
   "Completed runs": "完成的运行",
   "Completed": "已完成",
   "Composing final video": "合成最终视频",
+  "Compose Available Scenes": "合成已完成的场景",
   "Composition manifest:": "合成清单：",
   "Delete Selected": "删除选中项",
   "Delete workflows": "删除工作流",
@@ -250,6 +251,7 @@ const zhTranslations: Record<string, string> = {
   "Since session start": "自会话开始以来",
   "Select workflows": "选择工作流",
   "Selected": "已选择",
+  "Some scenes finished before an error. Compose the available clips or regenerate blocked scenes, then try again.": "部分场景完成后出现错误。可先合成已完成的片段，或重新生成被阻止的场景后再试。",
   "Sequence": "串行",
   "Sign in to continue": "登录以继续",
   "Sign in": "登录",
@@ -434,7 +436,7 @@ export default function Home() {
     </button>
   );
 
-  const [language, setLanguage] = useState<Language>("en");
+  const [language, setLanguage] = useState<Language>("zh");
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -724,7 +726,9 @@ export default function Home() {
   }, [singleJob]);
 
   const finalVideoUrl = buildAssetUrl(job?.final_video_url);
-  const canRecompose = Boolean(job?.scenes?.length && job?.status === "completed");
+  const hasScenes = Boolean(job?.scenes?.length);
+  const isWorkflowActive = job?.status === "running" || job?.status === "queued";
+  const canRecompose = Boolean(hasScenes && !isWorkflowActive);
   const currentStatusToken = getStatusToken(job?.status, language);
   const showSequenceReferences = job?.generation_mode === "sequence";
 
@@ -1894,7 +1898,7 @@ export default function Home() {
                 </div>
               </dl>
 
-              {finalVideoUrl && (
+              {hasScenes && (
                 <div className="mt-8 space-y-3">
                   <div className="flex items-center justify-between gap-3">
                     <h3 className="text-sm font-semibold text-slate-600 dark:text-slate-300">{translate("Final Video")}</h3>
@@ -1905,25 +1909,37 @@ export default function Home() {
                       className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {isRecomposing ? <ArrowPathIcon className="h-4 w-4 animate-spin" /> : <ArrowPathIcon className="h-4 w-4" />}
-                      {translate("Regenerate Final Video")}
+                      {translate(finalVideoUrl ? "Regenerate Final Video" : "Compose Available Scenes")}
                     </button>
                   </div>
-                  <video
-                    controls
-                    className="max-h-[420px] w-full rounded border border-slate-200 dark:border-slate-800 bg-black/60"
-                    src={finalVideoUrl}
-                  >
-                    {translate("Your browser does not support HTML5 video.")}
-                  </video>
-                  <a
-                    href={finalVideoUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-2 text-sm font-medium text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-slate-100"
-                  >
-                    <PlayCircleIcon className="h-4 w-4" />
-                    {translate("Open MP4 in new tab")}
-                  </a>
+                  {!finalVideoUrl && (
+                    <div className="flex items-center gap-2 rounded-md border border-amber-200 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+                      <ExclamationTriangleIcon className="h-4 w-4" />
+                      {translate(
+                        "Some scenes finished before an error. Compose the available clips or regenerate blocked scenes, then try again.",
+                      )}
+                    </div>
+                  )}
+                  {finalVideoUrl ? (
+                    <>
+                      <video
+                        controls
+                        className="max-h-[420px] w-full rounded border border-slate-200 dark:border-slate-800 bg-black/60"
+                        src={finalVideoUrl}
+                      >
+                        {translate("Your browser does not support HTML5 video.")}
+                      </video>
+                      <a
+                        href={finalVideoUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-2 text-sm font-medium text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-slate-100"
+                      >
+                        <PlayCircleIcon className="h-4 w-4" />
+                        {translate("Open MP4 in new tab")}
+                      </a>
+                    </>
+                  ) : null}
                 </div>
               )}
 

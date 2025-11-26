@@ -429,6 +429,7 @@ class WorkflowJobStore:
             job.stage = "completed"
             job.progress = 1.0
             job.completed_at = utc_now()
+            job.error = None
             job.final_video_path = final_video_path
             job.manifest = manifest
             job.add_message("completed", "Workflow complete.")

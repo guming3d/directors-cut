@@ -42,6 +42,11 @@ try:
 except AttributeError:  # pragma: no cover - Pillow < 10 fallback
     SCENE_IMAGE_RESAMPLE = Image.LANCZOS
 
+try:
+    SORA_BLOCK_RETRIES = max(1, int(os.getenv("SORA_BLOCK_RETRIES", "3")))
+except ValueError:  # pragma: no cover - defensive fallback
+    SORA_BLOCK_RETRIES = 3
+
 # Azure configuration
 DIRECTOR_REFINEMENT_DEPLOYMENT = (
     os.getenv("DIRECTOR_REFINEMENT_DEPLOYMENT")
@@ -195,6 +200,7 @@ __all__ = [
     "SORA_CLIENT",
     "SORA_CLIP_DURATION_SECONDS",
     "SORA_PROMPT_GUIDE_URL",
+    "SORA_BLOCK_RETRIES",
     "STATIC_URL_PREFIX",
     "TMP_DIR",
     "WORKFLOW_DB_PATH",

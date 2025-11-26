@@ -627,9 +627,8 @@ async def run_recompose_job(job_id: str) -> None:
     manifest = summarize_manifest(renders, final_video, total_seconds, status.resolution)
     manifest_path = final_video.with_suffix(".json")
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-    await WORKFLOW_JOB_STORE.update_final_video(job_id, str(final_video), manifest)
+    await WORKFLOW_JOB_STORE.mark_completed(job_id, str(final_video), manifest)
     await WORKFLOW_JOB_STORE.add_message(job_id, "completed", "Regenerated final video with selected scene versions.")
-    await WORKFLOW_JOB_STORE.update_stage(job_id, "completed", "Final video refreshed.", progress=1.0)
 
 
 async def refine_script_for_payload(payload: StartWorkflowPayload) -> None:
