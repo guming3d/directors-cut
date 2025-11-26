@@ -26,7 +26,12 @@ from .progress import (
     record_total_scenes,
     report_progress,
 )
-from .prompts import build_prompt_text, parse_script, refine_scene_description
+from .prompts import (
+    build_prompt_text,
+    ensure_scene_headers,
+    parse_script,
+    refine_scene_description,
+)
 from .stores import WORKFLOW_JOB_STORE
 from .utils import (
     escape_for_concat,
@@ -43,6 +48,27 @@ class DirectorAgent(Executor):
     def __init__(self) -> None:
         super().__init__(id="director_agent")
 
+    async def _prepare_script_text(self, request: VideoWorkflowRequest) -> str:
+        script_path = Path(request.script_path)
+        raw_script = read_text(script_path)
+        script_text, has_headers, used_refinement = await ensure_scene_headers(
+            raw_script, request.refine_with_gpt5
+        )
+
+        if script_text != raw_script:
+            script_path.write_text(script_text, encoding="utf-8")
+        if used_refinement and request.job_id:
+            await WORKFLOW_JOB_STORE.add_message(
+                request.job_id,
+                "planning",
+                "Storyboard refined with GPT-5 before scene planning.",
+            )
+        if not has_headers:
+            raise RuntimeError(
+                "No scene headers found in the script. Enable GPT-5 refinement or format it with **Scene N (Title)** blocks."
+            )
+        return script_text
+
     @handler
     async def handle(
         self, request: VideoWorkflowRequest, ctx: WorkflowContext[ScenePlanBatch]
@@ -54,7 +80,7 @@ class DirectorAgent(Executor):
             "Director reviewing storyboard script.",
             progress=0.05,
         )
-        script_text = read_text(Path(request.script_path))
+        script_text = await self._prepare_script_text(request)
         drafts = parse_script(script_text)
         if not drafts:
             raise RuntimeError(
