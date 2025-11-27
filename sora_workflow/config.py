@@ -68,8 +68,17 @@ GPT5_REFINEMENT_DEPLOYMENT = (
 AZURE_TEXT_ENDPOINT = (os.getenv("AZURE_OPENAI_ENDPOINT") or os.getenv("ENDPOINT_URL") or "").rstrip("/")
 AZURE_TEXT_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
 AZURE_TEXT_API_VERSION = os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-15-preview")
+AZURE_IMAGE_API_VERSION = os.getenv("AZURE_OPENAI_IMAGE_API_VERSION", "2025-04-01-preview")
+AZURE_IMAGE_DEPLOYMENT = (
+    os.getenv("AZURE_OPENAI_GPT_IMAGE_DEPLOYMENT")
+    or os.getenv("AZURE_OPENAI_GPT_IMAGE_DEPLOYMENT_NAME")
+    or os.getenv("AZURE_OPENAI_IMAGE_DEPLOYMENT")
+    or os.getenv("AZURE_OPENAI_IMAGE_DEPLOYMENT_NAME")
+    or "gpt-image-1"
+)
 _TEXT_CLIENT: AzureOpenAI | None = None
 _VIDEO_CLIENT: AsyncOpenAI | None = None
+_IMAGE_CLIENT: AzureOpenAI | None = None
 
 
 def _configure_logging() -> logging.Logger:
@@ -149,6 +158,29 @@ def video_client() -> AsyncOpenAI:
     return _VIDEO_CLIENT
 
 
+def azure_image_client() -> AzureOpenAI | None:
+    """Create or reuse a shared Azure OpenAI client for image generation."""
+
+    if not AZURE_TEXT_ENDPOINT or not AZURE_TEXT_API_KEY:
+        logger.debug("Azure OpenAI credentials not configured; skipping image client.")
+        return None
+
+    global _IMAGE_CLIENT  # type: ignore[assignment]
+    try:
+        client = _IMAGE_CLIENT
+    except NameError:
+        client = None
+
+    if client is None:
+        client = AzureOpenAI(
+            api_key=AZURE_TEXT_API_KEY,
+            azure_endpoint=AZURE_TEXT_ENDPOINT,
+            api_version=AZURE_IMAGE_API_VERSION,
+        )
+        _IMAGE_CLIENT = client  # type: ignore[assignment]
+    return client
+
+
 def extract_response_text(response: Any) -> str:
     """Normalize Azure Responses API output into plain text."""
 
@@ -192,6 +224,8 @@ def allowed_origins() -> list[str]:
 
 
 __all__ = [
+    "AZURE_IMAGE_API_VERSION",
+    "AZURE_IMAGE_DEPLOYMENT",
     "AZURE_TEXT_API_KEY",
     "AZURE_TEXT_API_VERSION",
     "AZURE_TEXT_ENDPOINT",
@@ -221,6 +255,7 @@ __all__ = [
     "TMP_DIR",
     "WORKFLOW_DB_PATH",
     "allowed_origins",
+    "azure_image_client",
     "azure_text_client",
     "extract_response_text",
     "logger",

@@ -70,6 +70,14 @@ class VideoWorkflowRequest(BaseModel):
         default=True,
         description="Whether to include scene start screen images when rendering Sora clips.",
     )
+    generate_ai_first_frame: bool = Field(
+        default=False,
+        description="Whether to generate AI first-frame images for each scene before calling Sora.",
+    )
+    first_frame_dir: Optional[str] = Field(
+        default=None,
+        description="Directory to store AI-generated first-frame stills for each scene.",
+    )
     resolution: str = Field(
         default=DEFAULT_SORA_RESOLUTION,
         description="Clip resolution string, e.g. 720x1280.",
@@ -131,6 +139,7 @@ class SceneVersionEntry:
     source: str = "original"
     created_at: datetime = field(default_factory=utc_now)
     last_frame_path: Optional[str] = None
+    first_frame_path: Optional[str] = None
 
 
 @dataclass
@@ -145,6 +154,7 @@ class SceneStatus:
     selected_version_id: Optional[str] = None
     versions: list[SceneVersionEntry] = field(default_factory=list)
     last_frame_path: Optional[str] = None
+    first_frame_path: Optional[str] = None
 
     def set_selected_version(self, version: SceneVersionEntry) -> None:
         self.selected_version_id = version.version_id
@@ -152,6 +162,7 @@ class SceneStatus:
         self.log_path = version.log_path
         self.client_log_path = version.client_log_path
         self.last_frame_path = version.last_frame_path
+        self.first_frame_path = version.first_frame_path
 
     def get_version(self, version_id: Optional[str]) -> SceneVersionEntry:
         if version_id:
@@ -184,6 +195,7 @@ class WorkflowJobState:
     download_variant: str = field(default_factory=lambda: os.getenv("VIDEO_DOWNLOAD_VARIANT", "video"))
     generation_mode: str = "parallel"
     scene_duration: int = SORA_CLIP_DURATION_SECONDS
+    generate_ai_first_frame: bool = False
 
     def add_message(self, stage: str, text: str) -> None:
         self.messages.append(ProgressMessage(timestamp=utc_now(), stage=stage, text=text))
@@ -267,6 +279,8 @@ class SceneVersionModel(BaseModel):
     created_at: datetime
     last_frame_path: Optional[str] = None
     last_frame_url: Optional[str] = None
+    first_frame_path: Optional[str] = None
+    first_frame_url: Optional[str] = None
 
 
 class SceneStatusModel(BaseModel):
@@ -282,6 +296,8 @@ class SceneStatusModel(BaseModel):
     versions: list[SceneVersionModel] = Field(default_factory=list)
     last_frame_path: Optional[str] = None
     last_frame_url: Optional[str] = None
+    first_frame_path: Optional[str] = None
+    first_frame_url: Optional[str] = None
 
 
 class JobStatusResponse(BaseModel):
@@ -302,6 +318,7 @@ class JobStatusResponse(BaseModel):
     scenes: list[SceneStatusModel]
     generation_mode: str = "parallel"
     scene_duration: int = SORA_CLIP_DURATION_SECONDS
+    generate_ai_first_frame: bool = False
 
 
 class SingleVideoVersionModel(BaseModel):
@@ -361,6 +378,11 @@ class StartWorkflowPayload(BaseModel):
         default=None,
         alias="useSceneImages",
         description="Set to false to skip providing scene start screen images.",
+    )
+    generate_ai_first_frame: bool = Field(
+        default=False,
+        alias="generateAiFirstFrame",
+        description="Generate AI first-frame still images for each scene before calling Sora2.",
     )
     download_variant: Optional[str] = Field(
         default=None,
@@ -505,6 +527,7 @@ class SceneRender:
     video_id: Optional[str] = None
     version_source: str = "original"
     last_frame_path: Optional[str] = None
+    first_frame_path: Optional[str] = None
 
 
 @dataclass

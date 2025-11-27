@@ -39,6 +39,8 @@ type SceneVersion = {
   created_at: string;
   last_frame_path?: string | null;
   last_frame_url?: string | null;
+  first_frame_path?: string | null;
+  first_frame_url?: string | null;
 };
 
 type SceneStatus = {
@@ -54,6 +56,8 @@ type SceneStatus = {
   versions: SceneVersion[];
   last_frame_path?: string | null;
   last_frame_url?: string | null;
+  first_frame_path?: string | null;
+  first_frame_url?: string | null;
 };
 
 type SingleVideoVersion = {
@@ -88,6 +92,7 @@ type JobStatus = {
   scenes: SceneStatus[];
   generation_mode: "parallel" | "sequence";
   scene_duration?: number;
+  generate_ai_first_frame?: boolean;
 };
 
 type SingleVideoJob = {
@@ -184,6 +189,11 @@ const zhTranslations: Record<string, string> = {
   "Chinese": "中文",
   "Clip pending...": "片段准备中…",
   "Completed jobs": "已完成的任务",
+  "AI first frames": "AI 开场画面",
+  "AI start stills enabled": "已启用 AI 开场画面",
+  "No AI first frames": "未启用 AI 开场画面",
+  "AI first frame preview": "AI 开场画面预览",
+  "Use GPT-5 + gpt-image-1 to seed each scene.": "使用 GPT-5 与 gpt-image-1 为每个场景生成开场画面。",
   "Completed runs": "完成的运行",
   "Completed": "已完成",
   "Composing final video": "合成最终视频",
@@ -518,6 +528,7 @@ export default function Home() {
   // Combined workflow state
   const [script, setScript] = useState("");
   const [useSceneImages, setUseSceneImages] = useState(false);
+  const [generateAiFirstFrames, setGenerateAiFirstFrames] = useState(false);
   const [generationMode, setGenerationMode] = useState<"parallel" | "sequence">("parallel");
   const [combinedResolution, setCombinedResolution] = useState<(typeof resolutionOptions)[number]>(resolutionOptions[0]);
   const [sceneDuration, setSceneDuration] = useState<(typeof durationOptions)[number]>(durationOptions[1]);
@@ -779,6 +790,7 @@ export default function Home() {
   const canRecompose = Boolean(hasScenes && !isWorkflowActive);
   const currentStatusToken = getStatusToken(job?.status, language);
   const showSequenceReferences = job?.generation_mode === "sequence";
+  const showAiFirstFrames = Boolean(job?.generate_ai_first_frame);
 
   const singleVideoUrl = buildAssetUrl(singleJob?.video_url);
   const singleStatusToken = getStatusToken(singleJob?.status, language);
@@ -848,6 +860,18 @@ export default function Home() {
     }
     setUsername("");
     setPassword("");
+  };
+
+  const toggleGenerateAiFirstFrames = () => {
+    setGenerateAiFirstFrames((value) => {
+      const next = !value;
+      if (next) {
+        setUseSceneImages(false);
+        setSceneImageFiles([]);
+        setSceneImagePreviews([]);
+      }
+      return next;
+    });
   };
 
   const handleSceneImagesChange = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -930,7 +954,8 @@ export default function Home() {
     setCombinedError(null);
     try {
       const payload: Record<string, unknown> = { script: trimmedScript };
-      payload.useSceneImages = useSceneImages;
+      payload.useSceneImages = useSceneImages && !generateAiFirstFrames;
+      payload.generateAiFirstFrame = generateAiFirstFrames;
       payload.resolution = combinedResolution;
       payload.generationMode = generationMode;
       payload.refineWithGpt5 = shouldRefine;
@@ -1703,7 +1728,7 @@ export default function Home() {
               onChange={(event) => setScript(event.target.value)}
             />
 
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <div className="space-y-2">
                 <label className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Resolution")}</label>
                 <select
@@ -1722,7 +1747,18 @@ export default function Home() {
                 <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Scene references")}</span>
                 <button
                   type="button"
-                  onClick={() => setUseSceneImages((value) => !value)}
+                  onClick={() =>
+                    setUseSceneImages((value) => {
+                      const next = !value;
+                      if (next) {
+                        setGenerateAiFirstFrames(false);
+                      } else {
+                        setSceneImageFiles([]);
+                        setSceneImagePreviews([]);
+                      }
+                      return next;
+                    })
+                  }
                   className={`flex items-center gap-3 rounded border px-4 py-3 text-sm font-semibold transition ${
                     useSceneImages
                       ? "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm"
@@ -1742,6 +1778,34 @@ export default function Home() {
                   </span>
                   {useSceneImages ? translate("Scene images enabled") : translate("No scene references")}
                 </button>
+              </div>
+              <div className="space-y-2">
+                <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("AI first frames")}</span>
+                <button
+                  type="button"
+                  onClick={toggleGenerateAiFirstFrames}
+                  className={`flex items-center gap-3 rounded border px-4 py-3 text-sm font-semibold transition ${
+                    generateAiFirstFrames
+                      ? "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm"
+                      : "border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200"
+                  }`}
+                >
+                  <span className={`inline-flex h-5 w-10 items-center rounded-full border transition ${
+                    generateAiFirstFrames
+                      ? "border-slate-500 bg-slate-600"
+                      : "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700"
+                  }`}>
+                    <span
+                      className={`ml-1 inline-block h-3.5 w-3.5 rounded-full bg-slate-200 transition ${
+                        generateAiFirstFrames ? "translate-x-4" : "translate-x-0"
+                      }`}
+                    />
+                  </span>
+                  {translate(generateAiFirstFrames ? "AI start stills enabled" : "No AI first frames")}
+                </button>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {translate("Use GPT-5 + gpt-image-1 to seed each scene.")}
+                </p>
               </div>
               <div className="space-y-2">
                 <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Scene duration")}</span>
@@ -2167,6 +2231,7 @@ export default function Home() {
                       const versions = scene.versions ?? [];
                       const selectedVersion = versions.find((version) => version.version_id === scene.selected_version_id) ?? versions[0];
                       const isRegenerating = Boolean(sceneRegenerating[scene.order]);
+                      const firstFrameUrl = showAiFirstFrames ? buildAssetUrl(scene.first_frame_url) : null;
 
                       return (
                         <div
@@ -2184,6 +2249,22 @@ export default function Home() {
                               {translate("Scene")} {scene.order}
                             </span>
                           </div>
+
+                          {firstFrameUrl ? (
+                            <div className="mt-3 rounded-md border border-slate-300 dark:border-slate-700 bg-slate-100/50 dark:bg-slate-800/50 p-2">
+                              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                                {translate("AI first frame preview")}
+                              </p>
+                              <Image
+                                src={firstFrameUrl}
+                                alt={`${scene.label} ${translate("AI first frame preview")}`}
+                                width={320}
+                                height={200}
+                                unoptimized
+                                className="mt-2 h-32 w-full rounded object-cover"
+                              />
+                            </div>
+                          ) : null}
 
                           <div className="mt-3 space-y-2">
                             <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
