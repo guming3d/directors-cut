@@ -90,36 +90,22 @@ def _contains_scene_headers(script_text: str) -> bool:
     )
 
 
-def _orientation_suffix(resolution: str) -> str:
-    try:
-        width_str, height_str = resolution.lower().split("x", 1)
-        width = int(width_str)
-        height = int(height_str)
-    except (ValueError, AttributeError):
-        return ""
-    if width > height:
-        return " (landscape orientation)"
-    if height > width:
-        return " (portrait orientation)"
-    return " (square aspect ratio)"
-
-
 def build_prompt_text(
     title: str, description: str, duration: int, resolution: str
 ) -> str:
-    bullet_lines = "\n".join(
-        f"- {line.strip()}" for line in description.splitlines() if line.strip()
-    )
-    return (
-        f"Scene title: {title}\n"
-        f"Clip duration: {duration} seconds (fixed length).\n"
-        f"Output resolution: {resolution}{_orientation_suffix(resolution)}.\n"
-        "Character continuity: keep the same heroine (Brown hair, casual flight outfit) and hero (casual outfit) across clips.\n"
-        "Visual direction:\n"
-        f"{bullet_lines}\n"
-        "Cinematic tone: energetic, emotional, with tasteful motion graphics.\n"
-        "Audio: ambient sound design only; no background music."
-    )
+    """Return a scene prompt without duplicating duration/resolution metadata.
+
+    Sora already receives duration and resolution as explicit API parameters, so
+    we keep the prompt text focused on the refined description to avoid drift.
+    """
+    prompt_body = description.strip()
+    if not prompt_body:
+        return description
+
+    title_line = title.strip()
+    if title_line:
+        return f"{title_line}\n\n{prompt_body}"
+    return prompt_body
 
 
 async def refine_scene_description(title: str, description: str, duration: int) -> str:
