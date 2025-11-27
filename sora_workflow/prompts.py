@@ -208,7 +208,7 @@ async def ensure_scene_headers(
 
 WORKFLOW_REFINEMENT_TEMPLATE = textwrap.dedent(
     """
-    I need you to help me transfer the long video script to a multiple scenes sora2 system prompts, the total length of the output video is 90 seconds or 120 seconds. Each scene can be 8 seconds or 12 seconds long, so you need to based on the original script to decide how many dialogs is suitable for each scene. You must make sure all the scene is using the same output style: Rendered in high-quality 3D animation with soft, realistic lighting and depth of field, the character design uses a blend of anime-style facial proportions (large eyes, sharp jawline) with realistic textures and lighting.
+    I need you to help me transfer the long video script to a multiple scenes sora2 system prompts, the total length of the output video is 90 seconds or 120 seconds. Each scene can be 8 seconds or 12 seconds long, so you need to based on the original script to decide how many dialogs is suitable for each scene. You must make sure all the scene is using the same output style: Rendered in high-quality 3D animation with soft, realistic lighting and depth of field, the character design uses a blend of anime-style facial proportions (large eyes, sharp jawline) with realistic textures and lighting, make sure each scene's Format & Look part is same!!!.
 
     You can refer to following example sora2 prompt to know how to control the video style in details:
     ```
