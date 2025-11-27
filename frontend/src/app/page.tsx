@@ -77,6 +77,7 @@ type SingleVideoVersion = {
 type JobStatus = {
   job_id: string;
   status: string;
+  video_provider: string;
   resolution: string;
   stage: string | null;
   progress: number;
@@ -100,6 +101,7 @@ type SingleVideoJob = {
   status: string;
   progress: number;
   prompt: string;
+  video_provider: string;
   resolution: string;
   duration: number;
   download_variant: string;
@@ -198,6 +200,8 @@ const zhTranslations: Record<string, string> = {
   "Completed": "已完成",
   "Composing final video": "合成最终视频",
   "Compose Available Scenes": "合成已完成的场景",
+  "Video backend": "视频引擎",
+  "Unknown": "未知",
   "Composition manifest:": "合成清单：",
   "Delete Selected": "删除选中项",
   "Delete workflows": "删除工作流",
@@ -537,6 +541,7 @@ export default function Home() {
   const [jobs, setJobs] = useState<JobStatus[]>([]);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [job, setJob] = useState<JobStatus | null>(null);
+  const [activeVideoProvider, setActiveVideoProvider] = useState<string | null>(null);
   const [isSubmittingCombined, setIsSubmittingCombined] = useState(false);
   const [combinedError, setCombinedError] = useState<string | null>(null);
   const [selectedCombinedJobs, setSelectedCombinedJobs] = useState<Set<string>>(new Set());
@@ -657,11 +662,42 @@ export default function Home() {
       setSingleJobs([]);
       setSingleJob(null);
       setActiveSingleJobId(null);
+      setActiveVideoProvider(null);
       return;
     }
     void loadCombinedJobs();
     void loadSingleJobs();
   }, [isAuthenticated, loadCombinedJobs, loadSingleJobs]);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setActiveVideoProvider(null);
+      return;
+    }
+    let disposed = false;
+    const fetchProvider = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/api/providers/active`);
+        if (!response.ok) {
+          throw new Error(await response.text());
+        }
+        const data: { active?: string } = await response.json();
+        if (!disposed) {
+          const value = (data.active ?? "").trim();
+          setActiveVideoProvider(value ? value : null);
+        }
+      } catch (err) {
+        console.error(err);
+        if (!disposed) {
+          setActiveVideoProvider(null);
+        }
+      }
+    };
+    void fetchProvider();
+    return () => {
+      disposed = true;
+    };
+  }, [isAuthenticated]);
 
   useEffect(() => {
     if (!activeJobId || !isAuthenticated) return;
@@ -1503,6 +1539,12 @@ export default function Home() {
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-3"><ThemeToggle /><LanguageToggle /></div>
           <span className={`${pillButtonClass} whitespace-nowrap`}>
+            {translate("Video backend")}:{" "}
+            <span className="font-mono text-[11px] text-slate-500">
+              {(activeVideoProvider ?? translate("Unknown")).toUpperCase()}
+            </span>
+          </span>
+          <span className={`${pillButtonClass} whitespace-nowrap`}>
             {translate("API ·")} <span className="font-mono text-[11px] text-slate-500">{displayApiBase || API_BASE}</span>
           </span>
           <button
@@ -2119,6 +2161,9 @@ export default function Home() {
                   <p className="text-xs uppercase tracking-wide text-slate-500">
                     {translate("Mode:")} {translate(job.generation_mode === "sequence" ? "Sequence" : "Parallel")}
                   </p>
+                  <p className="text-xs uppercase tracking-wide text-slate-500">
+                    {translate("Video backend")}: {(job.video_provider ?? translate("Unknown")).toUpperCase()}
+                  </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <span className={`text-xs font-semibold uppercase tracking-wide ${currentStatusToken.className}`}>{currentStatusToken.label}</span>
@@ -2473,6 +2518,9 @@ export default function Home() {
                     <FilmIcon className="h-5 w-5 text-slate-500 dark:text-slate-400" />
                     {translate("Single Video Status")}
                   </h2>
+                  <p className="text-xs uppercase tracking-wide text-slate-500">
+                    {translate("Video backend")}: {(singleJob.video_provider ?? translate("Unknown")).toUpperCase()}
+                  </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <span className={`text-xs font-semibold uppercase tracking-wide ${singleStatusToken.className}`}>{singleStatusToken.label}</span>

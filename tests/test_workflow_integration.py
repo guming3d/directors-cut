@@ -1,11 +1,12 @@
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from sora_workflow import DEFAULT_SORA_RESOLUTION
 from sora_workflow.agents import Sora2Agent
-from sora_workflow.models import SceneRender, VideoWorkflowRequest
+from sora_workflow.models import ScenePlan, SceneRender, VideoWorkflowRequest
 from sora_workflow.workflow import create_sora_video_workflow
 
 
@@ -79,3 +80,56 @@ async def test_workflow_runs_with_stubbed_agents(tmp_path, monkeypatch):
     assert manifest_path.is_file()
     manifest = json.loads(manifest_path.read_text())
     assert manifest["scenes"][0]["label"].startswith("Scene 1")
+
+
+@pytest.mark.asyncio
+async def test_invoke_scene_with_kling_backend(tmp_path, monkeypatch):
+    scenes_dir = tmp_path / "job" / "scenes"
+    scenes_dir.mkdir(parents=True, exist_ok=True)
+    prompt_path = tmp_path / "prompt.txt"
+    prompt_path.write_text("Prompt body", encoding="utf-8")
+    plan = ScenePlan(
+        order=1,
+        label="Scene 1",
+        duration_seconds=4,
+        description="Desc",
+        prompt_path=str(prompt_path),
+        prompt_text="Prompt body",
+    )
+    request = VideoWorkflowRequest(
+        script_path=str(prompt_path),
+        output_dir=str(tmp_path / "job"),
+        prompt_dir=str(tmp_path / "job" / "prompts"),
+        scenes_dir=str(scenes_dir),
+        tmp_dir=str(tmp_path / "job" / "tmp"),
+        final_video_path=str(tmp_path / "job" / "final.mp4"),
+        scene_image_dir=str(tmp_path / "job" / "scene_images"),
+        use_scene_images=False,
+        resolution=DEFAULT_SORA_RESOLUTION,
+        thread_count=1,
+        video_provider="kling",
+    )
+    Path(request.scene_image_dir).mkdir(parents=True, exist_ok=True)
+    Path(request.tmp_dir).mkdir(parents=True, exist_ok=True)
+
+    async def fake_render_kling_clip(**kwargs):
+        output_path = kwargs["output_path"]
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text("kling-bytes", encoding="utf-8")
+        return SimpleNamespace(
+            task_id="kling-task",
+            endpoint="text2video",
+            request_payload={"prompt": kwargs["prompt_text"]},
+            final_response={"data": {"task_status": "succeed"}},
+            video_url="https://example.com/video.mp4",
+        )
+
+    monkeypatch.setattr("sora_workflow.agents.render_kling_clip", fake_render_kling_clip)
+
+    agent = Sora2Agent()
+    render = await agent._invoke_scene(plan, request, Path(request.scenes_dir), scene_images=[])
+
+    assert render.video_id == "kling-task"
+    assert render.log_path is not None
+    log_data = json.loads(Path(render.log_path).read_text())
+    assert log_data["provider"] == "kling"

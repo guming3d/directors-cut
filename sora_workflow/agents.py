@@ -11,7 +11,8 @@ from agent_framework import Executor, WorkflowContext, handler
 
 from .config import ROOT, SCENE_IMAGE_DIR, logger
 from .first_frames import generate_first_frame_image
-from .images import prepare_scene_start_images
+from .images import prepare_scene_start_images, prepare_scene_tail_image
+from .kling import render_kling_clip
 from .models import (
     ScenePlan,
     ScenePlanBatch,
@@ -178,7 +179,7 @@ class DirectorAgent(Executor):
 
 
 class Sora2Agent(Executor):
-    """Generate each clip concurrently via the sora-openai-client."""
+    """Generate each clip concurrently via the configured video backend (Sora2 or Kling)."""
 
     def __init__(self) -> None:
         super().__init__(id="sora2_agent")
@@ -229,7 +230,7 @@ class Sora2Agent(Executor):
         async def render_scene(plan: ScenePlan) -> tuple[str, ScenePlan | SceneRender, Exception | None]:
             async with semaphore:
                 try:
-                    render = await self._invoke_sora(plan, request, scenes_dir, scene_images)
+                    render = await self._invoke_scene(plan, request, scenes_dir, scene_images)
                     return ("ok", render, None)
                 except asyncio.CancelledError:  # pragma: no cover - propagation only
                     raise
@@ -288,7 +289,7 @@ class Sora2Agent(Executor):
         errors: list[tuple[ScenePlan, Exception]] = []
         for plan in batch.plans:
             try:
-                render = await self._invoke_sora(
+                render = await self._invoke_scene(
                     plan,
                     request,
                     scenes_dir,
@@ -324,6 +325,49 @@ class Sora2Agent(Executor):
             details = "; ".join(f"{plan.label}: {exc}" for plan, exc in errors if plan.label)
             raise RuntimeError(f"{len(errors)} scene(s) failed: {details or 'Unknown scenes'}")
         return renders
+
+    async def _prepare_reference_image(
+        self,
+        plan: ScenePlan,
+        request: VideoWorkflowRequest,
+        scene_images: Sequence[str],
+        reference_override: Optional[str],
+    ) -> tuple[Optional[str], Optional[str]]:
+        input_reference = reference_override
+        first_frame_path: Optional[str] = None
+        if request.generate_ai_first_frame:
+            await report_progress(
+                request,
+                "rendering",
+                f"Generating AI first frame for {plan.label}.",
+            )
+            try:
+                first_frame_path = await generate_first_frame_image(plan, request)
+                input_reference = first_frame_path
+            except Exception as exc:
+                logger.error("First-frame generation failed for %s: %s", plan.label, exc)
+                raise
+
+        if not input_reference and request.use_scene_images:
+            scene_index = plan.order - 1
+            if scene_index < 0 or scene_index >= len(scene_images):
+                raise RuntimeError(
+                    f"Missing prepared start screen for {plan.label} (index {scene_index}). Verify plan/image alignment."
+                )
+            input_reference = scene_images[scene_index]
+        return input_reference, first_frame_path
+
+    async def _invoke_scene(
+        self,
+        plan: ScenePlan,
+        request: VideoWorkflowRequest,
+        scenes_dir: Path,
+        scene_images: Sequence[str],
+        reference_override: Optional[str] = None,
+    ) -> SceneRender:
+        if request.video_provider == "kling":
+            return await self._invoke_kling(plan, request, scenes_dir, scene_images, reference_override)
+        return await self._invoke_sora(plan, request, scenes_dir, scene_images, reference_override)
 
     async def _invoke_sora(
         self,
@@ -361,28 +405,9 @@ class Sora2Agent(Executor):
             str(plan.duration_seconds),
         ]
 
-        input_reference = reference_override
-        first_frame_path: Optional[str] = None
-        if request.generate_ai_first_frame:
-            await report_progress(
-                request,
-                "rendering",
-                f"Generating AI first frame for {plan.label}.",
-            )
-            try:
-                first_frame_path = await generate_first_frame_image(plan, request)
-                input_reference = first_frame_path
-            except Exception as exc:
-                logger.error("First-frame generation failed for %s: %s", plan.label, exc)
-                raise
-
-        if not input_reference and request.use_scene_images:
-            scene_index = plan.order - 1
-            if scene_index < 0 or scene_index >= len(scene_images):
-                raise RuntimeError(
-                    f"Missing prepared start screen for {plan.label} (index {scene_index}). Verify plan/image alignment."
-                )
-            input_reference = scene_images[scene_index]
+        input_reference, first_frame_path = await self._prepare_reference_image(
+            plan, request, scene_images, reference_override
+        )
         if input_reference:
             cmd.extend(["--input-image", input_reference])
 
@@ -455,6 +480,79 @@ class Sora2Agent(Executor):
             client_log_path=str(client_log_path),
             prompt_text=plan.prompt_text,
             video_id=video_id,
+            first_frame_path=first_frame_path,
+        )
+
+    async def _invoke_kling(
+        self,
+        plan: ScenePlan,
+        request: VideoWorkflowRequest,
+        scenes_dir: Path,
+        scene_images: Sequence[str],
+        reference_override: Optional[str] = None,
+    ) -> SceneRender:
+        scene_basename = f"scene_{plan.order:02d}.mp4"
+        video_path = scenes_dir / scene_basename
+        await report_progress(
+            request,
+            "rendering",
+            f"Kling: starting render for {plan.label}.",
+        )
+
+        input_reference, first_frame_path = await self._prepare_reference_image(
+            plan, request, scene_images, reference_override
+        )
+        tail_reference: Optional[str] = None
+        try:
+            tail_reference = prepare_scene_tail_image(
+                Path(request.scene_image_dir),
+                Path(request.tmp_dir),
+                plan.order,
+                request.resolution,
+            )
+        except Exception as exc:  # pragma: no cover - best-effort helper
+            logger.debug("Unable to prepare tail image for %s: %s", plan.label, exc)
+
+        external_id = (
+            f"{request.job_id or 'cli'}-scene{plan.order:02d}"
+        )
+        result = await render_kling_clip(
+            prompt_text=plan.prompt_text,
+            duration_seconds=plan.duration_seconds,
+            resolution=request.resolution,
+            output_path=video_path,
+            primary_image_path=input_reference,
+            tail_image_path=tail_reference,
+            extra_image_paths=[],
+            external_task_id=external_id,
+        )
+
+        log_path = video_path.with_suffix(".json")
+        client_log_path = video_path.with_suffix(".client.log")
+        log_data = {
+            "provider": "kling",
+            "task_id": result.task_id,
+            "endpoint": result.endpoint,
+            "request": result.request_payload,
+            "response": result.final_response,
+            "video_url": result.video_url,
+        }
+        log_path.write_text(json.dumps(log_data, indent=2), encoding="utf-8")
+        client_log_path.write_text(
+            f"Kling task {result.task_id} completed via {result.endpoint}.\nVideo URL: {result.video_url}\n",
+            encoding="utf-8",
+        )
+
+        return SceneRender(
+            order=plan.order,
+            label=plan.label,
+            duration_seconds=plan.duration_seconds,
+            prompt_path=plan.prompt_path,
+            video_path=str(video_path),
+            log_path=str(log_path),
+            client_log_path=str(client_log_path),
+            prompt_text=plan.prompt_text,
+            video_id=result.task_id,
             first_frame_path=first_frame_path,
         )
 

@@ -33,6 +33,7 @@ SORA_CLIP_DURATION_SECONDS = 8
 SORA_PROMPT_GUIDE_URL = "https://cookbook.openai.com/examples/sora/sora2_prompting_guide"
 STATIC_URL_PREFIX = "/static"
 SCENE_IMAGE_PATTERN = re.compile(r"scene0*(\d+)\.(?:png|jpe?g)$", re.IGNORECASE)
+SCENE_TAIL_PATTERN = re.compile(r"scene0*(\d+)_tail\.(?:png|jpe?g)$", re.IGNORECASE)
 DATA_URL_PATTERN = re.compile(r"^data:(?P<mime>[\w/+.-]+);base64,(?P<data>.+)$", re.IGNORECASE)
 RESOLUTION_PATTERN = re.compile(r"^\d+x\d+$")
 HEADER_PATTERN = re.compile(r"^\*\*\s*(Scene\s+(\d+)[^*]*)\*\*$", re.IGNORECASE)
@@ -46,6 +47,38 @@ try:
     SORA_BLOCK_RETRIES = max(1, int(os.getenv("SORA_BLOCK_RETRIES", "3")))
 except ValueError:  # pragma: no cover - defensive fallback
     SORA_BLOCK_RETRIES = 3
+
+# Video provider defaults
+SUPPORTED_VIDEO_PROVIDERS = ("sora2", "kling")
+_provider_env = (os.getenv("VIDEO_PROVIDER") or "sora2").strip().lower()
+DEFAULT_VIDEO_PROVIDER = _provider_env if _provider_env in SUPPORTED_VIDEO_PROVIDERS else "sora2"
+
+
+def normalize_video_provider(value: Optional[str]) -> str:
+    if not value:
+        return DEFAULT_VIDEO_PROVIDER
+    lowered = value.strip().lower()
+    if lowered not in SUPPORTED_VIDEO_PROVIDERS:
+        return DEFAULT_VIDEO_PROVIDER
+    return lowered
+
+
+# Kling configuration
+def _float_env(name: str, default: str) -> float:
+    try:
+        return float(os.getenv(name, default))
+    except (TypeError, ValueError):
+        return float(default)
+
+
+KLING_API_BASE_URL = (os.getenv("KLING_API_BASE_URL") or "https://api-beijing.klingai.com").rstrip("/")
+KLING_API_KEY = os.getenv("KLING_API_KEY")
+KLING_DEFAULT_MODEL_NAME = os.getenv("KLING_MODEL_NAME", "kling-v1")
+KLING_DEFAULT_MODE = os.getenv("KLING_MODE", "std")
+KLING_DEFAULT_CFG_SCALE = max(0.0, min(1.0, _float_env("KLING_CFG_SCALE", "0.5")))
+KLING_POLL_INTERVAL_SECONDS = max(1.0, _float_env("KLING_POLL_INTERVAL", "3"))
+KLING_POLL_TIMEOUT_SECONDS = max(60.0, _float_env("KLING_POLL_TIMEOUT", "900"))
+KLING_DOWNLOAD_CHUNK_SIZE = max(262144, int(os.getenv("KLING_DOWNLOAD_CHUNK_SIZE", "1048576")))
 
 # Azure configuration
 DIRECTOR_REFINEMENT_DEPLOYMENT = (
@@ -231,10 +264,19 @@ __all__ = [
     "AZURE_TEXT_ENDPOINT",
     "DATA_URL_PATTERN",
     "DEFAULT_SORA_RESOLUTION",
+    "DEFAULT_VIDEO_PROVIDER",
     "DIRECTOR_REFINEMENT_DEPLOYMENT",
     "FINAL_VIDEO_PATH",
     "GPT5_REFINEMENT_DEPLOYMENT",
     "HEADER_PATTERN",
+    "KLING_API_BASE_URL",
+    "KLING_API_KEY",
+    "KLING_DEFAULT_CFG_SCALE",
+    "KLING_DEFAULT_MODE",
+    "KLING_DEFAULT_MODEL_NAME",
+    "KLING_DOWNLOAD_CHUNK_SIZE",
+    "KLING_POLL_INTERVAL_SECONDS",
+    "KLING_POLL_TIMEOUT_SECONDS",
     "OUTPUT_DIR",
     "PROMPTS_DIR",
     "RESOLUTION_PATTERN",
@@ -243,9 +285,11 @@ __all__ = [
     "SCENE_IMAGE_PATTERN",
     "SCENE_IMAGE_RESAMPLE",
     "SCENE_IMAGE_SIZE",
+    "SCENE_TAIL_PATTERN",
     "SCENES_DIR",
     "SCRIPT_PATH",
     "SINGLE_VIDEO_DB_PATH",
+    "SUPPORTED_VIDEO_PROVIDERS",
     "SINGLE_VIDEO_JOBS_DIR",
     "SORA_CLIENT",
     "SORA_CLIP_DURATION_SECONDS",
@@ -259,5 +303,6 @@ __all__ = [
     "azure_text_client",
     "extract_response_text",
     "logger",
+    "normalize_video_provider",
     "video_client",
 ]

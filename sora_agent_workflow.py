@@ -8,6 +8,7 @@ from pathlib import Path
 
 from sora_workflow import DEFAULT_SORA_RESOLUTION, SCRIPT_PATH, create_sora_video_workflow, fastapi_app, workflow
 from sora_workflow.config import FINAL_VIDEO_PATH, SORA_CLIP_DURATION_SECONDS
+from sora_workflow.config import DEFAULT_VIDEO_PROVIDER
 from sora_workflow.models import VideoWorkflowRequest
 
 
@@ -56,6 +57,12 @@ def main() -> None:
         action="store_true",
         help="Generate AI first-frame references for each scene before calling Sora2.",
     )
+    parser.add_argument(
+        "--video-provider",
+        choices=("sora2", "kling"),
+        default=DEFAULT_VIDEO_PROVIDER,
+        help="Video backend to use for rendering scenes.",
+    )
     args = parser.parse_args()
 
     cli_resolution = (args.resolution or "").strip() or DEFAULT_SORA_RESOLUTION
@@ -71,6 +78,7 @@ def main() -> None:
         final_video_path=str(args.final_video),
         scene_duration=args.scene_duration,
         generate_ai_first_frame=args.ai_first_frames,
+        video_provider=args.video_provider,
     )
 
     if args.devui:

@@ -14,6 +14,10 @@ Full-stack toolkit for running the Azure Sora2 multi-agent video workflow with a
   - `SORA_BLOCK_RETRIES` — number of times to retry a scene blocked by moderation (fallback: `3`)
   - `VIDEO_DOWNLOAD_VARIANT` — override the variant name sent to the Sora client
 
+### Switching video backends (Sora2 vs. Kling)
+
+Set `VIDEO_PROVIDER` to `sora2` (default) or `kling` to decide which API generates clips. When targeting Kling you must also configure `KLING_API_BASE_URL`, `KLING_API_KEY`, and optional tuning knobs such as `KLING_MODEL_NAME`, `KLING_MODE`, `KLING_CFG_SCALE`, `KLING_POLL_INTERVAL`, and `KLING_POLL_TIMEOUT`. The workflow reuses the same Director/Composer agents, and the dashboard now surfaces a “Video backend” tag so operators can immediately see which engine is active. For Kling image-to-video runs you can optionally drop files named `scene1_tail.png`, `scene2_tail.png`, etc., into your `scene_start_screen/` directory to provide last-frame guidance alongside the usual `scene#.png` head images. Remix endpoints remain Sora-only; Kling jobs support regeneration but not Azure remix APIs.
+
 ## Backend (FastAPI) Setup
 
 ```bash
@@ -37,6 +41,7 @@ Key routes:
 - `POST /api/workflows/{job_id}/scenes/{scene_order}/remix` — remix a completed scene by supplying a new prompt against the previous Azure video ID
 - `POST /api/workflows/{job_id}/scenes/{scene_order}/select` — choose which scene version should be used when composing the final cut
 - `POST /api/workflows/{job_id}/recompose` — regenerate the final video using the currently selected scene versions
+- `GET /api/providers/active` — report the default backend (`sora2` or `kling`) configured for new workloads
 - `GET /static/...` — static hosting of generated assets (final video, scene clips, logs)
 
 Generated artifacts are stored under `output/<job_id>/`.
@@ -90,3 +95,4 @@ npm run start
 - If the UI cannot reach the backend, confirm `NEXT_PUBLIC_API_BASE_URL` points to the FastAPI origin and CORS allows the frontend host.
 - Scene rendering requires the prepared `scene_start_screen/scene#.png` assets; the workflow will fail if counts mismatch.
 - Moderation blocks are retried up to `SORA_BLOCK_RETRIES` times. If a job still fails, you can regenerate the blocked scene or use **Compose Available Scenes** in the UI to stitch the clips that completed successfully.
+- Kling jobs require valid `KLING_API_KEY` credentials; failures mentioning `/v1/videos/...` usually mean the key or base URL is missing. Remember that remix actions stay disabled for Kling—use regenerate instead, and provide optional `_tail` images if you want the API to target a specific final frame.
