@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .config import (
     DEFAULT_SORA_RESOLUTION,
+    DEFAULT_VIDEO_PROVIDER,
     FINAL_VIDEO_PATH,
     OUTPUT_DIR,
     PROMPTS_DIR,
@@ -42,8 +43,15 @@ class EncodedImagePayload(BaseModel):
 class VideoWorkflowRequest(BaseModel):
     """Configuration for the multi-agent video workflow."""
 
+    model_config = ConfigDict(populate_by_name=True)
+
     script_path: str = Field(
         default=str(SCRIPT_PATH), description="Path to the master video script."
+    )
+    video_provider: Literal["sora2", "kling"] = Field(
+        default=DEFAULT_VIDEO_PROVIDER,
+        alias="videoProvider",
+        description="Video backend to use for rendering (sora2 or kling).",
     )
     output_dir: str = Field(default=str(OUTPUT_DIR), description="Root output folder.")
     prompt_dir: str = Field(
@@ -181,6 +189,7 @@ class WorkflowJobState:
     stage: Optional[str] = None
     progress: float = 0.0
     resolution: str = DEFAULT_SORA_RESOLUTION
+    video_provider: str = DEFAULT_VIDEO_PROVIDER
     script: str = ""
     script_path: Optional[str] = None
     started_at: datetime = field(default_factory=utc_now)
@@ -222,6 +231,7 @@ class SingleVideoJobState:
     resolution: str
     duration: int
     download_variant: str
+    video_provider: str = DEFAULT_VIDEO_PROVIDER
     status: str = "queued"
     progress: float = 0.0
     started_at: datetime = field(default_factory=utc_now)
@@ -257,6 +267,8 @@ class SingleVideoJobConfig:
     video_path: Path
     reference_image_path: Optional[Path]
     job_dir: Path
+    video_provider: str = DEFAULT_VIDEO_PROVIDER
+    reference_image_paths: list[Path] = field(default_factory=list)
 
 
 class JobMessageModel(BaseModel):
@@ -305,6 +317,7 @@ class JobStatusResponse(BaseModel):
     status: str
     stage: Optional[str]
     progress: float
+    video_provider: str = DEFAULT_VIDEO_PROVIDER
     resolution: str
     started_at: datetime
     completed_at: Optional[datetime]
@@ -340,6 +353,7 @@ class SingleVideoJobResponse(BaseModel):
     status: str
     progress: float
     prompt: str
+    video_provider: str = DEFAULT_VIDEO_PROVIDER
     resolution: str
     duration: int
     download_variant: str
@@ -362,6 +376,11 @@ class StartWorkflowPayload(BaseModel):
 
     script: str = Field(
         ..., description="Storyboard script content for the Director agent to process."
+    )
+    video_provider: Literal["sora2", "kling"] = Field(
+        default=DEFAULT_VIDEO_PROVIDER,
+        alias="videoProvider",
+        description="Video backend to use when rendering scenes.",
     )
     threads: Optional[int] = Field(
         default=None, ge=1, le=10, description="Override concurrent Sora render threads."
@@ -418,6 +437,11 @@ class SingleVideoPayload(BaseModel):
         default=DEFAULT_SORA_RESOLUTION,
         description="Output resolution (e.g. 720x1280).",
     )
+    video_provider: Literal["sora2", "kling"] = Field(
+        default=DEFAULT_VIDEO_PROVIDER,
+        alias="videoProvider",
+        description="Video backend to use for this single clip (sora2 or kling).",
+    )
     duration: Literal[4, 8, 12] = Field(
         default=8, description="Video duration in seconds (allowed: 4, 8, 12)."
     )
@@ -430,6 +454,11 @@ class SingleVideoPayload(BaseModel):
         default=None,
         alias="referenceImage",
         description="Optional input reference image encoded as a base64 data URL.",
+    )
+    reference_images: Optional[list[EncodedImagePayload]] = Field(
+        default=None,
+        alias="referenceImages",
+        description="Optional list of additional reference still images (used when Kling multi-image runs are desired).",
     )
     refine_with_gpt5: bool = Field(
         default=False,

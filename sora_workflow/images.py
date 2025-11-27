@@ -16,6 +16,7 @@ from .config import (
     SCENE_IMAGE_PATTERN,
     SCENE_IMAGE_RESAMPLE,
     SCENE_IMAGE_SIZE,
+    SCENE_TAIL_PATTERN,
     logger,
 )
 from .models import EncodedImagePayload
@@ -190,10 +191,33 @@ def prepare_scene_start_images(
     return prepared_paths
 
 
+def prepare_scene_tail_image(
+    scene_dir: Path, tmp_dir: Path, scene_index: int, resolution: str
+) -> Optional[str]:
+    if not scene_dir.is_dir():
+        return None
+    candidate: Optional[Path] = None
+    for entry in scene_dir.iterdir():
+        if not entry.is_file():
+            continue
+        match = SCENE_TAIL_PATTERN.fullmatch(entry.name)
+        if match and int(match.group(1)) == scene_index:
+            candidate = entry
+            break
+    if candidate is None:
+        return None
+    target_size = resolution_to_size(resolution)
+    prepared_dir = tmp_dir / "scene_tail_images"
+    dest = prepared_dir / f"scene{scene_index}_tail_{target_size[0]}x{target_size[1]}.png"
+    resize_scene_image(candidate, dest, target_size=target_size)
+    return str(dest)
+
+
 __all__ = [
     "decode_image_payload",
     "prepare_scene_start_images",
     "prepare_sequence_initial_image",
+    "prepare_scene_tail_image",
     "resolve_scene_image_dir",
     "resize_scene_image",
     "save_payload_as_png",

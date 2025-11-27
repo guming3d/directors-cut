@@ -14,10 +14,12 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import (
     DEFAULT_SORA_RESOLUTION,
+    DEFAULT_VIDEO_PROVIDER,
     OUTPUT_DIR,
     RESOLUTION_PATTERN,
     SINGLE_VIDEO_JOBS_DIR,
     STATIC_URL_PREFIX,
+    SUPPORTED_VIDEO_PROVIDERS,
     allowed_origins,
     logger,
 )
@@ -71,6 +73,14 @@ fastapi_app.mount(
     StaticFiles(directory=str(OUTPUT_DIR), check_dir=False),
     name="output",
 )
+
+
+@fastapi_app.get("/api/providers/active")
+async def get_active_provider() -> dict[str, object]:
+    return {
+        "active": DEFAULT_VIDEO_PROVIDER,
+        "available": list(SUPPORTED_VIDEO_PROVIDERS),
+    }
 
 
 @fastapi_app.post("/api/refine/workflow", response_model=RefinedScriptResponse)
@@ -128,6 +138,7 @@ async def start_workflow(payload: StartWorkflowPayload) -> JobStatusResponse:
         await WORKFLOW_JOB_STORE.set_generate_ai_first_frame(
             job_id, request.generate_ai_first_frame
         )
+        await WORKFLOW_JOB_STORE.set_video_provider(job_id, request.video_provider)
         try:
             script_text = Path(request.script_path).read_text(encoding="utf-8")
         except OSError:
@@ -196,6 +207,8 @@ async def start_single_video(payload: SingleVideoPayload) -> SingleVideoJobRespo
             duration,
             download_variant,
             payload.reference_image,
+            payload.reference_images,
+            payload.video_provider,
         )
     except ValueError as exc:
         shutil.rmtree(SINGLE_VIDEO_JOBS_DIR / job_id, ignore_errors=True)
@@ -207,6 +220,7 @@ async def start_single_video(payload: SingleVideoPayload) -> SingleVideoJobRespo
         config.resolution,
         config.duration,
         config.download_variant,
+        config.video_provider,
     )
     if payload.refine_with_gpt5:
         await SINGLE_VIDEO_STORE.add_message(

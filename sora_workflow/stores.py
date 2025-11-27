@@ -13,6 +13,7 @@ from tinydb import Query, TinyDB
 
 from .config import (
     DEFAULT_SORA_RESOLUTION,
+    DEFAULT_VIDEO_PROVIDER,
     OUTPUT_DIR,
     SINGLE_VIDEO_DB_PATH,
     SORA_CLIP_DURATION_SECONDS,
@@ -155,6 +156,7 @@ def _workflow_state_to_record(job: WorkflowJobState) -> dict[str, Any]:
         "status": job.status,
         "stage": job.stage,
         "progress": job.progress,
+        "video_provider": job.video_provider,
         "resolution": job.resolution,
         "script": job.script,
         "script_path": job.script_path,
@@ -180,6 +182,7 @@ def _workflow_state_from_record(payload: dict[str, Any]) -> WorkflowJobState:
         status=payload.get("status", "queued"),
         stage=payload.get("stage"),
         progress=float(payload.get("progress", 0.0)),
+        video_provider=payload.get("video_provider") or DEFAULT_VIDEO_PROVIDER,
         resolution=payload.get("resolution") or DEFAULT_SORA_RESOLUTION,
         script=payload.get("script") or "",
         script_path=payload.get("script_path"),
@@ -297,6 +300,12 @@ class WorkflowJobStore:
             job.resolution = resolution
             self._persist(job)
 
+    async def set_video_provider(self, job_id: str, video_provider: str) -> None:
+        async with self._lock:
+            job = self._require(job_id)
+            job.video_provider = video_provider
+            self._persist(job)
+
     async def set_download_variant(self, job_id: str, download_variant: str) -> None:
         async with self._lock:
             job = self._require(job_id)
@@ -332,6 +341,11 @@ class WorkflowJobStore:
         async with self._lock:
             job = self._require(job_id)
             return job.resolution
+
+    async def get_video_provider(self, job_id: str) -> str:
+        async with self._lock:
+            job = self._require(job_id)
+            return job.video_provider
 
     async def record_scene_completion(self, job_id: str, render) -> None:
         from .models import SceneRender
@@ -518,6 +532,7 @@ class WorkflowJobStore:
             status=job.status,
             stage=job.stage,
             progress=job.progress,
+            video_provider=job.video_provider,
             resolution=job.resolution,
             script=job.script,
             script_path=job.script_path,
@@ -639,6 +654,7 @@ def _single_video_state_to_record(job: SingleVideoJobState) -> dict[str, Any]:
     return {
         "job_id": job.job_id,
         "prompt": job.prompt,
+        "video_provider": job.video_provider,
         "resolution": job.resolution,
         "duration": job.duration,
         "download_variant": job.download_variant,
@@ -661,6 +677,7 @@ def _single_video_state_from_record(payload: dict[str, Any]) -> SingleVideoJobSt
     return SingleVideoJobState(
         job_id=payload.get("job_id", str(uuid.uuid4())),
         prompt=payload.get("prompt", ""),
+        video_provider=payload.get("video_provider") or DEFAULT_VIDEO_PROVIDER,
         resolution=payload.get("resolution") or DEFAULT_SORA_RESOLUTION,
         duration=int(payload.get("duration", 8)),
         download_variant=payload.get("download_variant", "video"),
@@ -705,6 +722,7 @@ class SingleVideoJobStore:
         resolution: str,
         duration: int,
         download_variant: str,
+        video_provider: str,
     ) -> None:
         async with self._lock:
             state = SingleVideoJobState(
@@ -713,17 +731,32 @@ class SingleVideoJobStore:
                 resolution=resolution,
                 duration=duration,
                 download_variant=download_variant,
+                video_provider=video_provider,
             )
             state.add_message("queued", "Job queued.")
             self._jobs[job_id] = state
             self._persist(state)
+
+    async def set_video_provider(self, job_id: str, video_provider: str) -> None:
+        async with self._lock:
+            job = self._require(job_id)
+            job.video_provider = video_provider
+            self._persist(job)
+
+    async def get_video_provider(self, job_id: str) -> str:
+        async with self._lock:
+            job = self._require(job_id)
+            return job.video_provider
 
     async def mark_running(self, job_id: str) -> None:
         async with self._lock:
             job = self._require(job_id)
             job.status = "running"
             job.progress = max(job.progress, 0.05)
-            job.add_message("running", "Submitting video generation request to Sora2.")
+            job.add_message(
+                "running",
+                f"Submitting video generation request to {job.video_provider.upper()} backend.",
+            )
             self._persist(job)
 
     async def update_progress(self, job_id: str, progress: float, message: str | None = None) -> None:
@@ -860,6 +893,7 @@ class SingleVideoJobStore:
             status=job.status,
             progress=job.progress,
             prompt=job.prompt,
+            video_provider=job.video_provider,
             resolution=job.resolution,
             duration=job.duration,
             download_variant=job.download_variant,
