@@ -1,23 +1,36 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-Three runnable entrypoints live at the repo root: `magentic.py` drives the multi-agent Magentic demo, `sora-openai-client.py` is the Azure OpenAI video client, and `sora_agent_workflow.py` composes the director → Sora2 → composer workflow outlined in `workflow-diagram.png`. Narrative assets that feed prompts stay in `Chapters/`, and visual references or screenshots belong in `images_references/`; keep the existing filenames because the Sora client expects explicit paths. Generated media and logs default to an `output/` folder you create on demand. Store API secrets in `.env`, isolate dependencies in `.venv/`, and leave both untracked.
+- Backend entrypoints live at the repo root: `sora_agent_workflow.py` exposes the CLI plus the FastAPI `fastapi_app`, and `sora-openai-client.py` handles single Sora renders (resizing references, downloading MP4/JSON logs). Core orchestration sits in `sora_workflow/` (agents, API wiring, services, prompts, images, stores, models); defaults and paths are centralized in `sora_workflow/config.py`.
+- The dashboard is a Next.js (app router) app under `frontend/` using TypeScript/React 19; `frontend/Dockerfile` builds it with `NEXT_PUBLIC_API_BASE_URL`.
+- Storyboard inputs live in `Chapters/`, start-screen assets in `scene_start_screen/scene#.png`, and optional references in `images_references/`. Generated artifacts and TinyDB state land in `output/` (`output/db` holds workflow and single-video job records).
+- Prompt refinement is optional and routed through `sora_workflow/prompts.py`; `refine_with_gpt5` flags use the Azure Responses API via `AZURE_OPENAI_GPT5_DEPLOYMENT`/`DIRECTOR_REFINEMENT_DEPLOYMENT`/`AZURE_OPENAI_API_VERSION` env vars when present.
+- Deployment tooling: `Dockerfile.backend` builds the FastAPI image; `deploy.sh` provisions Azure Container Apps and pushes backend/frontend images; `update.sh` refreshes images/tags using the existing environment. Sample values stay in `.env.example`.
+- Tests are under `tests/` (pytest + pytest-asyncio + Pillow) covering prompt parsing, image prep, and stubbed workflow runs.
 
 ## Build, Test, and Development Commands
-- `python -m venv .venv && source .venv/bin/activate` initializes the local environment; regenerate it whenever dependencies change.
-- `pip install -U agent_framework openai python-dotenv` pulls the libraries used by the two scripts; pin exact versions before releasing.
-- `python magentic.py` runs the sample multi-agent workflow and streams orchestrator/agent events to the console.
-- `python sora-openai-client.py --prompt-file Chapters/video_script.txt --input-image images_references/screenshot-002.png --resolution 1280x720 --duration 8` submits a Sora job using the bundled prompt materials.
-- `python sora_agent_workflow.py --threads 3 --resolution 1280x720` runs the three-agent pipeline that splits the script into 4/8/12-second scenes, launches concurrent Sora renders, and stitches them with `ffmpeg` (ensure `ffmpeg`/`ffprobe` are on PATH).
+- Backend setup: `python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt`.
+- Run the API: `uvicorn sora_agent_workflow:fastapi_app --host 0.0.0.0 --port 8000` (requires `ffmpeg`/`ffprobe` on PATH).
+- CLI workflow: `python sora_agent_workflow.py --threads 3 --scene-duration 8 --resolution 720x1280 --final-video output/sora_story_compilation.mp4 [--devui]` (resolution is locked to `DEFAULT_SORA_RESOLUTION`).
+- Direct Sora client: `python sora-openai-client.py --prompt-file Chapters/video_script.txt --input-image images_references/screenshot-002.png --resolution 720x1280 --duration 8` (writes MP4/JSON under `output/` unless `VIDEO_OUTPUT_*` overrides).
+- Frontend: `cd frontend && npm install && npm run dev` for local work; `npm run build && npm run start` for production; `npm run lint` to check Next/ESLint rules.
+- Tests: `pytest -q` from the repo root; async workflow tests monkeypatch Sora calls—follow that pattern for new networked code.
 
 ## Coding Style & Naming Conventions
-Target Python 3.10+ and follow PEP 8 with 4-space indentation. Keep type hints on public functions (`async def main() -> None`) and prefer descriptive agent names (`ResearcherAgent`, `CoderAgent`). Place configuration constants in ALL_CAPS near the top of the module, keep CLI options in kebab-case, and name new assets with lowercase-hyphenated descriptors to match the existing pattern.
+- Target Python 3.10+ with PEP 8/4-space indents and type hints on public functions. Keep constants upper-snake and centralized in `sora_workflow/config.py`; reuse helpers like `normalize_script_text`, `prepare_scene_start_images`, and `resolution_to_size` instead of hard-coded paths or sizes.
+- CLI flags stay kebab-case and default to portrait `720x1280` with 4/8/12 second durations; preserve prompt/scene filename patterns (`scene_##_*.txt`, `scene#.png`).
+- Frontend uses Next.js app router with TypeScript; favor functional components and hooks, keep translation maps and option lists aligned with existing shapes, and avoid hard-coding API URLs (use `NEXT_PUBLIC_API_BASE_URL`).
 
 ## Testing Guidelines
-There is no dedicated test suite yet, so add one under `tests/` when introducing non-trivial logic. Use `pytest` (recommended) or `python -m unittest` for smaller modules, and cover: CLI option parsing, environment fallbacks, and any utility methods added around the OpenAI clients. Mirror filenames (`tests/test_sora_client.py`) and keep fixtures small so contributors can run `pytest -q` before submitting.
+- Update or add pytest cases when changing script parsing (`tests/test_prompts.py`), image prep (`tests/test_images.py`), or workflow orchestration (`tests/test_workflow_integration.py`). Use temporary directories and monkeypatch `_invoke_sora`/`run_subprocess` or Azure clients to avoid real Sora calls.
+- For new API routes or job-state changes, assert TinyDB-backed stores emit expected snapshots and that static URLs stay rooted in `output/`.
 
-## Commit & Pull Request Guidelines
-Commits should use short, imperative subjects similar to the initial `first commit` (e.g., “Add Sora download logging”). When opening a PR, include: a one-paragraph summary, reproduction steps or sample commands, links to tracked issues, and screenshots or video snippets when the change affects generated media. Reference any credential or configuration updates explicitly so reviewers can test with their own `.env` safely.
+## Deployment & Operations
+- `.env` drives local runs and Azure deployment; keep `.env.example` in sync when adding env vars (API keys, deployment names, CORS origins, thread limits, moderation retry counts, download variants). The frontend uses `.env.local` for `NEXT_PUBLIC_API_BASE_URL`.
+- `output/` is runtime storage for prompts, scenes, final videos, logs, and TinyDB (`workflow_jobs.json`, `single_video_jobs.json`); avoid committing generated artifacts.
+- FastAPI serves static assets from `output/` under `/static`; keep generated files within that tree so dashboard links resolve.
+- Sequence mode chains clips via the first start image; ensure `scene_start_screen` counts match scene totals or handle uploads via the API.
 
 ## Security & Configuration Tips
-Never check secrets into Git; rely on `.env` keys such as `AZURE_OPENAI_API_KEY`, `ENDPOINT_URL`, `DEPLOYMENT_NAME`, and the `VIDEO_*` variables read inside `sora-openai-client.py`. Rotate keys after demos, and prefer temporary SAS URLs for shared assets. When sharing logs, redact job IDs returned by `client.videos.create_and_poll`.
+- Never commit live Azure/OpenAI keys or user content. Use `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`/`ENDPOINT_URL`, `DEPLOYMENT_NAME`, `VIDEO_DOWNLOAD_VARIANT`, `SORA_WORKFLOW_ALLOWED_ORIGINS`, etc., via environment variables.
+- When sharing logs or manifests, strip job IDs and personal scripts. Remix/regenerate endpoints rely on stored `video_id` metadata—keep those JSON files intact in `output/` when debugging.

@@ -152,6 +152,8 @@ def _workflow_state_to_record(job: WorkflowJobState) -> dict[str, Any]:
         "stage": job.stage,
         "progress": job.progress,
         "resolution": job.resolution,
+        "script": job.script,
+        "script_path": job.script_path,
         "started_at": _serialize_datetime(job.started_at),
         "completed_at": _serialize_datetime(job.completed_at),
         "error": job.error,
@@ -174,6 +176,8 @@ def _workflow_state_from_record(payload: dict[str, Any]) -> WorkflowJobState:
         stage=payload.get("stage"),
         progress=float(payload.get("progress", 0.0)),
         resolution=payload.get("resolution") or DEFAULT_SORA_RESOLUTION,
+        script=payload.get("script") or "",
+        script_path=payload.get("script_path"),
         started_at=_deserialize_datetime(payload.get("started_at")) or utc_now(),
         completed_at=_deserialize_datetime(payload.get("completed_at")),
         error=payload.get("error"),
@@ -303,6 +307,13 @@ class WorkflowJobStore:
         async with self._lock:
             job = self._require(job_id)
             job.scene_duration = scene_duration
+            self._persist(job)
+
+    async def set_script(self, job_id: str, script_text: str, script_path: Optional[str] = None) -> None:
+        async with self._lock:
+            job = self._require(job_id)
+            job.script = script_text
+            job.script_path = script_path
             self._persist(job)
 
     async def get_resolution(self, job_id: str) -> str:
@@ -490,6 +501,8 @@ class WorkflowJobStore:
             stage=job.stage,
             progress=job.progress,
             resolution=job.resolution,
+            script=job.script,
+            script_path=job.script_path,
             started_at=job.started_at,
             completed_at=job.completed_at,
             error=job.error,
