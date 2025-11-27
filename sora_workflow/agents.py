@@ -10,6 +10,7 @@ from typing import Optional, Sequence
 from agent_framework import Executor, WorkflowContext, handler
 
 from .config import ROOT, SCENE_IMAGE_DIR, logger
+from .first_frames import generate_first_frame_image
 from .images import prepare_scene_start_images
 from .models import (
     ScenePlan,
@@ -124,11 +125,12 @@ class DirectorAgent(Executor):
         if request.generation_mode == "sequence":
             initial_reference = request.sequence_initial_image
             scene_images = [initial_reference] if initial_reference else []
-            note = (
-                "Prepared initial reference frame for sequence chaining."
-                if initial_reference
-                else "Sequence mode active without a starting reference; chaining begins from scene one."
-            )
+            if request.generate_ai_first_frame:
+                note = "Sequence mode active; AI first-frame generation will supply references for each scene."
+            elif initial_reference:
+                note = "Prepared initial reference frame for sequence chaining."
+            else:
+                note = "Sequence mode active without a starting reference; chaining begins from scene one."
             await report_progress(
                 request,
                 "planning",
@@ -146,6 +148,14 @@ class DirectorAgent(Executor):
                 request,
                 "planning",
                 f"Prepared {len(plans)} prompt file(s) and start screens.",
+                progress=0.2,
+            )
+        elif request.generate_ai_first_frame:
+            scene_images = []
+            await report_progress(
+                request,
+                "planning",
+                f"Prepared {len(plans)} prompt file(s); AI first-frame generation enabled.",
                 progress=0.2,
             )
         else:
@@ -352,6 +362,20 @@ class Sora2Agent(Executor):
         ]
 
         input_reference = reference_override
+        first_frame_path: Optional[str] = None
+        if request.generate_ai_first_frame:
+            await report_progress(
+                request,
+                "rendering",
+                f"Generating AI first frame for {plan.label}.",
+            )
+            try:
+                first_frame_path = await generate_first_frame_image(plan, request)
+                input_reference = first_frame_path
+            except Exception as exc:
+                logger.error("First-frame generation failed for %s: %s", plan.label, exc)
+                raise
+
         if not input_reference and request.use_scene_images:
             scene_index = plan.order - 1
             if scene_index < 0 or scene_index >= len(scene_images):
@@ -431,6 +455,7 @@ class Sora2Agent(Executor):
             client_log_path=str(client_log_path),
             prompt_text=plan.prompt_text,
             video_id=video_id,
+            first_frame_path=first_frame_path,
         )
 
 

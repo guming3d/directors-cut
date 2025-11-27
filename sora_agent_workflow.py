@@ -51,6 +51,11 @@ def main() -> None:
         default=SORA_CLIP_DURATION_SECONDS,
         help="Seconds to assign each scene clip (4, 8, or 12).",
     )
+    parser.add_argument(
+        "--ai-first-frames",
+        action="store_true",
+        help="Generate AI first-frame references for each scene before calling Sora2.",
+    )
     args = parser.parse_args()
 
     cli_resolution = (args.resolution or "").strip() or DEFAULT_SORA_RESOLUTION
@@ -65,6 +70,7 @@ def main() -> None:
         resolution=DEFAULT_SORA_RESOLUTION,
         final_video_path=str(args.final_video),
         scene_duration=args.scene_duration,
+        generate_ai_first_frame=args.ai_first_frames,
     )
 
     if args.devui:

@@ -53,6 +53,7 @@ def prepare_request_for_job(job_id: str, payload: StartWorkflowPayload) -> Video
     scenes_dir = job_dir / "scenes"
     tmp_dir = job_dir / "tmp"
     final_video = job_dir / "sora_story_compilation.mp4"
+    first_frame_dir = job_dir / "first_frames"
 
     for path in (prompts_dir, scenes_dir, tmp_dir):
         path.mkdir(parents=True, exist_ok=True)
@@ -70,6 +71,9 @@ def prepare_request_for_job(job_id: str, payload: StartWorkflowPayload) -> Video
     use_scene_images = payload.use_scene_images
     if use_scene_images is None:
         use_scene_images = True
+    generate_ai_first_frame = payload.generate_ai_first_frame
+    if generate_ai_first_frame:
+        use_scene_images = False
 
     generation_mode = payload.generation_mode or "parallel"
     thread_count = payload.threads or int(os.getenv("SORA_WORKFLOW_THREADS", "3"))
@@ -122,6 +126,8 @@ def prepare_request_for_job(job_id: str, payload: StartWorkflowPayload) -> Video
         generation_mode=generation_mode,
         sequence_initial_image=sequence_initial_image,
         refine_with_gpt5=payload.refine_with_gpt5,
+        generate_ai_first_frame=generate_ai_first_frame,
+        first_frame_dir=str(first_frame_dir),
     )
     return request
 

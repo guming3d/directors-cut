@@ -125,6 +125,9 @@ async def start_workflow(payload: StartWorkflowPayload) -> JobStatusResponse:
         await WORKFLOW_JOB_STORE.set_download_variant(job_id, request.download_variant)
         await WORKFLOW_JOB_STORE.set_generation_mode(job_id, request.generation_mode)
         await WORKFLOW_JOB_STORE.set_scene_duration(job_id, request.scene_duration)
+        await WORKFLOW_JOB_STORE.set_generate_ai_first_frame(
+            job_id, request.generate_ai_first_frame
+        )
         try:
             script_text = Path(request.script_path).read_text(encoding="utf-8")
         except OSError:
