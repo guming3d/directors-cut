@@ -475,7 +475,7 @@ async def run_scene_remix_job(job_id: str, scene_order: int, prompt: str) -> Non
         )
 
 
-async def run_scene_regeneration_job(job_id: str, scene_order: int) -> None:
+async def run_scene_regeneration_job(job_id: str, scene_order: int, prompt_override: str | None = None) -> None:
     try:
         scene = await WORKFLOW_JOB_STORE.get_scene(job_id, scene_order)
         resolution = await WORKFLOW_JOB_STORE.get_resolution(job_id)
@@ -484,20 +484,28 @@ async def run_scene_regeneration_job(job_id: str, scene_order: int) -> None:
         logger.warning("Regeneration requested for unknown scene %s/%s: %s", job_id, scene_order, exc)
         return
 
-    prompt_path = Path(scene.prompt_path)
-    if not prompt_path.is_file():
+    job_dir = job_root(job_id)
+    scenes_dir = Path(job_dir) / "scenes"
+    scenes_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    video_path = scenes_dir / f"scene_{scene_order:02d}_regen_{timestamp}.mp4"
+    prompt_dir = Path(scene.prompt_path).parent if scene.prompt_path else (Path(job_dir) / "prompts")
+    prompt_dir.mkdir(parents=True, exist_ok=True)
+    base_prompt_path = Path(scene.prompt_path) if scene.prompt_path else None
+    prompt_override_text = (prompt_override or "").strip()
+    if prompt_override_text:
+        prompt_path = prompt_dir / f"scene_{scene_order:02d}_regen_{timestamp}.txt"
+        prompt_path.write_text(prompt_override_text + "\n", encoding="utf-8")
+    else:
+        prompt_path = base_prompt_path
+
+    if not prompt_path or not prompt_path.is_file():
         await WORKFLOW_JOB_STORE.add_message(
             job_id,
             "failed",
             f"Cannot regenerate {scene.label}; prompt file missing.",
         )
         return
-
-    job_dir = job_root(job_id)
-    scenes_dir = Path(job_dir) / "scenes"
-    scenes_dir.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
-    video_path = scenes_dir / f"scene_{scene_order:02d}_regen_{timestamp}.mp4"
 
     env = os.environ.copy()
     env.update(
@@ -540,10 +548,13 @@ async def run_scene_regeneration_job(job_id: str, scene_order: int) -> None:
             except json.JSONDecodeError:
                 video_id = None
 
-        try:
-            prompt_text = prompt_path.read_text(encoding="utf-8").strip()
-        except OSError:
-            prompt_text = ""
+        if prompt_override_text:
+            prompt_text = prompt_override_text
+        else:
+            try:
+                prompt_text = prompt_path.read_text(encoding="utf-8").strip()
+            except OSError:
+                prompt_text = ""
 
         version = SceneVersionEntry(
             version_id=uuid.uuid4().hex,
@@ -561,7 +572,11 @@ async def run_scene_regeneration_job(job_id: str, scene_order: int) -> None:
             scene_order,
             version,
             make_active=True,
-            message=f"Regenerated {scene.label}.",
+            message=(
+                f"Regenerated {scene.label} with updated prompt."
+                if prompt_override_text
+                else f"Regenerated {scene.label}."
+            ),
         )
     except asyncio.CancelledError:  # pragma: no cover - propagation only
         raise

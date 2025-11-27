@@ -6,6 +6,7 @@ import asyncio
 import os
 import shutil
 import uuid
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,7 +23,12 @@ from .config import (
 )
 from .models import (
     JobStatusResponse,
+    RefineSinglePayload,
+    RefineWorkflowPayload,
+    RefinedPromptResponse,
+    RefinedScriptResponse,
     SceneRemixPayload,
+    SceneRegeneratePayload,
     SceneSelectionPayload,
     SingleVideoJobResponse,
     SingleVideoPayload,
@@ -44,6 +50,7 @@ from .services import (
     run_workflow_job,
 )
 from .stores import SINGLE_VIDEO_STORE, WORKFLOW_JOB_STORE
+from .utils import normalize_script_text
 
 
 fastapi_app = FastAPI(
@@ -64,6 +71,34 @@ fastapi_app.mount(
     StaticFiles(directory=str(OUTPUT_DIR), check_dir=False),
     name="output",
 )
+
+
+@fastapi_app.post("/api/refine/workflow", response_model=RefinedScriptResponse)
+async def refine_workflow_script(payload: RefineWorkflowPayload) -> RefinedScriptResponse:
+    script = (payload.script or "").strip()
+    if not script:
+        raise HTTPException(status_code=400, detail="Script text is required for refinement.")
+    try:
+        refined = await refine_text_with_gpt5(script, mode="workflow")
+    except Exception as exc:  # pragma: no cover - defensive logging
+        logger.warning("GPT-5 refinement failed for workflow preview: %s", exc)
+        raise HTTPException(status_code=503, detail=f"Unable to refine script: {exc}") from exc
+    cleaned = normalize_script_text(refined.strip() or script)
+    return RefinedScriptResponse(refined_script=cleaned)
+
+
+@fastapi_app.post("/api/refine/single", response_model=RefinedPromptResponse)
+async def refine_single_prompt(payload: RefineSinglePayload) -> RefinedPromptResponse:
+    prompt = (payload.prompt or "").strip()
+    if not prompt:
+        raise HTTPException(status_code=400, detail="Prompt text is required for refinement.")
+    try:
+        refined = await refine_text_with_gpt5(prompt, mode="single")
+    except Exception as exc:  # pragma: no cover - defensive logging
+        logger.warning("GPT-5 refinement failed for single prompt preview: %s", exc)
+        raise HTTPException(status_code=503, detail=f"Unable to refine prompt: {exc}") from exc
+    final_prompt = refined.strip() or prompt
+    return RefinedPromptResponse(refined_prompt=final_prompt)
 
 
 @fastapi_app.post("/api/workflows", response_model=JobStatusResponse)
@@ -90,6 +125,11 @@ async def start_workflow(payload: StartWorkflowPayload) -> JobStatusResponse:
         await WORKFLOW_JOB_STORE.set_download_variant(job_id, request.download_variant)
         await WORKFLOW_JOB_STORE.set_generation_mode(job_id, request.generation_mode)
         await WORKFLOW_JOB_STORE.set_scene_duration(job_id, request.scene_duration)
+        try:
+            script_text = Path(request.script_path).read_text(encoding="utf-8")
+        except OSError:
+            script_text = normalize_script_text(payload.script)
+        await WORKFLOW_JOB_STORE.set_script(job_id, script_text, request.script_path)
     except ValueError as exc:
         await WORKFLOW_JOB_STORE.mark_failed(job_id, str(exc))
         raise HTTPException(status_code=400, detail=str(exc))
@@ -268,7 +308,10 @@ async def remix_scene_version(
     "/api/workflows/{job_id}/scenes/{scene_order}/regenerate",
     response_model=JobStatusResponse,
 )
-async def regenerate_scene_version(job_id: str, scene_order: int) -> JobStatusResponse:
+async def regenerate_scene_version(
+    job_id: str, scene_order: int, payload: SceneRegeneratePayload | None = None
+) -> JobStatusResponse:
+    prompt_override = (payload.prompt or "").strip() if payload else None
     try:
         scene = await WORKFLOW_JOB_STORE.get_scene(job_id, scene_order)
     except KeyError as exc:
@@ -277,7 +320,7 @@ async def regenerate_scene_version(job_id: str, scene_order: int) -> JobStatusRe
             detail=f"Scene {scene_order} not found for job {job_id}.",
         ) from exc
     await WORKFLOW_JOB_STORE.add_message(job_id, "rendering", f"Queued regeneration for {scene.label}.")
-    asyncio.create_task(run_scene_regeneration_job(job_id, scene_order))
+    asyncio.create_task(run_scene_regeneration_job(job_id, scene_order, prompt_override or None))
     return await WORKFLOW_JOB_STORE.get_status(job_id)
 
 

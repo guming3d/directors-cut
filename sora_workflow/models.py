@@ -170,6 +170,8 @@ class WorkflowJobState:
     stage: Optional[str] = None
     progress: float = 0.0
     resolution: str = DEFAULT_SORA_RESOLUTION
+    script: str = ""
+    script_path: Optional[str] = None
     started_at: datetime = field(default_factory=utc_now)
     completed_at: Optional[datetime] = None
     error: Optional[str] = None
@@ -294,6 +296,8 @@ class JobStatusResponse(BaseModel):
     final_video_path: Optional[str]
     final_video_url: Optional[str]
     manifest: Optional[dict[str, Any]]
+    script: Optional[str] = None
+    script_path: Optional[str] = None
     messages: list[JobMessageModel]
     scenes: list[SceneStatusModel]
     generation_mode: str = "parallel"
@@ -418,6 +422,15 @@ class SceneRemixPayload(BaseModel):
     )
 
 
+class SceneRegeneratePayload(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    prompt: Optional[str] = Field(
+        default=None,
+        description="Optional updated prompt used when regenerating the scene.",
+    )
+
+
 class SingleVideoRemixPayload(BaseModel):
     prompt: str = Field(
         ..., description="New descriptive prompt for remixing the previous single-video output."
@@ -433,6 +446,24 @@ class SingleVideoSelectionPayload(BaseModel):
     version_id: str = Field(
         ..., alias="versionId", description="Identifier of the single-video version to activate."
     )
+
+
+class RefineWorkflowPayload(BaseModel):
+    script: str
+
+
+class RefineSinglePayload(BaseModel):
+    prompt: str
+
+
+class RefinedScriptResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    refined_script: str = Field(..., alias="refinedScript")
+
+
+class RefinedPromptResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    refined_prompt: str = Field(..., alias="refinedPrompt")
 
 
 @dataclass
@@ -501,6 +532,7 @@ __all__ = [
     "ScenePlan",
     "ScenePlanBatch",
     "SceneRemixPayload",
+    "SceneRegeneratePayload",
     "SceneRender",
     "SceneRenderBatch",
     "SceneSelectionPayload",
@@ -517,5 +549,9 @@ __all__ = [
     "SingleVideoVersionModel",
     "VideoWorkflowRequest",
     "WorkflowJobState",
+    "RefineWorkflowPayload",
+    "RefineSinglePayload",
+    "RefinedPromptResponse",
+    "RefinedScriptResponse",
     "get_active_single_version",
 ]

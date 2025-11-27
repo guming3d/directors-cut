@@ -82,6 +82,8 @@ type JobStatus = {
   final_video_path: string | null;
   final_video_url: string | null;
   manifest: Record<string, unknown> | null;
+  script?: string | null;
+  script_path?: string | null;
   messages: JobMessage[];
   scenes: SceneStatus[];
   generation_mode: "parallel" | "sequence";
@@ -114,6 +116,12 @@ type PromptPreview = {
   sceneLabel: string;
   versionLabel: string;
   prompt: string;
+};
+
+type RefinementReview = {
+  mode: "workflow" | "single";
+  originalText: string;
+  refinedText: string;
 };
 
 const STATUS_TOKENS: Record<string, { label: string; className: string }> = {
@@ -222,6 +230,7 @@ const zhTranslations: Record<string, string> = {
   "Password": "密码",
   "Plan scenes in parallel": "并行规划场景",
   "Planning scenes": "规划场景",
+  "Please provide a storyboard script before starting the workflow.": "请先提供分镜脚本再启动工作流。",
   "Preparing workflow": "准备工作流",
   "Progress": "进度",
   "Production Workspace": "制作工作区",
@@ -230,6 +239,10 @@ const zhTranslations: Record<string, string> = {
   "Recent Single Jobs": "最近的单视频任务",
   "Render scenes concurrently": "并行渲染场景",
   "Chain scenes sequentially": "串行衔接场景",
+  "Clipboard unavailable": "剪贴板不可用",
+  "Copied to clipboard": "已复制到剪贴板",
+  "Copy or update the prompt before proceeding.": "可在继续前复制或修改提示词。",
+  "Copy prompt": "复制提示词",
 
   "Remix prompt": "重制提示词",
   "Remix Scene": "重制场景",
@@ -315,12 +328,14 @@ const zhTranslations: Record<string, string> = {
   "Generate Clip": "生成片段",
   "Reference image (optional)": "参考图（可选）",
   "Reference preview": "参考图预览",
+  "Enter a prompt before requesting a Sora2 video.": "提交前请先填写提示词。",
   "Refine script with GPT-5": "使用 GPT-5 优化剧本",
   "Use GPT-5 to polish the storyboard before planning scenes.": "在规划场景前，用 GPT-5 打磨分镜文案。",
   "Refine prompt with GPT-5": "使用 GPT-5 优化提示词",
   "Let GPT-5 tighten the single-scene prompt before submitting.": "在提交前，让 GPT-5 精炼单条视频的提示词。",
   "Enabled": "已启用",
   "Disabled": "已关闭",
+  "Edit prompt before regenerating": "修改提示词后再重新生成",
   "Last frame reference": "最后一帧参考图",
   "Remix Clip": "重制片段",
   "Remix Single Video": "重制单条视频",
@@ -331,6 +346,22 @@ const zhTranslations: Record<string, string> = {
   "Sending Prompt...": "正在发送提示词…",
   "s": "秒",
   "View system prompt": "查看系统提示词",
+  "View input prompt": "查看输入提示词",
+  "Workflow prompt": "工作流提示词",
+  "Review refined prompt": "审阅优化后的提示词",
+  "GPT-5 refined your storyboard. Edit it below or proceed.": "GPT-5 已优化分镜，你可在继续前进一步编辑。",
+  "GPT-5 refined your prompt. Edit it below or proceed.": "GPT-5 已优化提示词，你可在继续前进一步编辑。",
+  "Refined prompt": "优化后的提示词",
+  "Original input": "原始内容",
+  "Back to edit": "返回编辑",
+  "Proceed to workflow": "继续到工作流",
+  "Proceed to single video": "继续生成单视频",
+  "Prompt details": "提示词详情",
+  "Prompt unavailable.": "提示词不可用。",
+  "Unable to copy prompt": "无法复制提示词",
+  "Unable to refine the storyboard. Continue without refinement or try again.": "无法优化分镜。可直接继续或稍后再试。",
+  "Unable to refine the prompt. Continue without refinement or try again.": "无法优化提示词。可直接继续或稍后再试。",
+  "Submitted prompt": "已提交的提示词",
 };
 
 const translateValue = (language: Language, value: string) => (language === "zh" ? zhTranslations[value] ?? value : value);
@@ -476,6 +507,14 @@ export default function Home() {
     window.localStorage.setItem("sora2-language", language);
   }, [language]);
 
+  useEffect(() => {
+    return () => {
+      if (copyTimeoutRef.current) {
+        clearTimeout(copyTimeoutRef.current);
+      }
+    };
+  }, []);
+
   // Combined workflow state
   const [script, setScript] = useState("");
   const [useSceneImages, setUseSceneImages] = useState(false);
@@ -496,6 +535,7 @@ export default function Home() {
   const [isRecomposing, setIsRecomposing] = useState(false);
   const [refineWorkflowWithGpt5, setRefineWorkflowWithGpt5] = useState(false);
   const [sceneRegenerating, setSceneRegenerating] = useState<Record<number, boolean>>({});
+  const [scenePromptEdits, setScenePromptEdits] = useState<Record<number, string>>({});
 
   // Single video state
   const [singlePrompt, setSinglePrompt] = useState("");
@@ -514,6 +554,10 @@ export default function Home() {
   const [singleRemixSubmitting, setSingleRemixSubmitting] = useState(false);
   const [singleSelectionSubmitting, setSingleSelectionSubmitting] = useState<Record<string, boolean>>({});
   const [promptPreview, setPromptPreview] = useState<PromptPreview | null>(null);
+  const [refinementReview, setRefinementReview] = useState<RefinementReview | null>(null);
+  const [refinementDraft, setRefinementDraft] = useState("");
+  const [copyNotice, setCopyNotice] = useState<string | null>(null);
+  const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Modal states
   const [isCreateWorkflowModalOpen, setIsCreateWorkflowModalOpen] = useState(false);
@@ -664,6 +708,10 @@ export default function Home() {
   }, [activeJobId, isAuthenticated]);
 
   useEffect(() => {
+    setScenePromptEdits({});
+  }, [job?.job_id]);
+
+  useEffect(() => {
     if (!activeSingleJobId || !isAuthenticated) return;
     let disposed = false;
     let interval: ReturnType<typeof setInterval> | undefined;
@@ -747,6 +795,29 @@ export default function Home() {
     }
   };
 
+  const handleCopyPrompt = async (text: string) => {
+    if (copyTimeoutRef.current) {
+      clearTimeout(copyTimeoutRef.current);
+    }
+    if (!text) {
+      setCopyNotice("Prompt unavailable.");
+      return;
+    }
+    if (typeof navigator === "undefined" || !navigator.clipboard) {
+      setCopyNotice("Clipboard unavailable");
+      copyTimeoutRef.current = setTimeout(() => setCopyNotice(null), 1800);
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopyNotice("Copied to clipboard");
+    } catch (err) {
+      console.error(err);
+      setCopyNotice("Unable to copy prompt");
+    }
+    copyTimeoutRef.current = setTimeout(() => setCopyNotice(null), 1800);
+  };
+
 
 
   useEffect(() => {
@@ -822,6 +893,140 @@ export default function Home() {
     }
   };
 
+  const requestWorkflowRefinement = async (content: string) => {
+    const response = await fetch(`${API_BASE}/api/refine/workflow`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ script: content }),
+    });
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+    const data = await response.json();
+    return (data.refinedScript ?? data.refined_script ?? content).trim() || content;
+  };
+
+  const requestSingleRefinement = async (content: string) => {
+    const response = await fetch(`${API_BASE}/api/refine/single`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: content }),
+    });
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+    const data = await response.json();
+    return (data.refinedPrompt ?? data.refined_prompt ?? content).trim() || content;
+  };
+
+  const submitWorkflowRequest = async (scriptText: string, shouldRefine: boolean) => {
+    const trimmedScript = scriptText.trim();
+    if (!trimmedScript) {
+      setCombinedError("Please provide a storyboard script before starting the workflow.");
+      return false;
+    }
+
+    setIsSubmittingCombined(true);
+    setCombinedError(null);
+    try {
+      const payload: Record<string, unknown> = { script: trimmedScript };
+      payload.useSceneImages = useSceneImages;
+      payload.resolution = combinedResolution;
+      payload.generationMode = generationMode;
+      payload.refineWithGpt5 = shouldRefine;
+      payload.sceneDuration = Number(sceneDuration);
+      if (useSceneImages && sceneImageFiles.length) {
+        const uploads = await Promise.all(
+          sceneImageFiles.map(async (file) => ({
+            filename: file.name,
+            dataUrl: await readFileAsDataUrl(file),
+            contentType: file.type,
+          })),
+        );
+        payload.sceneImages = uploads;
+      }
+
+      const response = await fetch(`${API_BASE}/api/workflows`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      const data: JobStatus = await response.json();
+      setJob(data);
+      setActiveJobId(data.job_id);
+      setJobs((prev) => {
+        const others = prev.filter((item) => item.job_id !== data.job_id);
+        return [data, ...others];
+      });
+      setSelectedCombinedJobs(new Set());
+      setIsCreateWorkflowModalOpen(false);
+      return true;
+    } catch (err) {
+      console.error(err);
+      setCombinedError(
+        "Unable to start workflow. Confirm the FastAPI server is running and accepts requests.",
+      );
+      return false;
+    } finally {
+      setIsSubmittingCombined(false);
+    }
+  };
+
+  const submitSingleRequest = async (promptText: string, shouldRefine: boolean) => {
+    const trimmedPrompt = promptText.trim();
+    if (!trimmedPrompt) {
+      setSingleError("Enter a prompt before requesting a Sora2 video.");
+      return false;
+    }
+
+    setIsSubmittingSingle(true);
+    setSingleError(null);
+    try {
+      const payload: Record<string, unknown> = {
+        prompt: trimmedPrompt,
+        resolution: singleResolution,
+        duration: Number(singleDuration),
+        refineWithGpt5: shouldRefine,
+      };
+
+      if (singleReferenceFile) {
+        payload.referenceImage = {
+          filename: singleReferenceFile.name,
+          dataUrl: await readFileAsDataUrl(singleReferenceFile),
+          contentType: singleReferenceFile.type,
+        };
+      }
+
+      const response = await fetch(`${API_BASE}/api/single-videos`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      const data: SingleVideoJob = await response.json();
+      setSingleJob(data);
+      setActiveSingleJobId(data.job_id);
+      setSingleJobs((prev) => {
+        const others = prev.filter((item) => item.job_id !== data.job_id);
+        return [data, ...others];
+      });
+      setSelectedSingleJobs(new Set());
+      setIsCreateSingleVideoModalOpen(false);
+      return true;
+    } catch (err) {
+      console.error(err);
+      setSingleError("Unable to start the single-video job. Verify the backend is reachable.");
+      return false;
+    } finally {
+      setIsSubmittingSingle(false);
+    }
+  };
+
   const submitRemix = async (sceneOrder: number) => {
     if (!job?.job_id) {
       setCombinedError("Start a workflow before remixing scenes.");
@@ -857,16 +1062,20 @@ export default function Home() {
     await submitRemix(sceneOrder);
   };
 
-  const handleRegenerateScene = async (sceneOrder: number) => {
+  const handleRegenerateScene = async (sceneOrder: number, promptOverride?: string) => {
     if (!job?.job_id) {
       setCombinedError("Start a workflow before regenerating scenes.");
       return;
     }
+    const trimmedOverride = promptOverride?.trim() ?? "";
     setCombinedError(null);
     setSceneRegenerating((prev) => ({ ...prev, [sceneOrder]: true }));
     try {
+      const hasOverride = Boolean(trimmedOverride);
       const response = await fetch(`${API_BASE}/api/workflows/${job.job_id}/scenes/${sceneOrder}/regenerate`, {
         method: "POST",
+        headers: hasOverride ? { "Content-Type": "application/json" } : undefined,
+        body: hasOverride ? JSON.stringify({ prompt: trimmedOverride }) : undefined,
       });
       if (!response.ok) {
         throw new Error(await response.text());
@@ -877,6 +1086,9 @@ export default function Home() {
         const others = prev.filter((item) => item.job_id !== data.job_id);
         return [data, ...others];
       });
+      if (hasOverride) {
+        setScenePromptEdits((prev) => ({ ...prev, [sceneOrder]: trimmedOverride }));
+      }
     } catch (err) {
       console.error(err);
       setCombinedError("Failed to regenerate this scene. Confirm the backend is reachable.");
@@ -938,51 +1150,29 @@ export default function Home() {
       return;
     }
 
-    setIsSubmittingCombined(true);
-    setCombinedError(null);
-    try {
-      const payload: Record<string, unknown> = { script: trimmed };
-      payload.useSceneImages = useSceneImages;
-      payload.resolution = combinedResolution;
-      payload.generationMode = generationMode;
-      payload.refineWithGpt5 = refineWorkflowWithGpt5;
-      payload.sceneDuration = Number(sceneDuration);
-      if (useSceneImages && sceneImageFiles.length) {
-        const uploads = await Promise.all(
-          sceneImageFiles.map(async (file) => ({
-            filename: file.name,
-            dataUrl: await readFileAsDataUrl(file),
-            contentType: file.type,
-          })),
+    if (refineWorkflowWithGpt5) {
+      setIsSubmittingCombined(true);
+      setCombinedError(null);
+      try {
+        const refined = await requestWorkflowRefinement(trimmed);
+        setRefinementReview({
+          mode: "workflow",
+          originalText: trimmed,
+          refinedText: refined,
+        });
+        setRefinementDraft(refined || trimmed);
+      } catch (err) {
+        console.error(err);
+        setCombinedError(
+          "Unable to refine the storyboard. Continue without refinement or try again.",
         );
-        payload.sceneImages = uploads;
+      } finally {
+        setIsSubmittingCombined(false);
       }
-
-      const response = await fetch(`${API_BASE}/api/workflows`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!response.ok) {
-        throw new Error(await response.text());
-      }
-      const data: JobStatus = await response.json();
-      setJob(data);
-      setActiveJobId(data.job_id);
-      setJobs((prev) => {
-        const others = prev.filter((item) => item.job_id !== data.job_id);
-        return [data, ...others];
-      });
-      setSelectedCombinedJobs(new Set());
-      setIsCreateWorkflowModalOpen(false);
-    } catch (err) {
-      console.error(err);
-      setCombinedError(
-        "Unable to start workflow. Confirm the FastAPI server is running and accepts requests.",
-      );
-    } finally {
-      setIsSubmittingCombined(false);
+      return;
     }
+
+    await submitWorkflowRequest(trimmed, false);
   };
 
   const handleSingleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -993,47 +1183,27 @@ export default function Home() {
       return;
     }
 
-    setIsSubmittingSingle(true);
-    setSingleError(null);
-    try {
-      const payload: Record<string, unknown> = {
-        prompt: trimmed,
-        resolution: singleResolution,
-        duration: Number(singleDuration),
-        refineWithGpt5: refineSingleWithGpt5,
-      };
-
-      if (singleReferenceFile) {
-        payload.referenceImage = {
-          filename: singleReferenceFile.name,
-          dataUrl: await readFileAsDataUrl(singleReferenceFile),
-          contentType: singleReferenceFile.type,
-        };
+    if (refineSingleWithGpt5) {
+      setIsSubmittingSingle(true);
+      setSingleError(null);
+      try {
+        const refined = await requestSingleRefinement(trimmed);
+        setRefinementReview({
+          mode: "single",
+          originalText: trimmed,
+          refinedText: refined,
+        });
+        setRefinementDraft(refined || trimmed);
+      } catch (err) {
+        console.error(err);
+        setSingleError("Unable to refine the prompt. Continue without refinement or try again.");
+      } finally {
+        setIsSubmittingSingle(false);
       }
-
-      const response = await fetch(`${API_BASE}/api/single-videos`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!response.ok) {
-        throw new Error(await response.text());
-      }
-      const data: SingleVideoJob = await response.json();
-      setSingleJob(data);
-      setActiveSingleJobId(data.job_id);
-      setSingleJobs((prev) => {
-        const others = prev.filter((item) => item.job_id !== data.job_id);
-        return [data, ...others];
-      });
-      setSelectedSingleJobs(new Set());
-      setIsCreateSingleVideoModalOpen(false);
-    } catch (err) {
-      console.error(err);
-      setSingleError("Unable to start the single-video job. Verify the backend is reachable.");
-    } finally {
-      setIsSubmittingSingle(false);
+      return;
     }
+
+    await submitSingleRequest(trimmed, false);
   };
 
   const handleSingleRemixSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -1072,6 +1242,31 @@ export default function Home() {
     } finally {
       setSingleRemixSubmitting(false);
     }
+  };
+
+  const handleRefinementProceed = async () => {
+    if (!refinementReview) return;
+    const finalText =
+      refinementDraft.trim() || refinementReview.refinedText || refinementReview.originalText;
+    if (refinementReview.mode === "workflow") {
+      const success = await submitWorkflowRequest(finalText, false);
+      if (success) {
+        setRefinementReview(null);
+        setCopyNotice(null);
+      }
+    } else {
+      const success = await submitSingleRequest(finalText, false);
+      if (success) {
+        setRefinementReview(null);
+        setCopyNotice(null);
+      }
+    }
+  };
+
+  const handleRefinementDismiss = () => {
+    setRefinementReview(null);
+    setRefinementDraft("");
+    setCopyNotice(null);
   };
 
   const handleSelectSingleVersion = async (versionId: string) => {
@@ -1861,7 +2056,25 @@ export default function Home() {
                     {translate("Mode:")} {translate(job.generation_mode === "sequence" ? "Sequence" : "Parallel")}
                   </p>
                 </div>
-                <span className={`text-xs font-semibold uppercase tracking-wide ${currentStatusToken.className}`}>{currentStatusToken.label}</span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className={`text-xs font-semibold uppercase tracking-wide ${currentStatusToken.className}`}>{currentStatusToken.label}</span>
+                  {job.script?.trim() ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPromptPreview({
+                          sceneLabel: translate("Workflow prompt"),
+                          versionLabel: translate("Storyboard Script"),
+                          prompt: job.script ?? "",
+                        })
+                      }
+                      className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1 text-[11px] font-semibold text-slate-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-800 dark:hover:text-slate-100"
+                    >
+                      <DocumentTextIcon className="h-4 w-4" />
+                      {translate("View input prompt")}
+                    </button>
+                  ) : null}
+                </div>
               </div>
 
               <div className="mt-6 space-y-3">
@@ -1871,7 +2084,7 @@ export default function Home() {
                 </div>
                 <div className="h-2.5 overflow-hidden rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800">
                   <div
-                    className="h-full rounded-full bg-slate-100 transition-all duration-500 ease-out"
+                    className="h-full rounded-full bg-slate-500 dark:bg-slate-200 transition-[width] duration-500 ease-out"
                     style={{ width: `${combinedProgressPercent}%` }}
                   />
                 </div>
@@ -1972,23 +2185,41 @@ export default function Home() {
                             </span>
                           </div>
 
-                          <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-                            <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                              {translate("Video ID:")} {selectedVersion?.video_id ?? translate("Unavailable")}
-                            </p>
-                            <button
-                              type="button"
-                              onClick={() => handleRegenerateScene(scene.order)}
-                              disabled={isRegenerating}
-                              className="inline-flex items-center gap-1 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
-                            >
-                              {isRegenerating ? (
-                                <ArrowPathIcon className="h-3.5 w-3.5 animate-spin" />
-                              ) : (
-                                <ArrowPathIcon className="h-3.5 w-3.5" />
-                              )}
-                              {isRegenerating ? translate("Regenerating...") : translate("Regenerate Scene")}
-                            </button>
+                          <div className="mt-3 space-y-2">
+                            <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                              {translate("Edit prompt before regenerating")}
+                            </label>
+                            <textarea
+                              className="w-full rounded-md border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-xs text-slate-900 dark:text-slate-100 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-800"
+                              value={scenePromptEdits[scene.order] ?? selectedVersion?.prompt ?? ""}
+                              onChange={(event) =>
+                                setScenePromptEdits((prev) => ({ ...prev, [scene.order]: event.target.value }))
+                              }
+                              placeholder={translate("Edit prompt before regenerating")}
+                            />
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                                {translate("Video ID:")} {selectedVersion?.video_id ?? translate("Unavailable")}
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleRegenerateScene(
+                                    scene.order,
+                                    scenePromptEdits[scene.order] ?? selectedVersion?.prompt ?? "",
+                                  )
+                                }
+                                disabled={isRegenerating}
+                                className="inline-flex items-center gap-1 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                {isRegenerating ? (
+                                  <ArrowPathIcon className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <ArrowPathIcon className="h-3.5 w-3.5" />
+                                )}
+                                {isRegenerating ? translate("Regenerating...") : translate("Regenerate Scene")}
+                              </button>
+                            </div>
                           </div>
 
                           {versions.length ? (
@@ -2162,7 +2393,25 @@ export default function Home() {
                     {translate("Single Video Status")}
                   </h2>
                 </div>
-                <span className={`text-xs font-semibold uppercase tracking-wide ${singleStatusToken.className}`}>{singleStatusToken.label}</span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className={`text-xs font-semibold uppercase tracking-wide ${singleStatusToken.className}`}>{singleStatusToken.label}</span>
+                  {singleJob.prompt?.trim() ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPromptPreview({
+                          sceneLabel: translate("Single video prompt"),
+                          versionLabel: translate("Submitted prompt"),
+                          prompt: singleJob.prompt,
+                        })
+                      }
+                      className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1 text-[11px] font-semibold text-slate-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-800 dark:hover:text-slate-100"
+                    >
+                      <DocumentTextIcon className="h-4 w-4" />
+                      {translate("View input prompt")}
+                    </button>
+                  ) : null}
+                </div>
               </div>
 
               <div className="mt-6 space-y-3">
@@ -2172,7 +2421,7 @@ export default function Home() {
                 </div>
                 <div className="h-2.5 overflow-hidden rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800">
                   <div
-                    className="h-full rounded-full bg-slate-100 transition-all duration-500 ease-out"
+                    className="h-full rounded-full bg-slate-500 dark:bg-slate-200 transition-[width] duration-500 ease-out"
                     style={{ width: `${singleProgressPercent}%` }}
                   />
                 </div>
@@ -2362,16 +2611,124 @@ export default function Home() {
         </Modal>
 
         <Modal
+          isOpen={Boolean(refinementReview)}
+          onClose={handleRefinementDismiss}
+          title={translate("Review refined prompt")}
+          maxWidth="max-w-4xl"
+        >
+          {refinementReview ? (
+            <div className="space-y-4">
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                {translate(
+                  refinementReview.mode === "workflow"
+                    ? "GPT-5 refined your storyboard. Edit it below or proceed."
+                    : "GPT-5 refined your prompt. Edit it below or proceed.",
+                )}
+              </p>
+              <div className="space-y-2">
+                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  {translate("Refined prompt")}
+                </label>
+                <textarea
+                  className="min-h-[200px] w-full rounded-md border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-800"
+                  value={refinementDraft}
+                  onChange={(event) => setRefinementDraft(event.target.value)}
+                />
+              </div>
+              <div className="rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 p-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  {translate("Original input")}
+                </p>
+                <div className="mt-2 max-h-32 overflow-y-auto rounded bg-slate-100 dark:bg-slate-800 p-2">
+                  <pre className="whitespace-pre-wrap break-words font-mono text-[12px] leading-relaxed text-slate-800 dark:text-slate-100">
+                    {refinementReview.originalText}
+                  </pre>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                {copyNotice ? (
+                  <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                    {translate(copyNotice)}
+                  </span>
+                ) : (
+                  <span className="text-[11px] text-slate-500">
+                    {translate("Copy or update the prompt before proceeding.")}
+                  </span>
+                )}
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleCopyPrompt(
+                        refinementDraft.trim()
+                          ? refinementDraft
+                          : refinementReview.refinedText || refinementReview.originalText,
+                      )
+                    }
+                    className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-800 dark:hover:text-slate-100"
+                  >
+                    <DocumentTextIcon className="h-4 w-4" />
+                    {translate("Copy prompt")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleRefinementDismiss}
+                    className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-800 dark:hover:text-slate-100"
+                  >
+                    {translate("Back to edit")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleRefinementProceed}
+                    disabled={refinementReview.mode === "workflow" ? isSubmittingCombined : isSubmittingSingle}
+                    className="inline-flex items-center gap-2 rounded-md bg-slate-900 px-4 py-2 text-xs font-semibold text-white dark:bg-slate-100 dark:text-slate-900 shadow-sm shadow-slate-900/50 transition hover:bg-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {refinementReview.mode === "workflow" ? (
+                      isSubmittingCombined ? <ArrowPathIcon className="h-4 w-4 animate-spin" /> : <PaperAirplaneIcon className="h-4 w-4" />
+                    ) : isSubmittingSingle ? (
+                      <ArrowPathIcon className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <PaperAirplaneIcon className="h-4 w-4" />
+                    )}
+                    {translate(refinementReview.mode === "workflow" ? "Proceed to workflow" : "Proceed to single video")}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </Modal>
+
+        <Modal
           isOpen={Boolean(promptPreview)}
-          onClose={() => setPromptPreview(null)}
-          title={translate("System prompt")}
+          onClose={() => {
+            setPromptPreview(null);
+            setCopyNotice(null);
+          }}
+          title={translate("Prompt details")}
           maxWidth="max-w-3xl"
         >
           {promptPreview ? (
             <div className="space-y-3">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                {promptPreview.sceneLabel} • {promptPreview.versionLabel}
-              </p>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  {promptPreview.sceneLabel} • {promptPreview.versionLabel}
+                </p>
+                <div className="flex items-center gap-2">
+                  {copyNotice ? (
+                    <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                      {translate(copyNotice)}
+                    </span>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => handleCopyPrompt(promptPreview.prompt)}
+                    className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-[11px] font-semibold text-slate-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-800 dark:hover:text-slate-100"
+                  >
+                    <DocumentTextIcon className="h-4 w-4" />
+                    {translate("Copy prompt")}
+                  </button>
+                </div>
+              </div>
               <div className="max-h-[50vh] overflow-y-auto rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 p-3">
                 <pre className="whitespace-pre-wrap break-words font-mono text-[13px] leading-relaxed text-slate-800 dark:text-slate-100">
                   {promptPreview.prompt}
