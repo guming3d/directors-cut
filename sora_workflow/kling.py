@@ -21,7 +21,6 @@ from .config import (
     KLING_ACCESS_KEY,
     KLING_API_BASE_URL,
     KLING_API_KEY,
-    KLING_DEFAULT_CFG_SCALE,
     KLING_DEFAULT_MODE,
     KLING_DEFAULT_MODEL_NAME,
     KLING_DOWNLOAD_CHUNK_SIZE,
@@ -113,11 +112,24 @@ def generate_kling_auth_token(*, force_refresh: bool = False) -> tuple[str, str,
         _cached_token = token
         _cached_token_source = source
         _cached_token_expires_at = expires_at
+        ttl = None
+        if expires_at:
+            ttl = max(0, expires_at - now)
+        logger.debug(
+            "Generated Kling auth token via %s (expires in %ss).",
+            source,
+            ttl,
+        )
         return token, source, expires_at
 
 
 def _build_headers() -> dict[str, str]:
-    token, _, _ = generate_kling_auth_token()
+    token, source, expires_at = generate_kling_auth_token()
+    logger.debug(
+        "Building Kling headers (token source=%s, expires_at=%s).",
+        source,
+        expires_at,
+    )
     return {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
@@ -135,6 +147,21 @@ async def _download_video(client: httpx.AsyncClient, url: str, dest: Path) -> No
         with dest.open("wb") as fh:
             async for chunk in response.aiter_bytes(KLING_DOWNLOAD_CHUNK_SIZE):
                 fh.write(chunk)
+
+
+def _summarize_payload(request_payload: dict[str, Any]) -> dict[str, Any]:
+    sanitized = {}
+    for key, value in request_payload.items():
+        if key in {"image", "image_tail", "image_list"}:
+            continue
+        sanitized[key] = value
+    if "image" in request_payload:
+        sanitized["image_present"] = True
+    if "image_tail" in request_payload:
+        sanitized["image_tail_present"] = True
+    if "image_list" in request_payload:
+        sanitized["image_list_count"] = len(request_payload["image_list"] or [])
+    return sanitized
 
 
 async def render_kling_clip(
@@ -168,9 +195,6 @@ async def render_kling_clip(
     if external_task_id:
         request_payload["external_task_id"] = external_task_id
 
-    cfg_value = cfg_scale if cfg_scale is not None else KLING_DEFAULT_CFG_SCALE
-    if cfg_value is not None and _supports_cfg_scale(request_payload["model_name"]):
-        request_payload["cfg_scale"] = max(0.0, min(1.0, cfg_value))
 
     image_paths = [primary_image_path] if primary_image_path else []
     if extra_image_paths:
@@ -188,6 +212,13 @@ async def render_kling_clip(
         if tail_image_path:
             request_payload["image_tail"] = encode_image_to_base64(tail_image_path)
 
+    sanitized_payload = _summarize_payload(request_payload)
+    logger.debug(
+        "Submitting Kling request endpoint=%s payload=%s",
+        endpoint,
+        sanitized_payload,
+    )
+
     timeout = httpx.Timeout(KLING_POLL_TIMEOUT_SECONDS, connect=30.0)
     async with httpx.AsyncClient(
         base_url=base_url,
@@ -195,8 +226,28 @@ async def render_kling_clip(
         timeout=timeout,
     ) as client:
         create_path = f"/v1/videos/{endpoint}"
-        response = await client.post(create_path, json=request_payload)
-        response.raise_for_status()
+        try:
+            print("GUMING debug>>>>")
+            print(request_payload)
+            response = await client.post(create_path, json=request_payload)
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            body = ""
+            if exc.response is not None:
+                body = exc.response.text
+            logger.error(
+                "Kling create request failed status=%s endpoint=%s body=%s",
+                getattr(exc.response, "status_code", "unknown"),
+                endpoint,
+                body,
+            )
+            raise
+        except httpx.RequestError as exc:
+            logger.error("Kling create request encountered network error: %s", exc)
+            raise
+
+        print("GUMING debug<<<<")
+        print(response)
         payload = response.json()
         if payload.get("code") != 0:
             raise KlingAPIError(f"Kling API returned error: {payload}")
@@ -214,11 +265,32 @@ async def render_kling_clip(
             if asyncio.get_event_loop().time() > deadline:
                 raise KlingAPIError(f"Kling task {task_id} timed out while processing.")
             await asyncio.sleep(KLING_POLL_INTERVAL_SECONDS)
-            poll_response = await client.get(poll_path)
-            poll_response.raise_for_status()
+            try:
+                poll_response = await client.get(poll_path)
+                poll_response.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                body = ""
+                if exc.response is not None:
+                    body = exc.response.text
+                logger.error(
+                    "Kling poll request failed status=%s task_id=%s body=%s",
+                    getattr(exc.response, "status_code", "unknown"),
+                    task_id,
+                    body,
+                )
+                raise
+            except httpx.RequestError as exc:
+                logger.error("Kling poll request encountered network error: %s", exc)
+                raise
             poll_payload = poll_response.json()
             poll_data = poll_payload.get("data") or {}
             status = (poll_data.get("task_status") or "").lower()
+            logger.debug(
+                "Kling poll update task_id=%s status=%s info=%s",
+                task_id,
+                status,
+                poll_data.get("task_status_msg"),
+            )
             if status in {"succeed", "failed"}:
                 if status == "failed":
                     message = poll_data.get("task_status_msg") or "Unknown Kling failure."
@@ -235,7 +307,13 @@ async def render_kling_clip(
 
         await _download_video(client, video_url, output_path)
 
-    logger.debug("Kling task %s completed via %s", task_id, endpoint)
+    logger.debug(
+        "Kling task %s completed via %s duration=%s video_url=%s",
+        task_id,
+        endpoint,
+        duration_str,
+        video_url,
+    )
     return KlingRenderResult(
         task_id=task_id,
         endpoint=endpoint,

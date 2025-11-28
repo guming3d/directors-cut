@@ -91,7 +91,7 @@ async def test_invoke_scene_with_kling_backend(tmp_path, monkeypatch):
     plan = ScenePlan(
         order=1,
         label="Scene 1",
-        duration_seconds=4,
+        duration_seconds=5,
         description="Desc",
         prompt_path=str(prompt_path),
         prompt_text="Prompt body",
@@ -108,6 +108,7 @@ async def test_invoke_scene_with_kling_backend(tmp_path, monkeypatch):
         resolution=DEFAULT_SORA_RESOLUTION,
         thread_count=1,
         video_provider="kling",
+        scene_duration=5,
     )
     Path(request.scene_image_dir).mkdir(parents=True, exist_ok=True)
     Path(request.tmp_dir).mkdir(parents=True, exist_ok=True)

@@ -173,7 +173,13 @@ const TABS: { id: TabId; label: string }[] = [
 ];
 const LANGUAGE_OPTIONS: Language[] = ["en", "zh"];
 
-const durationOptions = ["4", "8", "12"] as const;
+const SORA_DURATION_OPTIONS = ["4", "8", "12"] as const;
+const KLING_DURATION_OPTIONS = ["5", "10"] as const;
+type DurationOption =
+  | (typeof SORA_DURATION_OPTIONS)[number]
+  | (typeof KLING_DURATION_OPTIONS)[number];
+const getDurationOptions = (provider: string | null): readonly DurationOption[] =>
+  provider === "kling" ? KLING_DURATION_OPTIONS : SORA_DURATION_OPTIONS;
 const resolutionOptions = ["720x1280", "1280x720", "1920x1080"] as const;
 const VIDEO_PROVIDER_OPTIONS = ["sora2", "kling"] as const;
 
@@ -545,7 +551,7 @@ export default function Home() {
   const [generateAiFirstFrames, setGenerateAiFirstFrames] = useState(false);
   const [generationMode, setGenerationMode] = useState<"parallel" | "sequence">("parallel");
   const [combinedResolution, setCombinedResolution] = useState<(typeof resolutionOptions)[number]>(resolutionOptions[0]);
-  const [sceneDuration, setSceneDuration] = useState<(typeof durationOptions)[number]>(durationOptions[1]);
+  const [sceneDuration, setSceneDuration] = useState<DurationOption>(SORA_DURATION_OPTIONS[1]);
   const [sceneImageFiles, setSceneImageFiles] = useState<File[]>([]);
   const [sceneImagePreviews, setSceneImagePreviews] = useState<string[]>([]);
   const [jobs, setJobs] = useState<JobStatus[]>([]);
@@ -568,7 +574,7 @@ export default function Home() {
   // Single video state
   const [singlePrompt, setSinglePrompt] = useState("");
   const [singleResolution, setSingleResolution] = useState<(typeof resolutionOptions)[number]>(resolutionOptions[0]);
-  const [singleDuration, setSingleDuration] = useState<(typeof durationOptions)[number]>(durationOptions[1]);
+  const [singleDuration, setSingleDuration] = useState<DurationOption>(SORA_DURATION_OPTIONS[1]);
   const [singleReferenceFile, setSingleReferenceFile] = useState<File | null>(null);
   const [singleReferencePreview, setSingleReferencePreview] = useState<string | null>(null);
   const [singleJobs, setSingleJobs] = useState<SingleVideoJob[]>([]);
@@ -886,6 +892,8 @@ export default function Home() {
     workflowVideoProvider ?? availableVideoProviders[0] ?? VIDEO_PROVIDER_OPTIONS[0];
   const singleProviderSelection =
     singleVideoProvider ?? availableVideoProviders[0] ?? VIDEO_PROVIDER_OPTIONS[0];
+  const workflowDurationOptions = getDurationOptions(workflowProviderSelection);
+  const singleDurationOptions = getDurationOptions(singleProviderSelection);
 
 
   const panelCardClass =
@@ -921,6 +929,21 @@ export default function Home() {
     }
     copyTimeoutRef.current = setTimeout(() => setCopyNotice(null), 1800);
   };
+
+
+  useEffect(() => {
+    const allowed = getDurationOptions(workflowProviderSelection);
+    if (!allowed.includes(sceneDuration)) {
+      setSceneDuration(allowed[0]);
+    }
+  }, [workflowProviderSelection, sceneDuration]);
+
+  useEffect(() => {
+    const allowed = getDurationOptions(singleProviderSelection);
+    if (!allowed.includes(singleDuration)) {
+      setSingleDuration(allowed[0]);
+    }
+  }, [singleProviderSelection, singleDuration]);
 
 
 
@@ -1864,7 +1887,7 @@ export default function Home() {
               <div className="space-y-2">
                 <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Scene duration")}</span>
                 <div className="flex gap-2">
-                  {durationOptions.map((option) => {
+                  {workflowDurationOptions.map((option) => {
                     const isActive = sceneDuration === option;
                     return (
                       <label
@@ -1880,7 +1903,7 @@ export default function Home() {
                           name="scene-duration"
                           value={option}
                           checked={isActive}
-                          onChange={(event) => setSceneDuration(event.target.value as (typeof durationOptions)[number])}
+                          onChange={(event) => setSceneDuration(event.target.value as DurationOption)}
                           className="sr-only"
                         />
                         {option}
@@ -2134,7 +2157,7 @@ export default function Home() {
                 <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Duration")}</span
 >
                 <div className="flex gap-2">
-                  {durationOptions.map((option) => {
+                  {singleDurationOptions.map((option) => {
                     const isActive = singleDuration === option;
                     return (
                       <label
@@ -2150,7 +2173,7 @@ export default function Home() {
                           name="single-duration"
                           value={option}
                           checked={isActive}
-                          onChange={(event) => setSingleDuration(event.target.value as (typeof durationOptions)[number])}
+                          onChange={(event) => setSingleDuration(event.target.value as DurationOption)}
                           className="sr-only"
                         />
                         {option}

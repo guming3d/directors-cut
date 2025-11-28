@@ -52,6 +52,8 @@ except ValueError:  # pragma: no cover - defensive fallback
 SUPPORTED_VIDEO_PROVIDERS = ("sora2", "kling")
 _provider_env = (os.getenv("VIDEO_PROVIDER") or "sora2").strip().lower()
 DEFAULT_VIDEO_PROVIDER = _provider_env if _provider_env in SUPPORTED_VIDEO_PROVIDERS else "sora2"
+SORA_ALLOWED_DURATIONS = (4, 8, 12)
+KLING_ALLOWED_DURATIONS = (5, 10)
 
 
 def normalize_video_provider(value: Optional[str]) -> str:
@@ -61,6 +63,11 @@ def normalize_video_provider(value: Optional[str]) -> str:
     if lowered not in SUPPORTED_VIDEO_PROVIDERS:
         return DEFAULT_VIDEO_PROVIDER
     return lowered
+
+
+def allowed_durations_for_provider(value: Optional[str]) -> tuple[int, ...]:
+    provider = normalize_video_provider(value)
+    return KLING_ALLOWED_DURATIONS if provider == "kling" else SORA_ALLOWED_DURATIONS
 
 
 # Kling configuration
@@ -82,7 +89,6 @@ except ValueError:
 KLING_TOKEN_TTL_SECONDS = max(300, _kling_token_ttl)
 KLING_DEFAULT_MODEL_NAME = os.getenv("KLING_MODEL_NAME", "kling-v1")
 KLING_DEFAULT_MODE = os.getenv("KLING_MODE", "std")
-KLING_DEFAULT_CFG_SCALE = max(0.0, min(1.0, _float_env("KLING_CFG_SCALE", "0.5")))
 KLING_POLL_INTERVAL_SECONDS = max(1.0, _float_env("KLING_POLL_INTERVAL", "3"))
 KLING_POLL_TIMEOUT_SECONDS = max(60.0, _float_env("KLING_POLL_TIMEOUT", "900"))
 KLING_DOWNLOAD_CHUNK_SIZE = max(262144, int(os.getenv("KLING_DOWNLOAD_CHUNK_SIZE", "1048576")))
@@ -281,12 +287,12 @@ __all__ = [
     "KLING_ACCESS_KEY",
     "KLING_SECRET_KEY",
     "KLING_TOKEN_TTL_SECONDS",
-    "KLING_DEFAULT_CFG_SCALE",
     "KLING_DEFAULT_MODE",
     "KLING_DEFAULT_MODEL_NAME",
     "KLING_DOWNLOAD_CHUNK_SIZE",
     "KLING_POLL_INTERVAL_SECONDS",
     "KLING_POLL_TIMEOUT_SECONDS",
+    "KLING_ALLOWED_DURATIONS",
     "OUTPUT_DIR",
     "PROMPTS_DIR",
     "RESOLUTION_PATTERN",
@@ -303,6 +309,7 @@ __all__ = [
     "SINGLE_VIDEO_JOBS_DIR",
     "SORA_CLIENT",
     "SORA_CLIP_DURATION_SECONDS",
+    "SORA_ALLOWED_DURATIONS",
     "SORA_PROMPT_GUIDE_URL",
     "SORA_BLOCK_RETRIES",
     "STATIC_URL_PREFIX",
@@ -314,5 +321,6 @@ __all__ = [
     "extract_response_text",
     "logger",
     "normalize_video_provider",
+    "allowed_durations_for_provider",
     "video_client",
 ]

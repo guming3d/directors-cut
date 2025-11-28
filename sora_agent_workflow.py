@@ -6,9 +6,20 @@ import argparse
 import asyncio
 from pathlib import Path
 
-from sora_workflow import DEFAULT_SORA_RESOLUTION, SCRIPT_PATH, create_sora_video_workflow, fastapi_app, workflow
-from sora_workflow.config import FINAL_VIDEO_PATH, SORA_CLIP_DURATION_SECONDS
-from sora_workflow.config import DEFAULT_VIDEO_PROVIDER
+from sora_workflow import (
+    DEFAULT_SORA_RESOLUTION,
+    SCRIPT_PATH,
+    create_sora_video_workflow,
+    fastapi_app,
+    workflow,
+)
+from sora_workflow.config import (
+    DEFAULT_VIDEO_PROVIDER,
+    FINAL_VIDEO_PATH,
+    SORA_CLIP_DURATION_SECONDS,
+    allowed_durations_for_provider,
+    normalize_video_provider,
+)
 from sora_workflow.models import VideoWorkflowRequest
 
 
@@ -48,9 +59,8 @@ def main() -> None:
     parser.add_argument(
         "--scene-duration",
         type=int,
-        choices=(4, 8, 12),
         default=SORA_CLIP_DURATION_SECONDS,
-        help="Seconds to assign each scene clip (4, 8, or 12).",
+        help="Seconds to assign each scene clip (Sora: 4/8/12, Kling: 5/10).",
     )
     parser.add_argument(
         "--ai-first-frames",
@@ -71,6 +81,14 @@ def main() -> None:
             f"--resolution must be {DEFAULT_SORA_RESOLUTION} to align with portrait workflow assets."
         )
 
+    video_provider = normalize_video_provider(args.video_provider)
+    allowed_durations = allowed_durations_for_provider(video_provider)
+    if args.scene_duration not in allowed_durations:
+        allowed_str = ", ".join(str(value) for value in allowed_durations)
+        parser.error(
+            f"{video_provider.upper()} supports scene durations of {allowed_str} seconds."
+        )
+
     request = VideoWorkflowRequest(
         script_path=str(Path(args.script_path)),
         thread_count=args.threads,
@@ -78,7 +96,7 @@ def main() -> None:
         final_video_path=str(args.final_video),
         scene_duration=args.scene_duration,
         generate_ai_first_frame=args.ai_first_frames,
-        video_provider=args.video_provider,
+        video_provider=video_provider,
     )
 
     if args.devui:
