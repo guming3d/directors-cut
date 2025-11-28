@@ -1707,6 +1707,7 @@ export default function Home() {
                         </th>
                         <th scope="col" className="px-6 py-3 text-left">{translate("Job ID")}</th>
                         <th scope="col" className="px-6 py-3 text-left">{translate("Status")}</th>
+                        <th scope="col" className="px-6 py-3 text-left">{translate("Video backend")}</th>
                         <th scope="col" className="px-6 py-3 text-left">{translate("Mode")}</th>
                         <th scope="col" className="px-6 py-3 text-left">{translate("Resolution")}</th>
                         <th scope="col" className="px-6 py-3 text-left">{translate("Progress")}</th>
@@ -1743,6 +1744,9 @@ export default function Home() {
                                 <span className={`text-xs font-semibold uppercase tracking-wide ${token.className}`}>{token.label}</span>
                                 <span className="text-[11px] text-slate-500">{stageLabel(item.stage, language)}</span>
                               </div>
+                            </td>
+                            <td className="px-6 py-4 text-xs text-slate-500 dark:text-slate-400">
+                              {(item.video_provider || "sora2").toUpperCase()}
                             </td>
                             <td className="px-6 py-4 text-xs text-slate-500 dark:text-slate-400">
                               {translate(item.generation_mode === "sequence" ? "Sequence" : "Parallel")}
@@ -1795,6 +1799,7 @@ export default function Home() {
                         </th>
                         <th scope="col" className="px-6 py-3 text-left">{translate("Job ID")}</th>
                         <th scope="col" className="px-6 py-3 text-left">{translate("Status")}</th>
+                        <th scope="col" className="px-6 py-3 text-left">{translate("Video backend")}</th>
                         <th scope="col" className="px-6 py-3 text-left">{translate("Resolution")}</th>
                         <th scope="col" className="px-6 py-3 text-left">{translate("Duration")}</th>
                         <th scope="col" className="px-6 py-3 text-left">{translate("Progress")}</th>
@@ -1831,6 +1836,9 @@ export default function Home() {
                                 <span className={`text-xs font-semibold uppercase tracking-wide ${token.className}`}>{token.label}</span>
                                 <span className="text-[11px] text-slate-500">{stageLabel(item.status, language)}</span>
                               </div>
+                            </td>
+                            <td className="px-6 py-4 text-xs text-slate-500 dark:text-slate-400">
+                              {(item.video_provider || "sora2").toUpperCase()}
                             </td>
                             <td className="px-6 py-4 text-xs text-slate-500 dark:text-slate-400">{item.resolution}</td>
                             <td className="px-6 py-4 text-xs text-slate-500 dark:text-slate-400">
