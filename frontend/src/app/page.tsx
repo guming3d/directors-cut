@@ -297,9 +297,10 @@ const zhTranslations: Record<string, string> = {
   "Single video prompt": "单视频提示词",
   "Single Video Status": "单视频状态",
   "Sora Agent Production Dashboard": "Sora 代理制作看板",
-  "Sora Agent Workflow logo": "Sora 工作流徽标",
+  "Streams Agent Workflow logo": "Streams 工作流徽标",
   "Storyboard Script": "分镜脚本",
-  "Sora2 Studio": "Sora2 工作室",
+  "Streams Studio": "Streams 工作室",
+  "video generation workflow by AI": "AI 视频生成工作流",
   "Start Workflow": "启动工作流",
   "Starting Workflow...": "正在启动工作流…",
   "Start a workflow before regenerating scenes.": "请先启动工作流再重新生成场景。",
@@ -1550,7 +1551,10 @@ export default function Home() {
       <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-950 px-4 py-10 text-slate-900 dark:text-slate-100">
         <div className="w-full max-w-md rounded-md border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 shadow-2xl">
           <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-500">{translate("Sora2 Studio")}</p>
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-500">{translate("Streams Studio")}</p>
+              <p className="text-[9px] text-slate-400">{translate("video generation workflow by AI")}</p>
+            </div>
             <div className="flex items-center gap-3"><ThemeToggle /><LanguageToggle /></div>
           </div>
           <div className="space-y-2 text-center">
@@ -1611,15 +1615,15 @@ export default function Home() {
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-3">
             <Image
-              src="/sora2_logo.jpg"
-              alt={translate("Sora Agent Workflow logo")}
+              src={theme === "dark" ? "/streams_logo_dark_background.png" : "/streams_logo_white_background.png"}
+              alt={translate("Streams Agent Workflow logo")}
               width={40}
               height={40}
               className="h-10 w-10 rounded border border-slate-300 object-cover shadow-sm shadow-black/50 dark:border-slate-700"
               priority
             />
             <div>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-500">{translate("Sora2 Studio")}</p>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-500">{translate("Streams Studio")}</p>
             </div>
           </div>
           <div className="h-6 w-px bg-slate-400 dark:bg-slate-600" />

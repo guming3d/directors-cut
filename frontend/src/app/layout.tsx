@@ -13,12 +13,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Sora Agent Workflow Dashboard",
+  title: "Streams Studio",
   description:
-    "Launch Sora multi-agent video workflows and monitor progress in real time.",
+    "video generation workflow by AI",
   icons: {
-    icon: "/sora2_logo.jpg",
-    shortcut: "/sora2_logo.jpg",
+    icon: "/streams_logo_white_background.png",
+    shortcut: "/streams_logo_white_background.png",
   },
 };
 
