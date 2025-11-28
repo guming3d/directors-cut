@@ -158,9 +158,12 @@ logger = _configure_logging()
 def azure_text_client() -> AzureOpenAI | None:
     """Create or reuse a shared Azure OpenAI client for GPT refinement."""
 
-    print(f"DEBUG: DIRECTOR_REFINEMENT_DEPLOYMENT = {DIRECTOR_REFINEMENT_DEPLOYMENT!r}")
-    print(f"DEBUG: GPT5_REFINEMENT_DEPLOYMENT = {GPT5_REFINEMENT_DEPLOYMENT!r}")
-    print(f"DEBUG: AZURE_TEXT_ENDPOINT = {AZURE_TEXT_ENDPOINT!r}")
+    logger.debug(
+        "Azure refinement config deployments director=%s gpt5=%s endpoint=%s",
+        DIRECTOR_REFINEMENT_DEPLOYMENT,
+        GPT5_REFINEMENT_DEPLOYMENT,
+        AZURE_TEXT_ENDPOINT,
+    )
 
     if not (DIRECTOR_REFINEMENT_DEPLOYMENT or GPT5_REFINEMENT_DEPLOYMENT):
         return None
@@ -174,18 +177,16 @@ def azure_text_client() -> AzureOpenAI | None:
     except NameError:
         client = None
 
-    print(f"DEBUG: _TEXT_CLIENT exists = {client is not None}")
-
     if client is None:
+        logger.debug("Creating AzureOpenAI client for refinement")
         client = AzureOpenAI(
             api_key=AZURE_TEXT_API_KEY,
             azure_endpoint=AZURE_TEXT_ENDPOINT,
             api_version=AZURE_TEXT_API_VERSION,
         )
         _TEXT_CLIENT = client  # type: ignore[assignment]
-        print("DEBUG: Created new AzureOpenAI client")
     else:
-        print("DEBUG: Reusing existing AzureOpenAI client")
+        logger.debug("Reusing cached AzureOpenAI client for refinement")
     
     return client
 
