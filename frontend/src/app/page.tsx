@@ -1832,7 +1832,7 @@ export default function Home() {
               onChange={(event) => setScript(event.target.value)}
             />
 
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-4 sm:grid-cols-3">
               <div className="space-y-2">
                 <label className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Video backend")}</label>
                 <select
@@ -1862,70 +1862,6 @@ export default function Home() {
                 </select>
               </div>
               <div className="space-y-2">
-                <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Scene references")}</span>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setUseSceneImages((value) => {
-                      const next = !value;
-                      if (next) {
-                        setGenerateAiFirstFrames(false);
-                      } else {
-                        setSceneImageFiles([]);
-                        setSceneImagePreviews([]);
-                      }
-                      return next;
-                    })
-                  }
-                  className={`flex items-center gap-3 rounded border px-4 py-3 text-sm font-semibold transition ${
-                    useSceneImages
-                      ? "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm"
-                      : "border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200"
-                  }`}
-                >
-                  <span className={`inline-flex h-5 w-10 items-center rounded-full border transition ${
-                    useSceneImages
-                      ? "border-slate-500 bg-slate-600"
-                      : "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700"
-                  }`}>
-                    <span
-                      className={`ml-1 inline-block h-3.5 w-3.5 rounded-full bg-slate-200 transition ${
-                        useSceneImages ? "translate-x-4" : "translate-x-0"
-                      }`}
-                    />
-                  </span>
-                  {useSceneImages ? translate("Scene images enabled") : translate("No scene references")}
-                </button>
-              </div>
-              <div className="space-y-2">
-                <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("AI first frames")}</span>
-                <button
-                  type="button"
-                  onClick={toggleGenerateAiFirstFrames}
-                  className={`flex items-center gap-3 rounded border px-4 py-3 text-sm font-semibold transition ${
-                    generateAiFirstFrames
-                      ? "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm"
-                      : "border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200"
-                  }`}
-                >
-                  <span className={`inline-flex h-5 w-10 items-center rounded-full border transition ${
-                    generateAiFirstFrames
-                      ? "border-slate-500 bg-slate-600"
-                      : "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700"
-                  }`}>
-                    <span
-                      className={`ml-1 inline-block h-3.5 w-3.5 rounded-full bg-slate-200 transition ${
-                        generateAiFirstFrames ? "translate-x-4" : "translate-x-0"
-                      }`}
-                    />
-                  </span>
-                  {translate(generateAiFirstFrames ? "AI start stills enabled" : "No AI first frames")}
-                </button>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  {translate("Use GPT-5 + gpt-image-1 to seed each scene.")}
-                </p>
-              </div>
-              <div className="space-y-2">
                 <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Scene duration")}</span>
                 <div className="flex gap-2">
                   {durationOptions.map((option) => {
@@ -1953,6 +1889,73 @@ export default function Home() {
                     );
                   })}
                 </div>
+              </div>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Scene references")}</span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setUseSceneImages((value) => {
+                      const next = !value;
+                      if (next) {
+                        setGenerateAiFirstFrames(false);
+                      } else {
+                        setSceneImageFiles([]);
+                        setSceneImagePreviews([]);
+                      }
+                      return next;
+                    })
+                  }
+                  className={`flex w-full items-center gap-3 rounded border px-4 py-3 text-sm font-semibold transition ${
+                    useSceneImages
+                      ? "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm"
+                      : "border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200"
+                  }`}
+                >
+                  <span className={`inline-flex h-5 w-10 items-center rounded-full border transition ${
+                    useSceneImages
+                      ? "border-slate-500 bg-slate-600"
+                      : "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700"
+                  }`}>
+                    <span
+                      className={`ml-1 inline-block h-3.5 w-3.5 rounded-full bg-slate-200 transition ${
+                        useSceneImages ? "translate-x-4" : "translate-x-0"
+                      }`}
+                    />
+                  </span>
+                  {useSceneImages ? translate("Scene images enabled") : translate("No scene references")}
+                </button>
+              </div>
+              <div className="space-y-2">
+                <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("AI first frames")}</span>
+                <button
+                  type="button"
+                  onClick={toggleGenerateAiFirstFrames}
+                  className={`flex w-full items-center gap-3 rounded border px-4 py-3 text-sm font-semibold transition ${
+                    generateAiFirstFrames
+                      ? "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm"
+                      : "border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200"
+                  }`}
+                >
+                  <span className={`inline-flex h-5 w-10 items-center rounded-full border transition ${
+                    generateAiFirstFrames
+                      ? "border-slate-500 bg-slate-600"
+                      : "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700"
+                  }`}>
+                    <span
+                      className={`ml-1 inline-block h-3.5 w-3.5 rounded-full bg-slate-200 transition ${
+                        generateAiFirstFrames ? "translate-x-4" : "translate-x-0"
+                      }`}
+                    />
+                  </span>
+                  {translate(generateAiFirstFrames ? "AI start stills enabled" : "No AI first frames")}
+                </button>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {translate("Use GPT-5 + gpt-image-1 to seed each scene.")}
+                </p>
               </div>
             </div>
 
