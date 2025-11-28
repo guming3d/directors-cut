@@ -219,8 +219,6 @@ async def ensure_scene_headers(
     refined = await refine_text_with_gpt5(
         normalized, mode="workflow", video_provider=video_provider
     )
-    print("---------------------------------")
-    print(refined)
     refined = refined.strip() or normalized
     refined_normalized = _normalize_scene_headers(normalize_script_text(refined))
     has_headers = _contains_scene_headers(refined_normalized)
@@ -273,7 +271,6 @@ async def refine_text_with_gpt5(
             max_output_tokens=max_tokens,
         )
         output_text = extract_response_text(response)
-        print(response)
         logger.info("GPT-5 refinement response (mode=%s): %s", mode, output_text)
         return output_text
 
