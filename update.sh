@@ -105,6 +105,15 @@ update_backend() {
   if [[ -n "${OPENAI_API_KEY:-}" ]]; then
     BACKEND_SECRETS+=("openai-api-key=$OPENAI_API_KEY")
   fi
+  if [[ -n "${KLING_ACCESS_KEY:-}" ]]; then
+    BACKEND_SECRETS+=("kling-access-key=$KLING_ACCESS_KEY")
+  fi
+  if [[ -n "${KLING_SECRET_KEY:-}" ]]; then
+    BACKEND_SECRETS+=("kling-secret-key=$KLING_SECRET_KEY")
+  fi
+  if [[ -n "${KLING_API_KEY:-}" ]]; then
+    BACKEND_SECRETS+=("kling-api-key=$KLING_API_KEY")
+  fi
 
   az containerapp secret set \
     --name "$AZURE_CONTAINERAPPS_BACKEND" \
@@ -136,6 +145,23 @@ update_backend() {
   [[ -n "${SORA_WORKFLOW_THREADS:-}" ]] && BACKEND_ENV_VARS+=("SORA_WORKFLOW_THREADS=$SORA_WORKFLOW_THREADS")
   [[ -n "${VIDEO_DOWNLOAD_VARIANT:-}" ]] && BACKEND_ENV_VARS+=("VIDEO_DOWNLOAD_VARIANT=$VIDEO_DOWNLOAD_VARIANT")
   [[ -n "${AZURE_OPENAI_API_VERSION:-}" ]] && BACKEND_ENV_VARS+=("AZURE_OPENAI_API_VERSION=$AZURE_OPENAI_API_VERSION")
+  [[ -n "${KLING_API_BASE_URL:-}" ]] && BACKEND_ENV_VARS+=("KLING_API_BASE_URL=$KLING_API_BASE_URL")
+  [[ -n "${KLING_TOKEN_TTL:-}" ]] && BACKEND_ENV_VARS+=("KLING_TOKEN_TTL=$KLING_TOKEN_TTL")
+  [[ -n "${KLING_MODEL_NAME:-}" ]] && BACKEND_ENV_VARS+=("KLING_MODEL_NAME=$KLING_MODEL_NAME")
+  [[ -n "${KLING_MODE:-}" ]] && BACKEND_ENV_VARS+=("KLING_MODE=$KLING_MODE")
+  [[ -n "${KLING_CFG_SCALE:-}" ]] && BACKEND_ENV_VARS+=("KLING_CFG_SCALE=$KLING_CFG_SCALE")
+  [[ -n "${KLING_POLL_INTERVAL:-}" ]] && BACKEND_ENV_VARS+=("KLING_POLL_INTERVAL=$KLING_POLL_INTERVAL")
+  [[ -n "${KLING_POLL_TIMEOUT:-}" ]] && BACKEND_ENV_VARS+=("KLING_POLL_TIMEOUT=$KLING_POLL_TIMEOUT")
+  [[ -n "${KLING_DOWNLOAD_CHUNK_SIZE:-}" ]] && BACKEND_ENV_VARS+=("KLING_DOWNLOAD_CHUNK_SIZE=$KLING_DOWNLOAD_CHUNK_SIZE")
+  if [[ -n "${KLING_ACCESS_KEY:-}" ]]; then
+    BACKEND_ENV_VARS+=("KLING_ACCESS_KEY=secretref:kling-access-key")
+  fi
+  if [[ -n "${KLING_SECRET_KEY:-}" ]]; then
+    BACKEND_ENV_VARS+=("KLING_SECRET_KEY=secretref:kling-secret-key")
+  fi
+  if [[ -n "${KLING_API_KEY:-}" ]]; then
+    BACKEND_ENV_VARS+=("KLING_API_KEY=secretref:kling-api-key")
+  fi
   if [[ -n "${OPENAI_API_KEY:-}" ]]; then
     BACKEND_ENV_VARS+=("OPENAI_API_KEY=secretref:openai-api-key")
   fi
