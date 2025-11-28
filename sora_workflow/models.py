@@ -9,10 +9,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .config import (
     DEFAULT_SORA_RESOLUTION,
+    DEFAULT_VIDEO_PROVIDER,
     FINAL_VIDEO_PATH,
     OUTPUT_DIR,
     PROMPTS_DIR,
@@ -20,7 +21,10 @@ from .config import (
     SCENES_DIR,
     SCRIPT_PATH,
     SORA_CLIENT,
+    SORA_CLIP_DURATION_SECONDS,
+    SORA_BLOCK_RETRIES,
     TMP_DIR,
+    allowed_durations_for_provider,
 )
 from .utils import utc_now
 
@@ -40,8 +44,15 @@ class EncodedImagePayload(BaseModel):
 class VideoWorkflowRequest(BaseModel):
     """Configuration for the multi-agent video workflow."""
 
+    model_config = ConfigDict(populate_by_name=True)
+
     script_path: str = Field(
         default=str(SCRIPT_PATH), description="Path to the master video script."
+    )
+    video_provider: Literal["sora2", "kling"] = Field(
+        default=DEFAULT_VIDEO_PROVIDER,
+        alias="videoProvider",
+        description="Video backend to use for rendering (sora2 or kling).",
     )
     output_dir: str = Field(default=str(OUTPUT_DIR), description="Root output folder.")
     prompt_dir: str = Field(
@@ -68,15 +79,32 @@ class VideoWorkflowRequest(BaseModel):
         default=True,
         description="Whether to include scene start screen images when rendering Sora clips.",
     )
+    generate_ai_first_frame: bool = Field(
+        default=False,
+        description="Whether to generate AI first-frame images for each scene before calling Sora.",
+    )
+    first_frame_dir: Optional[str] = Field(
+        default=None,
+        description="Directory to store AI-generated first-frame stills for each scene.",
+    )
     resolution: str = Field(
         default=DEFAULT_SORA_RESOLUTION,
         description="Clip resolution string, e.g. 720x1280.",
+    )
+    scene_duration: int = Field(
+        default=SORA_CLIP_DURATION_SECONDS,
+        description="Scene duration in seconds (Sora: 4/8/12, Kling: 5/10).",
     )
     thread_count: int = Field(
         default=int(os.getenv("SORA_WORKFLOW_THREADS", "3")),
         ge=1,
         le=10,
         description="Parallel Sora job count.",
+    )
+    blocked_retry_attempts: int = Field(
+        default=SORA_BLOCK_RETRIES,
+        ge=1,
+        description="How many times to retry a scene when Sora blocks a request.",
     )
     download_variant: str = Field(
         default=os.getenv("VIDEO_DOWNLOAD_VARIANT", "video"),
@@ -94,6 +122,20 @@ class VideoWorkflowRequest(BaseModel):
         default=None,
         description="Optional prepared PNG used to seed the first clip when generation_mode=sequence.",
     )
+    refine_with_gpt5: bool = Field(
+        default=False,
+        description="Indicates whether GPT-5 storyboard refinement was requested.",
+    )
+
+    @model_validator(mode="after")
+    def validate_scene_duration(self) -> "VideoWorkflowRequest":
+        allowed = allowed_durations_for_provider(self.video_provider)
+        if self.scene_duration not in allowed:
+            allowed_str = ", ".join(str(value) for value in allowed)
+            raise ValueError(
+                f"{self.video_provider.upper()} supports scene durations of {allowed_str} seconds."
+            )
+        return self
 
 
 @dataclass
@@ -116,6 +158,7 @@ class SceneVersionEntry:
     source: str = "original"
     created_at: datetime = field(default_factory=utc_now)
     last_frame_path: Optional[str] = None
+    first_frame_path: Optional[str] = None
 
 
 @dataclass
@@ -130,6 +173,7 @@ class SceneStatus:
     selected_version_id: Optional[str] = None
     versions: list[SceneVersionEntry] = field(default_factory=list)
     last_frame_path: Optional[str] = None
+    first_frame_path: Optional[str] = None
 
     def set_selected_version(self, version: SceneVersionEntry) -> None:
         self.selected_version_id = version.version_id
@@ -137,6 +181,7 @@ class SceneStatus:
         self.log_path = version.log_path
         self.client_log_path = version.client_log_path
         self.last_frame_path = version.last_frame_path
+        self.first_frame_path = version.first_frame_path
 
     def get_version(self, version_id: Optional[str]) -> SceneVersionEntry:
         if version_id:
@@ -155,6 +200,9 @@ class WorkflowJobState:
     stage: Optional[str] = None
     progress: float = 0.0
     resolution: str = DEFAULT_SORA_RESOLUTION
+    video_provider: str = DEFAULT_VIDEO_PROVIDER
+    script: str = ""
+    script_path: Optional[str] = None
     started_at: datetime = field(default_factory=utc_now)
     completed_at: Optional[datetime] = None
     error: Optional[str] = None
@@ -166,6 +214,8 @@ class WorkflowJobState:
     scenes: list[SceneStatus] = field(default_factory=list)
     download_variant: str = field(default_factory=lambda: os.getenv("VIDEO_DOWNLOAD_VARIANT", "video"))
     generation_mode: str = "parallel"
+    scene_duration: int = SORA_CLIP_DURATION_SECONDS
+    generate_ai_first_frame: bool = False
 
     def add_message(self, stage: str, text: str) -> None:
         self.messages.append(ProgressMessage(timestamp=utc_now(), stage=stage, text=text))
@@ -192,6 +242,7 @@ class SingleVideoJobState:
     resolution: str
     duration: int
     download_variant: str
+    video_provider: str = DEFAULT_VIDEO_PROVIDER
     status: str = "queued"
     progress: float = 0.0
     started_at: datetime = field(default_factory=utc_now)
@@ -227,6 +278,8 @@ class SingleVideoJobConfig:
     video_path: Path
     reference_image_path: Optional[Path]
     job_dir: Path
+    video_provider: str = DEFAULT_VIDEO_PROVIDER
+    reference_image_paths: list[Path] = field(default_factory=list)
 
 
 class JobMessageModel(BaseModel):
@@ -249,6 +302,8 @@ class SceneVersionModel(BaseModel):
     created_at: datetime
     last_frame_path: Optional[str] = None
     last_frame_url: Optional[str] = None
+    first_frame_path: Optional[str] = None
+    first_frame_url: Optional[str] = None
 
 
 class SceneStatusModel(BaseModel):
@@ -264,6 +319,8 @@ class SceneStatusModel(BaseModel):
     versions: list[SceneVersionModel] = Field(default_factory=list)
     last_frame_path: Optional[str] = None
     last_frame_url: Optional[str] = None
+    first_frame_path: Optional[str] = None
+    first_frame_url: Optional[str] = None
 
 
 class JobStatusResponse(BaseModel):
@@ -271,6 +328,7 @@ class JobStatusResponse(BaseModel):
     status: str
     stage: Optional[str]
     progress: float
+    video_provider: str = DEFAULT_VIDEO_PROVIDER
     resolution: str
     started_at: datetime
     completed_at: Optional[datetime]
@@ -278,9 +336,13 @@ class JobStatusResponse(BaseModel):
     final_video_path: Optional[str]
     final_video_url: Optional[str]
     manifest: Optional[dict[str, Any]]
+    script: Optional[str] = None
+    script_path: Optional[str] = None
     messages: list[JobMessageModel]
     scenes: list[SceneStatusModel]
     generation_mode: str = "parallel"
+    scene_duration: int = SORA_CLIP_DURATION_SECONDS
+    generate_ai_first_frame: bool = False
 
 
 class SingleVideoVersionModel(BaseModel):
@@ -302,6 +364,7 @@ class SingleVideoJobResponse(BaseModel):
     status: str
     progress: float
     prompt: str
+    video_provider: str = DEFAULT_VIDEO_PROVIDER
     resolution: str
     duration: int
     download_variant: str
@@ -325,6 +388,11 @@ class StartWorkflowPayload(BaseModel):
     script: str = Field(
         ..., description="Storyboard script content for the Director agent to process."
     )
+    video_provider: Literal["sora2", "kling"] = Field(
+        default=DEFAULT_VIDEO_PROVIDER,
+        alias="videoProvider",
+        description="Video backend to use when rendering scenes.",
+    )
     threads: Optional[int] = Field(
         default=None, ge=1, le=10, description="Override concurrent Sora render threads."
     )
@@ -340,6 +408,11 @@ class StartWorkflowPayload(BaseModel):
         default=None,
         alias="useSceneImages",
         description="Set to false to skip providing scene start screen images.",
+    )
+    generate_ai_first_frame: bool = Field(
+        default=False,
+        alias="generateAiFirstFrame",
+        description="Generate AI first-frame still images for each scene before calling Sora2.",
     )
     download_variant: Optional[str] = Field(
         default=None,
@@ -360,6 +433,21 @@ class StartWorkflowPayload(BaseModel):
         alias="refineWithGpt5",
         description="When true, runs the submitted script through GPT-5 before planning scenes.",
     )
+    scene_duration: int = Field(
+        default=SORA_CLIP_DURATION_SECONDS,
+        alias="sceneDuration",
+        description="Scene runtime in seconds (Sora: 4/8/12, Kling: 5/10).",
+    )
+
+    @model_validator(mode="after")
+    def validate_scene_duration(self) -> "StartWorkflowPayload":
+        allowed = allowed_durations_for_provider(self.video_provider)
+        if self.scene_duration not in allowed:
+            allowed_str = ", ".join(str(value) for value in allowed)
+            raise ValueError(
+                f"{self.video_provider.upper()} supports scene durations of {allowed_str} seconds."
+            )
+        return self
 
 
 class SingleVideoPayload(BaseModel):
@@ -370,8 +458,14 @@ class SingleVideoPayload(BaseModel):
         default=DEFAULT_SORA_RESOLUTION,
         description="Output resolution (e.g. 720x1280).",
     )
-    duration: Literal[4, 8, 12] = Field(
-        default=8, description="Video duration in seconds (allowed: 4, 8, 12)."
+    video_provider: Literal["sora2", "kling"] = Field(
+        default=DEFAULT_VIDEO_PROVIDER,
+        alias="videoProvider",
+        description="Video backend to use for this single clip (sora2 or kling).",
+    )
+    duration: int = Field(
+        default=8,
+        description="Video duration in seconds (Sora: 4/8/12, Kling: 5/10).",
     )
     download_variant: Optional[str] = Field(
         default=None,
@@ -383,16 +477,40 @@ class SingleVideoPayload(BaseModel):
         alias="referenceImage",
         description="Optional input reference image encoded as a base64 data URL.",
     )
+    reference_images: Optional[list[EncodedImagePayload]] = Field(
+        default=None,
+        alias="referenceImages",
+        description="Optional list of additional reference still images (used when Kling multi-image runs are desired).",
+    )
     refine_with_gpt5: bool = Field(
         default=False,
         alias="refineWithGpt5",
         description="When true, uses GPT-5 to refine the prompt before submitting to Sora2.",
     )
 
+    @model_validator(mode="after")
+    def validate_duration(self) -> "SingleVideoPayload":
+        allowed = allowed_durations_for_provider(self.video_provider)
+        if self.duration not in allowed:
+            allowed_str = ", ".join(str(value) for value in allowed)
+            raise ValueError(
+                f"{self.video_provider.upper()} supports single clip durations of {allowed_str} seconds."
+            )
+        return self
+
 
 class SceneRemixPayload(BaseModel):
     prompt: str = Field(
         ..., description="New descriptive prompt to remix the previously generated scene."
+    )
+
+
+class SceneRegeneratePayload(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    prompt: Optional[str] = Field(
+        default=None,
+        description="Optional updated prompt used when regenerating the scene.",
     )
 
 
@@ -406,6 +524,36 @@ class SceneSelectionPayload(BaseModel):
     version_id: str = Field(
         ..., alias="versionId", description="Identifier of the scene version to use in the final cut."
     )
+
+class SingleVideoSelectionPayload(BaseModel):
+    version_id: str = Field(
+        ..., alias="versionId", description="Identifier of the single-video version to activate."
+    )
+
+
+class RefineWorkflowPayload(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    script: str
+    video_provider: Literal["sora2", "kling"] = Field(
+        default=DEFAULT_VIDEO_PROVIDER,
+        alias="videoProvider",
+        description="Video backend that controls which GPT-5 template is used while refining.",
+    )
+
+
+class RefineSinglePayload(BaseModel):
+    prompt: str
+
+
+class RefinedScriptResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    refined_script: str = Field(..., alias="refinedScript")
+
+
+class RefinedPromptResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    refined_prompt: str = Field(..., alias="refinedPrompt")
 
 
 @dataclass
@@ -447,6 +595,7 @@ class SceneRender:
     video_id: Optional[str] = None
     version_source: str = "original"
     last_frame_path: Optional[str] = None
+    first_frame_path: Optional[str] = None
 
 
 @dataclass
@@ -474,6 +623,7 @@ __all__ = [
     "ScenePlan",
     "ScenePlanBatch",
     "SceneRemixPayload",
+    "SceneRegeneratePayload",
     "SceneRender",
     "SceneRenderBatch",
     "SceneSelectionPayload",
@@ -490,5 +640,9 @@ __all__ = [
     "SingleVideoVersionModel",
     "VideoWorkflowRequest",
     "WorkflowJobState",
+    "RefineWorkflowPayload",
+    "RefineSinglePayload",
+    "RefinedPromptResponse",
+    "RefinedScriptResponse",
     "get_active_single_version",
 ]

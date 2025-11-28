@@ -5,20 +5,27 @@ from __future__ import annotations
 import asyncio
 import os
 import re
+from functools import lru_cache
 from typing import Literal
 
 from .config import (
+    DEFAULT_VIDEO_PROVIDER,
     DIRECTOR_REFINEMENT_DEPLOYMENT,
     GPT5_REFINEMENT_DEPLOYMENT,
     HEADER_PATTERN,
-    RESOLUTION_PATTERN,
-    SORA_CLIP_DURATION_SECONDS,
+    ROOT,
     SORA_PROMPT_GUIDE_URL,
-    logger,
     azure_text_client,
     extract_response_text,
+    logger,
+    normalize_video_provider,
 )
-from .utils import slugify
+from .utils import normalize_script_text, slugify
+
+HEADER_LINE_PATTERN = re.compile(
+    r"^\**\s*Scene\s+(\d+)(?:\s*[(:\-]\s*(.*?))?\s*\**$",
+    re.IGNORECASE,
+)
 
 
 def parse_script(script_text: str):
@@ -56,39 +63,85 @@ def parse_script(script_text: str):
     return drafts
 
 
-def _orientation_suffix(resolution: str) -> str:
+def _normalize_scene_headers(script_text: str) -> str:
+    """Convert loose scene headers into the bold format expected by parse_script."""
+
+    normalized: list[str] = []
+    for line in script_text.splitlines():
+        stripped = line.strip()
+        if HEADER_PATTERN.match(stripped):
+            normalized.append(stripped)
+            continue
+
+        match = HEADER_LINE_PATTERN.match(stripped)
+        if not match:
+            normalized.append(line)
+            continue
+
+        number = match.group(1)
+        raw_title = match.group(2) or ""
+        title = raw_title.strip(" )-") or f"Scene {number}"
+        normalized.append(f"**Scene {number} ({title})**")
+
+    return "\n".join(normalized)
+
+
+def _contains_scene_headers(script_text: str) -> bool:
+    return any(
+        HEADER_PATTERN.match(line.strip()) for line in script_text.splitlines()
+    )
+
+
+PROMPT_TEMPLATE_DIR = ROOT / "prompts"
+WORKFLOW_TEMPLATE_FILES = {
+    "sora2": PROMPT_TEMPLATE_DIR / "sora_prompt_generation.txt",
+    "kling": PROMPT_TEMPLATE_DIR / "kling_prompt_generation.txt",
+}
+
+
+@lru_cache(maxsize=None)
+def _workflow_template_for_provider(provider: str | None) -> str:
+    normalized = normalize_video_provider(provider)
+    path = WORKFLOW_TEMPLATE_FILES.get(normalized)
+    if path is None:
+        normalized = DEFAULT_VIDEO_PROVIDER
+        path = WORKFLOW_TEMPLATE_FILES.get(normalized)
+    if path is None:
+        raise RuntimeError(
+            "Workflow refinement template files are not configured for any provider."
+        )
     try:
-        width_str, height_str = resolution.lower().split("x", 1)
-        width = int(width_str)
-        height = int(height_str)
-    except (ValueError, AttributeError):
-        return ""
-    if width > height:
-        return " (landscape orientation)"
-    if height > width:
-        return " (portrait orientation)"
-    return " (square aspect ratio)"
+        template = path.read_text(encoding="utf-8").strip()
+    except OSError as exc:  # pragma: no cover - filesystem failures are rare
+        raise RuntimeError(
+            f"Workflow refinement template missing for provider {normalized}: {path}"
+        ) from exc
+    if not template:
+        raise RuntimeError(
+            f"Workflow refinement template is empty for provider {normalized}: {path}"
+        )
+    return template
 
 
 def build_prompt_text(
     title: str, description: str, duration: int, resolution: str
 ) -> str:
-    bullet_lines = "\n".join(
-        f"- {line.strip()}" for line in description.splitlines() if line.strip()
-    )
-    return (
-        f"Scene title: {title}\n"
-        f"Clip duration: {duration} seconds (fixed length).\n"
-        f"Output resolution: {resolution}{_orientation_suffix(resolution)}.\n"
-        "Character continuity: keep the same heroine (Brown hair, casual flight outfit) and hero (casual outfit) across clips.\n"
-        "Visual direction:\n"
-        f"{bullet_lines}\n"
-        "Cinematic tone: energetic, emotional, with tasteful motion graphics.\n"
-        "Audio: ambient sound design only; no background music."
-    )
+    """Return a scene prompt without duplicating duration/resolution metadata.
+
+    Sora already receives duration and resolution as explicit API parameters, so
+    we keep the prompt text focused on the refined description to avoid drift.
+    """
+    prompt_body = description.strip()
+    if not prompt_body:
+        return description
+
+    title_line = title.strip()
+    if title_line:
+        return f"{title_line}\n\n{prompt_body}"
+    return prompt_body
 
 
-async def refine_scene_description(title: str, description: str) -> str:
+async def refine_scene_description(title: str, description: str, duration: int) -> str:
     normalized = description.strip()
     if not normalized:
         return description
@@ -100,14 +153,14 @@ async def refine_scene_description(title: str, description: str) -> str:
     system_prompt = (
         "You are an expert cinematic prompt engineer for Azure OpenAI Sora2. "
         f"Incorporate the best practices from {SORA_PROMPT_GUIDE_URL} to polish scene descriptions. "
-        "Produce concise bullet-point guidance that covers camera direction, subject detail, motion, and audio cues suitable for a 4-second clip."
+        f"Produce concise bullet-point guidance that covers camera direction, subject detail, motion, and audio cues suitable for a {duration}-second clip."
     )
     user_prompt = (
         f"Scene title: {title}\n"
-        "Clip length: 4 seconds.\n"
+        f"Clip length: {duration} seconds.\n"
         "Original storyboard notes:\n"
         f"{normalized}\n\n"
-        "Rewrite the notes into 4-6 focused bullet points optimized for Sora2."
+        f"Rewrite the notes into 4-6 focused bullet points optimized for Sora2 at {duration} seconds."
     )
 
     max_tokens_str = os.getenv("DIRECTOR_REFINEMENT_MAX_TOKENS", "900")
@@ -127,10 +180,9 @@ async def refine_scene_description(title: str, description: str) -> str:
                 {
                     "role": "user",
                     "content": [{"type": "text", "text": user_prompt}],
-                },
+                }
             ],
             max_output_tokens=max_tokens,
-            temperature=0.4,
         )
         return extract_response_text(response)
 
@@ -152,64 +204,84 @@ async def refine_scene_description(title: str, description: str) -> str:
     return "\n".join(cleaned)
 
 
-async def refine_text_with_gpt5(content: str, mode: Literal["workflow", "single"]) -> str:
+async def ensure_scene_headers(
+    script_text: str, use_gpt5: bool, video_provider: str | None = None
+) -> tuple[str, bool, bool]:
+    """Normalize scene headers and optionally refine with GPT-5 before parsing."""
+
+    normalized = _normalize_scene_headers(normalize_script_text(script_text))
+    has_headers = _contains_scene_headers(normalized)
+    used_refinement = False
+    if has_headers or not use_gpt5:
+        return normalized, has_headers, used_refinement
+
+    used_refinement = True
+    refined = await refine_text_with_gpt5(
+        normalized, mode="workflow", video_provider=video_provider
+    )
+    print("---------------------------------")
+    print(refined)
+    refined = refined.strip() or normalized
+    refined_normalized = _normalize_scene_headers(normalize_script_text(refined))
+    has_headers = _contains_scene_headers(refined_normalized)
+    return refined_normalized, has_headers, used_refinement
+
+
+async def refine_text_with_gpt5(
+    content: str, mode: Literal["workflow", "single"], video_provider: str | None = None
+) -> str:
     normalized = content.strip()
     if not normalized:
         return content
 
     deployment = GPT5_REFINEMENT_DEPLOYMENT
     if not deployment:
-        return content
+        raise RuntimeError("GPT-5 refinement deployment not configured.")
 
     client = azure_text_client()
     if client is None:
-        return content
+        raise RuntimeError("Azure OpenAI client not configured.")
+    
+    logger.info("Using GPT-5 refinement deployment: %s", deployment)
 
     if mode == "workflow":
-        system_prompt = (
-            "You are GPT-5 helping polish multi-scene storyboards for Azure OpenAI Sora2. "
-            "Keep every scene heading in the exact format **Scene X (Title)** while rewriting the narrative "
-            "under each heading into vivid, production-ready copy. Preserve the number and order of scenes."
+        system_prompt = _workflow_template_for_provider(
+            video_provider or DEFAULT_VIDEO_PROVIDER
         )
-        user_tone = (
-            "Rewrite the storyboard below. Keep headings identical, but upgrade the scene descriptions into 2-4 polished sentences "
-            "with strong cinematic cues (camera moves, subject, motion, lighting). Separate each scene block with a blank line."
-        )
+        user_prompt = normalized
+        max_tokens = 8000
     else:
-        system_prompt = (
-            "You are GPT-5 optimizing single-scene prompts for Azure OpenAI Sora2 video generation."
+        system_prompt = "You are GPT-5 optimizing single-scene prompts for Azure OpenAI Sora2 video generation."
+        user_prompt = (
+            "Refine the following prompt into one paragraph that clearly describes subject, motion, camera, and mood.\n\n---\n"
+            f"{normalized}\n---"
         )
-        user_tone = (
-            "Refine the following prompt into one paragraph that clearly describes subject, motion, camera, and mood."
-        )
+        max_tokens = 2000
 
-    user_prompt = f"{user_tone}\n\n---\n{normalized}\n---"
-
-    max_tokens = 1400 if mode == "workflow" else 600
+    question = f"{system_prompt}\n\n---\n{user_prompt}\n---"
 
     def _call() -> str:
+        logger.info(
+            "GPT-5 refinement request (mode=%s, model=%s): %s",
+            mode,
+            deployment,
+            question,
+        )
         response = client.responses.create(
             model=deployment,
-            input=[
-                {
-                    "role": "system",
-                    "content": [{"type": "text", "text": system_prompt}],
-                },
-                {
-                    "role": "user",
-                    "content": [{"type": "text", "text": user_prompt}],
-                },
-            ],
+            input=question,
             max_output_tokens=max_tokens,
-            temperature=0.35,
         )
-        return extract_response_text(response)
+        output_text = extract_response_text(response)
+        print(response)
+        logger.info("GPT-5 refinement response (mode=%s): %s", mode, output_text)
+        return output_text
 
     try:
         refined = await asyncio.to_thread(_call)
     except Exception as exc:  # pragma: no cover - defensive fallback
-        logger.warning("GPT-5 refinement failed (%s mode): %s", mode, exc)
-        return content
+        logger.error("GPT-5 refinement failed (%s mode): %s", mode, exc)
+        return "failure calling to GPT-5"
 
     cleaned = refined.strip()
     return cleaned or content
@@ -219,6 +291,7 @@ __all__ = [
     "build_prompt_text",
     "parse_script",
     "refine_scene_description",
+    "ensure_scene_headers",
     "refine_text_with_gpt5",
     "slugify",
 ]

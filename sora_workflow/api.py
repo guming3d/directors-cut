@@ -6,6 +6,7 @@ import asyncio
 import os
 import shutil
 import uuid
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,20 +14,28 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import (
     DEFAULT_SORA_RESOLUTION,
+    DEFAULT_VIDEO_PROVIDER,
     OUTPUT_DIR,
     RESOLUTION_PATTERN,
     SINGLE_VIDEO_JOBS_DIR,
     STATIC_URL_PREFIX,
+    SUPPORTED_VIDEO_PROVIDERS,
     allowed_origins,
     logger,
 )
 from .models import (
     JobStatusResponse,
+    RefineSinglePayload,
+    RefineWorkflowPayload,
+    RefinedPromptResponse,
+    RefinedScriptResponse,
     SceneRemixPayload,
+    SceneRegeneratePayload,
     SceneSelectionPayload,
     SingleVideoJobResponse,
     SingleVideoPayload,
     SingleVideoRemixPayload,
+    SingleVideoSelectionPayload,
     StartWorkflowPayload,
 )
 from .prompts import refine_text_with_gpt5
@@ -36,12 +45,14 @@ from .services import (
     prepare_single_video_job,
     refine_script_for_payload,
     run_recompose_job,
+    run_scene_regeneration_job,
     run_scene_remix_job,
     run_single_video_job,
     run_single_video_remix,
     run_workflow_job,
 )
 from .stores import SINGLE_VIDEO_STORE, WORKFLOW_JOB_STORE
+from .utils import normalize_script_text
 
 
 fastapi_app = FastAPI(
@@ -62,6 +73,44 @@ fastapi_app.mount(
     StaticFiles(directory=str(OUTPUT_DIR), check_dir=False),
     name="output",
 )
+
+
+@fastapi_app.get("/api/providers/active")
+async def get_active_provider() -> dict[str, object]:
+    return {
+        "active": DEFAULT_VIDEO_PROVIDER,
+        "available": list(SUPPORTED_VIDEO_PROVIDERS),
+    }
+
+
+@fastapi_app.post("/api/refine/workflow", response_model=RefinedScriptResponse)
+async def refine_workflow_script(payload: RefineWorkflowPayload) -> RefinedScriptResponse:
+    script = (payload.script or "").strip()
+    if not script:
+        raise HTTPException(status_code=400, detail="Script text is required for refinement.")
+    try:
+        refined = await refine_text_with_gpt5(
+            script, mode="workflow", video_provider=payload.video_provider
+        )
+    except Exception as exc:  # pragma: no cover - defensive logging
+        logger.warning("GPT-5 refinement failed for workflow preview: %s", exc)
+        raise HTTPException(status_code=503, detail=f"Unable to refine script: {exc}") from exc
+    cleaned = normalize_script_text(refined.strip() or script)
+    return RefinedScriptResponse(refined_script=cleaned)
+
+
+@fastapi_app.post("/api/refine/single", response_model=RefinedPromptResponse)
+async def refine_single_prompt(payload: RefineSinglePayload) -> RefinedPromptResponse:
+    prompt = (payload.prompt or "").strip()
+    if not prompt:
+        raise HTTPException(status_code=400, detail="Prompt text is required for refinement.")
+    try:
+        refined = await refine_text_with_gpt5(prompt, mode="single")
+    except Exception as exc:  # pragma: no cover - defensive logging
+        logger.warning("GPT-5 refinement failed for single prompt preview: %s", exc)
+        raise HTTPException(status_code=503, detail=f"Unable to refine prompt: {exc}") from exc
+    final_prompt = refined.strip() or prompt
+    return RefinedPromptResponse(refined_prompt=final_prompt)
 
 
 @fastapi_app.post("/api/workflows", response_model=JobStatusResponse)
@@ -87,6 +136,16 @@ async def start_workflow(payload: StartWorkflowPayload) -> JobStatusResponse:
         await WORKFLOW_JOB_STORE.set_resolution(job_id, request.resolution)
         await WORKFLOW_JOB_STORE.set_download_variant(job_id, request.download_variant)
         await WORKFLOW_JOB_STORE.set_generation_mode(job_id, request.generation_mode)
+        await WORKFLOW_JOB_STORE.set_scene_duration(job_id, request.scene_duration)
+        await WORKFLOW_JOB_STORE.set_generate_ai_first_frame(
+            job_id, request.generate_ai_first_frame
+        )
+        await WORKFLOW_JOB_STORE.set_video_provider(job_id, request.video_provider)
+        try:
+            script_text = Path(request.script_path).read_text(encoding="utf-8")
+        except OSError:
+            script_text = normalize_script_text(payload.script)
+        await WORKFLOW_JOB_STORE.set_script(job_id, script_text, request.script_path)
     except ValueError as exc:
         await WORKFLOW_JOB_STORE.mark_failed(job_id, str(exc))
         raise HTTPException(status_code=400, detail=str(exc))
@@ -150,6 +209,8 @@ async def start_single_video(payload: SingleVideoPayload) -> SingleVideoJobRespo
             duration,
             download_variant,
             payload.reference_image,
+            payload.reference_images,
+            payload.video_provider,
         )
     except ValueError as exc:
         shutil.rmtree(SINGLE_VIDEO_JOBS_DIR / job_id, ignore_errors=True)
@@ -161,6 +222,7 @@ async def start_single_video(payload: SingleVideoPayload) -> SingleVideoJobRespo
         config.resolution,
         config.duration,
         config.download_variant,
+        config.video_provider,
     )
     if payload.refine_with_gpt5:
         await SINGLE_VIDEO_STORE.add_message(
@@ -219,6 +281,17 @@ async def remix_single_video(job_id: str, payload: SingleVideoRemixPayload) -> S
     asyncio.create_task(run_single_video_remix(job_id, prompt))
     return await SINGLE_VIDEO_STORE.snapshot(job_id)
 
+@fastapi_app.post("/api/single-videos/{job_id}/select", response_model=SingleVideoJobResponse)
+async def select_single_video_version(job_id: str, payload: SingleVideoSelectionPayload) -> SingleVideoJobResponse:
+    version_id = (payload.version_id or "").strip()
+    if not version_id:
+        raise HTTPException(status_code=400, detail="versionId is required.")
+    try:
+        await SINGLE_VIDEO_STORE.set_single_selection(job_id, version_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Unable to select version {version_id} for job {job_id}.") from exc
+    return await SINGLE_VIDEO_STORE.snapshot(job_id)
+
 
 @fastapi_app.post(
     "/api/workflows/{job_id}/scenes/{scene_order}/remix",
@@ -247,6 +320,26 @@ async def remix_scene_version(
         )
     await WORKFLOW_JOB_STORE.add_message(job_id, "rendering", f"Queued remix for {scene.label}.")
     asyncio.create_task(run_scene_remix_job(job_id, scene_order, prompt))
+    return await WORKFLOW_JOB_STORE.get_status(job_id)
+
+
+@fastapi_app.post(
+    "/api/workflows/{job_id}/scenes/{scene_order}/regenerate",
+    response_model=JobStatusResponse,
+)
+async def regenerate_scene_version(
+    job_id: str, scene_order: int, payload: SceneRegeneratePayload | None = None
+) -> JobStatusResponse:
+    prompt_override = (payload.prompt or "").strip() if payload else None
+    try:
+        scene = await WORKFLOW_JOB_STORE.get_scene(job_id, scene_order)
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Scene {scene_order} not found for job {job_id}.",
+        ) from exc
+    await WORKFLOW_JOB_STORE.add_message(job_id, "rendering", f"Queued regeneration for {scene.label}.")
+    asyncio.create_task(run_scene_regeneration_job(job_id, scene_order, prompt_override or None))
     return await WORKFLOW_JOB_STORE.get_status(job_id)
 
 
