@@ -532,7 +532,14 @@ class SingleVideoSelectionPayload(BaseModel):
 
 
 class RefineWorkflowPayload(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     script: str
+    video_provider: Literal["sora2", "kling"] = Field(
+        default=DEFAULT_VIDEO_PROVIDER,
+        alias="videoProvider",
+        description="Video backend that controls which GPT-5 template is used while refining.",
+    )
 
 
 class RefineSinglePayload(BaseModel):

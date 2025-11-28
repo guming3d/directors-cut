@@ -1067,7 +1067,10 @@ export default function Home() {
     const response = await fetch(`${apiBase}/api/refine/workflow`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ script: content }),
+      body: JSON.stringify({
+        script: content,
+        videoProvider: workflowProviderSelection,
+      }),
     });
     if (!response.ok) {
       throw new Error(await response.text());

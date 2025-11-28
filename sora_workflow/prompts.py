@@ -5,18 +5,20 @@ from __future__ import annotations
 import asyncio
 import os
 import re
-import textwrap
+from functools import lru_cache
 from typing import Literal
 
 from .config import (
+    DEFAULT_VIDEO_PROVIDER,
     DIRECTOR_REFINEMENT_DEPLOYMENT,
     GPT5_REFINEMENT_DEPLOYMENT,
     HEADER_PATTERN,
-    RESOLUTION_PATTERN,
+    ROOT,
     SORA_PROMPT_GUIDE_URL,
-    logger,
     azure_text_client,
     extract_response_text,
+    logger,
+    normalize_video_provider,
 )
 from .utils import normalize_script_text, slugify
 
@@ -88,6 +90,37 @@ def _contains_scene_headers(script_text: str) -> bool:
     return any(
         HEADER_PATTERN.match(line.strip()) for line in script_text.splitlines()
     )
+
+
+PROMPT_TEMPLATE_DIR = ROOT / "prompts"
+WORKFLOW_TEMPLATE_FILES = {
+    "sora2": PROMPT_TEMPLATE_DIR / "sora_prompt_generation.txt",
+    "kling": PROMPT_TEMPLATE_DIR / "kling_prompt_generation.txt",
+}
+
+
+@lru_cache(maxsize=None)
+def _workflow_template_for_provider(provider: str | None) -> str:
+    normalized = normalize_video_provider(provider)
+    path = WORKFLOW_TEMPLATE_FILES.get(normalized)
+    if path is None:
+        normalized = DEFAULT_VIDEO_PROVIDER
+        path = WORKFLOW_TEMPLATE_FILES.get(normalized)
+    if path is None:
+        raise RuntimeError(
+            "Workflow refinement template files are not configured for any provider."
+        )
+    try:
+        template = path.read_text(encoding="utf-8").strip()
+    except OSError as exc:  # pragma: no cover - filesystem failures are rare
+        raise RuntimeError(
+            f"Workflow refinement template missing for provider {normalized}: {path}"
+        ) from exc
+    if not template:
+        raise RuntimeError(
+            f"Workflow refinement template is empty for provider {normalized}: {path}"
+        )
+    return template
 
 
 def build_prompt_text(
@@ -172,7 +205,7 @@ async def refine_scene_description(title: str, description: str, duration: int) 
 
 
 async def ensure_scene_headers(
-    script_text: str, use_gpt5: bool
+    script_text: str, use_gpt5: bool, video_provider: str | None = None
 ) -> tuple[str, bool, bool]:
     """Normalize scene headers and optionally refine with GPT-5 before parsing."""
 
@@ -183,7 +216,9 @@ async def ensure_scene_headers(
         return normalized, has_headers, used_refinement
 
     used_refinement = True
-    refined = await refine_text_with_gpt5(normalized, mode="workflow")
+    refined = await refine_text_with_gpt5(
+        normalized, mode="workflow", video_provider=video_provider
+    )
     print("---------------------------------")
     print(refined)
     refined = refined.strip() or normalized
@@ -192,89 +227,9 @@ async def ensure_scene_headers(
     return refined_normalized, has_headers, used_refinement
 
 
-WORKFLOW_REFINEMENT_TEMPLATE = textwrap.dedent(
-    """
-    I need you to help me transfer the long video script to a multiple scenes sora2 system prompts, the total length of the output video is 90 seconds or 120 seconds. Each scene can be 8 seconds or 12 seconds long, so you need to based on the original script to decide how many dialogs is suitable for each scene. You must make sure all the scene is using the same output style: Rendered in high-quality 3D animation with soft, realistic lighting and depth of field, the character design uses a blend of anime-style facial proportions (large eyes, sharp jawline) with realistic textures and lighting, make sure each scene's Format & Look part is same!!!.
-
-    You can refer to following example sora2 prompt to know how to control the video style in details:
-    ```
-    Format & Look
-    Duration 4s; 180-degree shutter; digital capture emulating 65 mm photochemical contrast; fine grain; subtle halation on speculars; no gate weave.
-
-    Lenses & Filtration
-    32 mm / 50 mm spherical primes; Black Pro-Mist 1/4; slight CPL rotation to manage glass reflections on train windows.
-
-    Grade / Palette
-    Highlights: clean morning sunlight with amber lift.
-    Mids: balanced neutrals with slight teal cast in shadows.
-    Blacks: soft, neutral with mild lift for haze retention.
-
-    Lighting & Atmosphere
-    Natural sunlight from camera left, low angle (07:30 AM).
-    Bounce: 4x4 ultrabounce silver from trackside.
-    Negative fill from opposite wall.
-    Practical: sodium platform lights on dim fade.
-    Atmos: gentle mist; train exhaust drift through light beam.
-
-    Location & Framing
-    Urban commuter platform, dawn.
-    Foreground: yellow safety line, coffee cup on bench.
-    Midground: waiting passengers silhouetted in haze.
-    Background: arriving train braking to a stop.
-    Avoid signage or corporate branding.
-
-    Wardrobe / Props / Extras
-    Main subject: mid-30s traveler, navy coat, backpack slung on one shoulder, holding phone loosely at side.
-    Extras: commuters in muted tones; one cyclist pushing bike.
-    Props: paper coffee cup, rolling luggage, LED departure board (generic destinations).
-
-    Sound
-    Diegetic only: faint rail screech, train brakes hiss, distant announcement muffled (-20 LUFS), low ambient hum.
-    Footsteps and paper rustle; no score or added foley.
-
-    Optimized Shot List (2 shots / 4 s total)
-
-    0.00-2.40 - "Arrival Drift" (32 mm, shoulder-mounted slow dolly left)
-    Camera slides past platform signage edge; shallow focus reveals traveler mid-frame looking down tracks. Morning light blooms across lens; train headlights flare softly through mist. Purpose: establish setting and tone, hint anticipation.
-
-    2.40-4.00 - "Turn and Pause" (50 mm, slow arc in)
-    Cut to tighter over-shoulder arc as train halts; traveler turns slightly toward camera, catching sunlight rim across cheek and phone screen reflection. Eyes flick up toward something unseen. Purpose: create human focal moment with minimal motion.
-
-    Camera Notes (Why It Reads)
-    Keep eyeline low and close to lens axis for intimacy.
-    Allow micro flares from train glass as aesthetic texture.
-    Preserve subtle handheld imperfection for realism.
-    Do not break silhouette clarity with overexposed flare; retain skin highlight roll-off.
-
-    Finishing
-    Fine-grain overlay with mild chroma noise for realism; restrained halation on practicals; warm-cool LUT for morning split tone.
-    Mix: prioritize train and ambient detail over footstep transients.
-    Poster frame: traveler mid-turn, golden rim light, arriving train soft-focus in background haze.
-    ```
-
-    The final output should be comply with following template between three backticks:
-    ```
-    **Video title**
-
-    **Scene 1 (Scene 1 title)**
-    Scene 1 sora2 prompt content
-
-    **Scene 2 (Scene 2 title)**
-    Scene 2 sora2 prompt content
-
-    **Scene 3 (Scene 3 title) **
-    Scene 3 sora2 prompt content
-    ```
-
-    Following is the original long video script written in Chinese, the output prompt should be in English but all the dialogs should be in Chinese since this video is for China audience.
-
-    - Input Script
-    - Video background and Video script
-    """
-).strip()
-
-
-async def refine_text_with_gpt5(content: str, mode: Literal["workflow", "single"]) -> str:
+async def refine_text_with_gpt5(
+    content: str, mode: Literal["workflow", "single"], video_provider: str | None = None
+) -> str:
     normalized = content.strip()
     if not normalized:
         return content
@@ -290,10 +245,10 @@ async def refine_text_with_gpt5(content: str, mode: Literal["workflow", "single"
     logger.info("Using GPT-5 refinement deployment: %s", deployment)
 
     if mode == "workflow":
-        system_prompt = (
-            WORKFLOW_REFINEMENT_TEMPLATE
-                    )
-        user_prompt =  normalized
+        system_prompt = _workflow_template_for_provider(
+            video_provider or DEFAULT_VIDEO_PROVIDER
+        )
+        user_prompt = normalized
         max_tokens = 8000
     else:
         system_prompt = "You are GPT-5 optimizing single-scene prompts for Azure OpenAI Sora2 video generation."
