@@ -863,7 +863,9 @@ async def run_recompose_job(job_id: str) -> None:
 async def refine_script_for_payload(payload: StartWorkflowPayload) -> None:
     if not payload.refine_with_gpt5:
         return
-    refined_script = await refine_text_with_gpt5(payload.script, mode="workflow")
+    refined_script = await refine_text_with_gpt5(
+        payload.script, mode="workflow", video_provider=payload.video_provider
+    )
     if refined_script.strip():
         payload.script = refined_script
 

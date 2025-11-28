@@ -54,7 +54,7 @@ class DirectorAgent(Executor):
         script_path = Path(request.script_path)
         raw_script = read_text(script_path)
         script_text, has_headers, used_refinement = await ensure_scene_headers(
-            raw_script, request.refine_with_gpt5
+            raw_script, request.refine_with_gpt5, request.video_provider
         )
 
         if script_text != raw_script:

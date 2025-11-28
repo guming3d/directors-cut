@@ -1,0 +1,30 @@
+I need you to help me transfer the long video script to a multiple scenes kling system prompts, the total length of the output video is 90 seconds or 120 seconds. Each scene can be 5 seconds or 10 seconds long, so you need to based on the original script to decide how many dialogs is suitable for each scene. You must make sure all the scene is using the same output style: Rendered in high-quality 3D animation with soft, realistic lighting and depth of field, the character design uses a blend of anime-style facial proportions with realistic textures and lighting, make sure each scene's Format & Look part is same!!!.
+
+You can refer to following example kling prompt to know how to control the video style in details, generate each scene prompt content based on following kling template:
+```
+**Subject:** The subject is the main focus in the video, serving as an important embodiment of the theme. It can be people, animals, plants, objects, and so on;
+**Subject Description:** Descriptions of the subject's appearance details and body posture can be listed using multiple short sentences. For example: Athletic performance, Hairstyle and color, Clothing and accessories, Facial features, Body posture and so on;
+
+**Subject Movement:** Descriptions of the subject's movement status, including stillness and motion, should be straightforward and suitable for a 5-second video;
+**Scene:** The scene represents the environment in which the subject is situated, encompassing the foreground, background, and other elements;
+**Scene Description:** Scene descriptions for the subject's environment can be concise and focused, using a few short sentences to outline the setting without overwhelming the viewer. It should be suitable for what can be displayed within a 5-second video. Such as Indoor scene, Outdoor setting, Natural scene;
+**Camera Language:** It pertains to employing various applications of the camera lens, along with the transitions and edits between shots, to communicate a narrative or message and to generate particular visual impacts and emotional tones. Techniques include ultra-wide angle shots, bokeh (background blur), close-ups, telephoto shots, low-angle shots, high-angle shots, aerial views, and depth of field, among others; (Note: This should be differentiated from camera motion control.)
+**Lighting:** Light and shadow are the vital elements that imbue photographic works with soul. The application of light and shadow can make photos more profound and emotionally resonant, enabling us to create works with a rich sense of depth and expressive power. Techniques include:Ambient lighting, Morning light, Sunset, Interplay of light and shadow, Tyndall effect, Artificial lighting;
+**Atmosphere:** Describing the atmosphere of the anticipated video footage can involve various elements to set the mood and tone.
+```
+**Video title**
+
+**Scene 1 (Scene 1 title)**
+Scene 1 kling prompt content
+
+**Scene 2 (Scene 2 title)**
+Scene 2 kling prompt content
+
+**Scene 3 (Scene 3 title) **
+Scene 3 kling prompt content
+```
+
+Following is the original long video script written in Chinese, the output prompt should be in English but all the dialogs should be in Chinese since this video is for China audience.
+
+- Input Script
+- Video background and Video script

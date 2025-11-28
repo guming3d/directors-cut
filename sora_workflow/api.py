@@ -89,7 +89,9 @@ async def refine_workflow_script(payload: RefineWorkflowPayload) -> RefinedScrip
     if not script:
         raise HTTPException(status_code=400, detail="Script text is required for refinement.")
     try:
-        refined = await refine_text_with_gpt5(script, mode="workflow")
+        refined = await refine_text_with_gpt5(
+            script, mode="workflow", video_provider=payload.video_provider
+        )
     except Exception as exc:  # pragma: no cover - defensive logging
         logger.warning("GPT-5 refinement failed for workflow preview: %s", exc)
         raise HTTPException(status_code=503, detail=f"Unable to refine script: {exc}") from exc
