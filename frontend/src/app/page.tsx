@@ -17,7 +17,8 @@ import {
 } from "@heroicons/react/24/outline";
 import Image from "next/image";
 
-const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000").replace(/\/$/, "");
+const RAW_API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "").replace(/\/$/, "");
+const DEFAULT_API_BASE = (RAW_API_BASE || "http://localhost:8000").replace(/\/$/, "");
 
 type JobMessage = {
   timestamp: string;
@@ -39,6 +40,8 @@ type SceneVersion = {
   created_at: string;
   last_frame_path?: string | null;
   last_frame_url?: string | null;
+  first_frame_path?: string | null;
+  first_frame_url?: string | null;
 };
 
 type SceneStatus = {
@@ -54,6 +57,8 @@ type SceneStatus = {
   versions: SceneVersion[];
   last_frame_path?: string | null;
   last_frame_url?: string | null;
+  first_frame_path?: string | null;
+  first_frame_url?: string | null;
 };
 
 type SingleVideoVersion = {
@@ -73,6 +78,7 @@ type SingleVideoVersion = {
 type JobStatus = {
   job_id: string;
   status: string;
+  video_provider: string;
   resolution: string;
   stage: string | null;
   progress: number;
@@ -82,9 +88,13 @@ type JobStatus = {
   final_video_path: string | null;
   final_video_url: string | null;
   manifest: Record<string, unknown> | null;
+  script?: string | null;
+  script_path?: string | null;
   messages: JobMessage[];
   scenes: SceneStatus[];
   generation_mode: "parallel" | "sequence";
+  scene_duration?: number;
+  generate_ai_first_frame?: boolean;
 };
 
 type SingleVideoJob = {
@@ -92,6 +102,7 @@ type SingleVideoJob = {
   status: string;
   progress: number;
   prompt: string;
+  video_provider: string;
   resolution: string;
   duration: number;
   download_variant: string;
@@ -107,6 +118,18 @@ type SingleVideoJob = {
   selected_version_id: string | null;
   versions: SingleVideoVersion[];
   messages: JobMessage[];
+};
+
+type PromptPreview = {
+  sceneLabel: string;
+  versionLabel: string;
+  prompt: string;
+};
+
+type RefinementReview = {
+  mode: "workflow" | "single";
+  originalText: string;
+  refinedText: string;
 };
 
 const STATUS_TOKENS: Record<string, { label: string; className: string }> = {
@@ -151,8 +174,15 @@ const TABS: { id: TabId; label: string }[] = [
 ];
 const LANGUAGE_OPTIONS: Language[] = ["en", "zh"];
 
-const durationOptions = ["4", "8", "12"] as const;
+const SORA_DURATION_OPTIONS = ["4", "8", "12"] as const;
+const KLING_DURATION_OPTIONS = ["5", "10"] as const;
+type DurationOption =
+  | (typeof SORA_DURATION_OPTIONS)[number]
+  | (typeof KLING_DURATION_OPTIONS)[number];
+const getDurationOptions = (provider: string | null): readonly DurationOption[] =>
+  provider === "kling" ? KLING_DURATION_OPTIONS : SORA_DURATION_OPTIONS;
 const resolutionOptions = ["720x1280", "1280x720", "1920x1080"] as const;
+const VIDEO_PROVIDER_OPTIONS = ["sora2", "kling"] as const;
 
 const AUTH_USERNAME = "user";
 const AUTH_PASSWORD = "sora2isgreat";
@@ -169,9 +199,17 @@ const zhTranslations: Record<string, string> = {
   "Chinese": "中文",
   "Clip pending...": "片段准备中…",
   "Completed jobs": "已完成的任务",
+  "AI first frames": "AI 开场画面",
+  "AI start stills enabled": "已启用 AI 开场画面",
+  "No AI first frames": "未启用 AI 开场画面",
+  "AI first frame preview": "AI 开场画面预览",
+  "Use GPT-5 + gpt-image-1 to seed each scene.": "使用 GPT-5 与 gpt-image-1 为每个场景生成开场画面。",
   "Completed runs": "完成的运行",
   "Completed": "已完成",
   "Composing final video": "合成最终视频",
+  "Compose Available Scenes": "合成已完成的场景",
+  "Video backend": "视频引擎",
+  "Unknown": "未知",
   "Composition manifest:": "合成清单：",
   "Delete Selected": "删除选中项",
   "Delete workflows": "删除工作流",
@@ -187,6 +225,7 @@ const zhTranslations: Record<string, string> = {
   "English": "英文",
   "Failed to refresh single-video status. Confirm the backend is reachable.": "无法刷新单视频状态，请确认后端可访问。",
   "Failed to refresh workflow status. Check that the FastAPI server is reachable.": "无法刷新工作流状态，请检查 FastAPI 服务是否可访问。",
+  "Failed to regenerate this scene. Confirm the backend is reachable.": "无法重新生成该场景，请确认后端可用。",
   "Failed": "失败",
   "Final Video": "最终视频",
   "Generate a clip to see it listed here.": "先生成一个片段即可在此查看。",
@@ -213,6 +252,7 @@ const zhTranslations: Record<string, string> = {
   "Password": "密码",
   "Plan scenes in parallel": "并行规划场景",
   "Planning scenes": "规划场景",
+  "Please provide a storyboard script before starting the workflow.": "请先提供分镜脚本再启动工作流。",
   "Preparing workflow": "准备工作流",
   "Progress": "进度",
   "Production Workspace": "制作工作区",
@@ -221,6 +261,10 @@ const zhTranslations: Record<string, string> = {
   "Recent Single Jobs": "最近的单视频任务",
   "Render scenes concurrently": "并行渲染场景",
   "Chain scenes sequentially": "串行衔接场景",
+  "Clipboard unavailable": "剪贴板不可用",
+  "Copied to clipboard": "已复制到剪贴板",
+  "Copy or update the prompt before proceeding.": "可在继续前复制或修改提示词。",
+  "Copy prompt": "复制提示词",
 
   "Remix prompt": "重制提示词",
   "Remix Scene": "重制场景",
@@ -230,6 +274,7 @@ const zhTranslations: Record<string, string> = {
   "Scene images enabled": "已启用场景参考图",
   "Scene reference": "场景参考图",
   "Scene references": "场景参考图",
+  "Scene duration": "场景时长",
   "Scene Renders": "场景渲染",
   "Scene": "场景",
   "seconds": "秒",
@@ -237,9 +282,11 @@ const zhTranslations: Record<string, string> = {
   "Scenes this workflow": "当前工作流场景数",
   "Current storyboard": "当前分镜",
   "Script-to-Video Control Room": "脚本到视频操控室",
+  "System prompt": "系统提示词",
   "Since session start": "自会话开始以来",
   "Select workflows": "选择工作流",
   "Selected": "已选择",
+  "Some scenes finished before an error. Compose the available clips or regenerate blocked scenes, then try again.": "部分场景完成后出现错误。可先合成已完成的片段，或重新生成被阻止的场景后再试。",
   "Sequence": "串行",
   "Sign in to continue": "登录以继续",
   "Sign in": "登录",
@@ -250,11 +297,13 @@ const zhTranslations: Record<string, string> = {
   "Single video prompt": "单视频提示词",
   "Single Video Status": "单视频状态",
   "Sora Agent Production Dashboard": "Sora 代理制作看板",
-  "Sora Agent Workflow logo": "Sora 工作流徽标",
+  "Streams Agent Workflow logo": "Streams 工作流徽标",
   "Storyboard Script": "分镜脚本",
-  "Sora2 Studio": "Sora2 工作室",
+  "Streams Studio": "Streams 工作室",
+  "video generation workflow by AI": "AI 视频生成工作流",
   "Start Workflow": "启动工作流",
   "Starting Workflow...": "正在启动工作流…",
+  "Start a workflow before regenerating scenes.": "请先启动工作流再重新生成场景。",
   "Start single video": "启动单视频",
   "Started": "开始时间",
   "Storyboard Workflow": "分镜工作流",
@@ -262,6 +311,8 @@ const zhTranslations: Record<string, string> = {
   "Status": "状态",
   "The Director agent will refine prompts following Sora2 best practices.": "导演代理会按照 Sora2 最佳实践优化提示词。",
   "Regenerate Final Video": "重新生成最终视频",
+  "Regenerate Scene": "重新生成场景",
+  "Regenerating...": "重新生成中…",
   "Open MP4 in new tab": "在新标签页打开 MP4",
   "Your browser does not support HTML5 video.": "您的浏览器不支持 HTML5 视频。",
   "Submit reference image": "上传参考图",
@@ -294,18 +345,20 @@ const zhTranslations: Record<string, string> = {
   "Generated Video": "已生成视频",
   "Video pending...": "视频生成中…",
   "Generate Single Clip": "创建单条视频",
-  "Submit a single prompt directly to the Sora2 API. Optionally attach a still reference, select the render resolution, and choose a supported clip duration.": "将单条提示直接提交给 Sora2 API，可附加参考图、选择分辨率并设置片段时长。",
-  "Describe the scene, motion, cinematography, and mood for Sora2...": "描述场景、运动、镜头语言与情绪…",
+  "Submit a single prompt directly to the selected video backend. Optionally attach a still reference, select the render resolution, and choose a supported clip duration.": "将单条提示提交到所选视频引擎，可附加参考图、选择分辨率并设置片段时长。",
+  "Describe the scene, motion, cinematography, and mood for the selected video backend...": "描述场景、运动、镜头语言与情绪，系统会交付给指定的视频引擎…",
   "Duration": "时长",
   "Generate Clip": "生成片段",
   "Reference image (optional)": "参考图（可选）",
   "Reference preview": "参考图预览",
+  "Enter a prompt before requesting a video clip.": "提交前请先填写提示词。",
   "Refine script with GPT-5": "使用 GPT-5 优化剧本",
   "Use GPT-5 to polish the storyboard before planning scenes.": "在规划场景前，用 GPT-5 打磨分镜文案。",
   "Refine prompt with GPT-5": "使用 GPT-5 优化提示词",
   "Let GPT-5 tighten the single-scene prompt before submitting.": "在提交前，让 GPT-5 精炼单条视频的提示词。",
   "Enabled": "已启用",
   "Disabled": "已关闭",
+  "Edit prompt before regenerating": "修改提示词后再重新生成",
   "Last frame reference": "最后一帧参考图",
   "Remix Clip": "重制片段",
   "Remix Single Video": "重制单条视频",
@@ -315,6 +368,32 @@ const zhTranslations: Record<string, string> = {
   "Start a single-video job before requesting a remix.": "请先创建单视频任务再尝试重制。",
   "Sending Prompt...": "正在发送提示词…",
   "s": "秒",
+  "View system prompt": "查看系统提示词",
+  "View input prompt": "查看输入提示词",
+  "Workflow prompt": "工作流提示词",
+  "Review refined prompt": "审阅优化后的提示词",
+  "GPT-5 refined your storyboard. Edit it below or proceed.": "GPT-5 已优化分镜，你可在继续前进一步编辑。",
+  "GPT-5 refined your prompt. Edit it below or proceed.": "GPT-5 已优化提示词，你可在继续前进一步编辑。",
+  "Refined prompt": "优化后的提示词",
+  "Original input": "原始内容",
+  "Back to edit": "返回编辑",
+  "Proceed to workflow": "继续到工作流",
+  "Proceed to single video": "继续生成单视频",
+  "Prompt details": "提示词详情",
+  "Prompt unavailable.": "提示词不可用。",
+  "Unable to copy prompt": "无法复制提示词",
+  "Unable to refine the storyboard. Continue without refinement or try again.": "无法优化分镜。可直接继续或稍后再试。",
+  "Unable to refine the prompt. Continue without refinement or try again.": "无法优化提示词。可直接继续或稍后再试。",
+  "Submitted prompt": "已提交的提示词",
+};
+
+const normalizeProvider = (value?: string | null) => {
+  const normalized = (value ?? "").trim().toLowerCase();
+  return (VIDEO_PROVIDER_OPTIONS as readonly string[]).includes(
+    normalized as (typeof VIDEO_PROVIDER_OPTIONS)[number],
+  )
+    ? normalized
+    : null;
 };
 
 const translateValue = (language: Language, value: string) => (language === "zh" ? zhTranslations[value] ?? value : value);
@@ -375,9 +454,9 @@ const formatTimeDistance = (value: string | null) => {
   return date.toLocaleString();
 };
 
-const buildAssetUrl = (path: string | null | undefined) => {
+const buildAssetUrl = (base: string, path: string | null | undefined) => {
   if (!path) return null;
-  return `${API_BASE}${path}`;
+  return `${base}${path}`;
 };
 
 const getStatusToken = (status: string | undefined, language: Language) => {
@@ -420,7 +499,7 @@ export default function Home() {
     </button>
   );
 
-  const [language, setLanguage] = useState<Language>("en");
+  const [language, setLanguage] = useState<Language>("zh");
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -460,16 +539,54 @@ export default function Home() {
     window.localStorage.setItem("sora2-language", language);
   }, [language]);
 
+  useEffect(() => {
+    return () => {
+      if (copyTimeoutRef.current) {
+        clearTimeout(copyTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const [apiBase, setApiBase] = useState<string>(DEFAULT_API_BASE);
+
+  useEffect(() => {
+    if (RAW_API_BASE) {
+      return;
+    }
+    if (typeof window === "undefined") {
+      return;
+    }
+    const origin = window.location.origin.replace(/\/$/, "");
+    let shouldStickToDefault = false;
+    try {
+      // Avoid overwriting the explicit backend URL when the UI runs on the local Next.js dev server.
+      const url = new URL(origin);
+      const devPorts = new Set(["3000", "3001", "3002"]);
+      const isLocalhost = url.hostname === "localhost" || url.hostname === "127.0.0.1";
+      shouldStickToDefault = isLocalhost && devPorts.has(url.port || "");
+    } catch {
+      // no-op: fall back to default apiBase
+    }
+    if (!shouldStickToDefault && origin && origin !== apiBase) {
+      setApiBase(origin);
+    }
+  }, [apiBase]);
+
   // Combined workflow state
   const [script, setScript] = useState("");
   const [useSceneImages, setUseSceneImages] = useState(false);
+  const [generateAiFirstFrames, setGenerateAiFirstFrames] = useState(false);
   const [generationMode, setGenerationMode] = useState<"parallel" | "sequence">("parallel");
   const [combinedResolution, setCombinedResolution] = useState<(typeof resolutionOptions)[number]>(resolutionOptions[0]);
+  const [sceneDuration, setSceneDuration] = useState<DurationOption>(SORA_DURATION_OPTIONS[1]);
   const [sceneImageFiles, setSceneImageFiles] = useState<File[]>([]);
   const [sceneImagePreviews, setSceneImagePreviews] = useState<string[]>([]);
   const [jobs, setJobs] = useState<JobStatus[]>([]);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [job, setJob] = useState<JobStatus | null>(null);
+  const [activeVideoProvider, setActiveVideoProvider] = useState<string | null>(null);
+  const [availableVideoProviders, setAvailableVideoProviders] = useState<string[]>([...VIDEO_PROVIDER_OPTIONS]);
+  const [workflowVideoProvider, setWorkflowVideoProvider] = useState<string | null>(null);
   const [isSubmittingCombined, setIsSubmittingCombined] = useState(false);
   const [combinedError, setCombinedError] = useState<string | null>(null);
   const [selectedCombinedJobs, setSelectedCombinedJobs] = useState<Set<string>>(new Set());
@@ -478,22 +595,31 @@ export default function Home() {
   const [selectionSubmitting, setSelectionSubmitting] = useState<Record<string, boolean>>({});
   const [isRecomposing, setIsRecomposing] = useState(false);
   const [refineWorkflowWithGpt5, setRefineWorkflowWithGpt5] = useState(false);
+  const [sceneRegenerating, setSceneRegenerating] = useState<Record<number, boolean>>({});
+  const [scenePromptEdits, setScenePromptEdits] = useState<Record<number, string>>({});
 
   // Single video state
   const [singlePrompt, setSinglePrompt] = useState("");
   const [singleResolution, setSingleResolution] = useState<(typeof resolutionOptions)[number]>(resolutionOptions[0]);
-  const [singleDuration, setSingleDuration] = useState<(typeof durationOptions)[number]>(durationOptions[1]);
+  const [singleDuration, setSingleDuration] = useState<DurationOption>(SORA_DURATION_OPTIONS[1]);
   const [singleReferenceFile, setSingleReferenceFile] = useState<File | null>(null);
   const [singleReferencePreview, setSingleReferencePreview] = useState<string | null>(null);
   const [singleJobs, setSingleJobs] = useState<SingleVideoJob[]>([]);
   const [activeSingleJobId, setActiveSingleJobId] = useState<string | null>(null);
   const [singleJob, setSingleJob] = useState<SingleVideoJob | null>(null);
+  const [singleVideoProvider, setSingleVideoProvider] = useState<string | null>(null);
   const [isSubmittingSingle, setIsSubmittingSingle] = useState(false);
   const [singleError, setSingleError] = useState<string | null>(null);
   const [selectedSingleJobs, setSelectedSingleJobs] = useState<Set<string>>(new Set());
   const [refineSingleWithGpt5, setRefineSingleWithGpt5] = useState(false);
   const [singleRemixPrompt, setSingleRemixPrompt] = useState("");
   const [singleRemixSubmitting, setSingleRemixSubmitting] = useState(false);
+  const [singleSelectionSubmitting, setSingleSelectionSubmitting] = useState<Record<string, boolean>>({});
+  const [promptPreview, setPromptPreview] = useState<PromptPreview | null>(null);
+  const [refinementReview, setRefinementReview] = useState<RefinementReview | null>(null);
+  const [refinementDraft, setRefinementDraft] = useState("");
+  const [copyNotice, setCopyNotice] = useState<string | null>(null);
+  const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Modal states
   const [isCreateWorkflowModalOpen, setIsCreateWorkflowModalOpen] = useState(false);
@@ -502,7 +628,7 @@ export default function Home() {
 
   const loadCombinedJobs = useCallback(async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/workflows`);
+      const response = await fetch(`${apiBase}/api/workflows`);
       if (!response.ok) {
         throw new Error(await response.text());
       }
@@ -540,7 +666,7 @@ export default function Home() {
 
   const loadSingleJobs = useCallback(async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/single-videos`);
+      const response = await fetch(`${apiBase}/api/single-videos`);
       if (!response.ok) {
         throw new Error(await response.text());
       }
@@ -582,11 +708,81 @@ export default function Home() {
       setSingleJobs([]);
       setSingleJob(null);
       setActiveSingleJobId(null);
+      setActiveVideoProvider(null);
+      setAvailableVideoProviders([...VIDEO_PROVIDER_OPTIONS]);
+      setWorkflowVideoProvider(null);
+      setSingleVideoProvider(null);
       return;
     }
     void loadCombinedJobs();
     void loadSingleJobs();
   }, [isAuthenticated, loadCombinedJobs, loadSingleJobs]);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setActiveVideoProvider(null);
+      setAvailableVideoProviders([...VIDEO_PROVIDER_OPTIONS]);
+      return;
+    }
+    let disposed = false;
+    const fetchProvider = async () => {
+      try {
+        const response = await fetch(`${apiBase}/api/providers/active`);
+        if (!response.ok) {
+          throw new Error(await response.text());
+        }
+        const data: { active?: string; available?: string[] } = await response.json();
+        if (!disposed) {
+          const normalizedAvailable = Array.isArray(data.available)
+            ? data.available
+                .map((value) => normalizeProvider(value))
+                .filter((value): value is string => Boolean(value))
+            : [];
+          const providerChoices =
+            normalizedAvailable.length > 0
+              ? normalizedAvailable
+              : [...VIDEO_PROVIDER_OPTIONS];
+          setAvailableVideoProviders(providerChoices);
+          const normalizedActive = normalizeProvider(data.active);
+          setActiveVideoProvider(normalizedActive ?? providerChoices[0] ?? null);
+        }
+      } catch (err) {
+        console.error(err);
+        if (!disposed) {
+          setActiveVideoProvider(null);
+          setAvailableVideoProviders([...VIDEO_PROVIDER_OPTIONS]);
+        }
+      }
+    };
+    void fetchProvider();
+    return () => {
+      disposed = true;
+    };
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    setWorkflowVideoProvider((current) => {
+      if (current && availableVideoProviders.includes(current)) {
+        return current;
+      }
+      if (activeVideoProvider && availableVideoProviders.includes(activeVideoProvider)) {
+        return activeVideoProvider;
+      }
+      return availableVideoProviders[0] ?? VIDEO_PROVIDER_OPTIONS[0];
+    });
+  }, [availableVideoProviders, activeVideoProvider]);
+
+  useEffect(() => {
+    setSingleVideoProvider((current) => {
+      if (current && availableVideoProviders.includes(current)) {
+        return current;
+      }
+      if (activeVideoProvider && availableVideoProviders.includes(activeVideoProvider)) {
+        return activeVideoProvider;
+      }
+      return availableVideoProviders[0] ?? VIDEO_PROVIDER_OPTIONS[0];
+    });
+  }, [availableVideoProviders, activeVideoProvider]);
 
   useEffect(() => {
     if (!activeJobId || !isAuthenticated) return;
@@ -600,7 +796,7 @@ export default function Home() {
 
     const fetchStatus = async () => {
       try {
-        const response = await fetch(`${API_BASE}/api/workflows/${activeJobId}`);
+        const response = await fetch(`${apiBase}/api/workflows/${activeJobId}`);
         if (!response.ok) {
           throw new Error(await response.text());
         }
@@ -644,13 +840,17 @@ export default function Home() {
   }, [activeJobId, isAuthenticated]);
 
   useEffect(() => {
+    setScenePromptEdits({});
+  }, [job?.job_id]);
+
+  useEffect(() => {
     if (!activeSingleJobId || !isAuthenticated) return;
     let disposed = false;
     let interval: ReturnType<typeof setInterval> | undefined;
 
     const fetchStatus = async () => {
       try {
-        const response = await fetch(`${API_BASE}/api/single-videos/${activeSingleJobId}`);
+        const response = await fetch(`${apiBase}/api/single-videos/${activeSingleJobId}`);
         if (!response.ok) {
           throw new Error(await response.text());
         }
@@ -705,25 +905,72 @@ export default function Home() {
     return Math.max(0, Math.min(100, Math.round(value * 100)));
   }, [singleJob]);
 
-  const finalVideoUrl = buildAssetUrl(job?.final_video_url);
-  const canRecompose = Boolean(job?.scenes?.length && job?.status === "completed");
+  const finalVideoUrl = buildAssetUrl(apiBase, job?.final_video_url);
+  const hasScenes = Boolean(job?.scenes?.length);
+  const isWorkflowActive = job?.status === "running" || job?.status === "queued";
+  const canRecompose = Boolean(hasScenes && !isWorkflowActive);
   const currentStatusToken = getStatusToken(job?.status, language);
   const showSequenceReferences = job?.generation_mode === "sequence";
+  const showAiFirstFrames = Boolean(job?.generate_ai_first_frame);
 
-  const singleVideoUrl = buildAssetUrl(singleJob?.video_url);
+  const singleVideoUrl = buildAssetUrl(apiBase, singleJob?.video_url);
   const singleStatusToken = getStatusToken(singleJob?.status, language);
+  const workflowProviderSelection =
+    workflowVideoProvider ?? availableVideoProviders[0] ?? VIDEO_PROVIDER_OPTIONS[0];
+  const singleProviderSelection =
+    singleVideoProvider ?? availableVideoProviders[0] ?? VIDEO_PROVIDER_OPTIONS[0];
+  const workflowDurationOptions = getDurationOptions(workflowProviderSelection);
+  const singleDurationOptions = getDurationOptions(singleProviderSelection);
 
 
   const panelCardClass =
     "rounded-md border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/50 p-6 shadow-2xl backdrop-blur-xl";
   const pillButtonClass =
     "rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100/50 dark:bg-slate-100 dark:bg-slate-800/50 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400";
-  const displayApiBase = API_BASE.replace(/^https?:\/\//, "");
+  const displayApiBase = apiBase.replace(/^https?:\/\//, "");
   const scrollToWorkspaceTop = () => {
     if (typeof window !== "undefined") {
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
   };
+
+  const handleCopyPrompt = async (text: string) => {
+    if (copyTimeoutRef.current) {
+      clearTimeout(copyTimeoutRef.current);
+    }
+    if (!text) {
+      setCopyNotice("Prompt unavailable.");
+      return;
+    }
+    if (typeof navigator === "undefined" || !navigator.clipboard) {
+      setCopyNotice("Clipboard unavailable");
+      copyTimeoutRef.current = setTimeout(() => setCopyNotice(null), 1800);
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopyNotice("Copied to clipboard");
+    } catch (err) {
+      console.error(err);
+      setCopyNotice("Unable to copy prompt");
+    }
+    copyTimeoutRef.current = setTimeout(() => setCopyNotice(null), 1800);
+  };
+
+
+  useEffect(() => {
+    const allowed = getDurationOptions(workflowProviderSelection);
+    if (!allowed.includes(sceneDuration)) {
+      setSceneDuration(allowed[0]);
+    }
+  }, [workflowProviderSelection, sceneDuration]);
+
+  useEffect(() => {
+    const allowed = getDurationOptions(singleProviderSelection);
+    if (!allowed.includes(singleDuration)) {
+      setSingleDuration(allowed[0]);
+    }
+  }, [singleProviderSelection, singleDuration]);
 
 
 
@@ -755,6 +1002,22 @@ export default function Home() {
     }
     setUsername("");
     setPassword("");
+    setActiveVideoProvider(null);
+    setAvailableVideoProviders([...VIDEO_PROVIDER_OPTIONS]);
+    setWorkflowVideoProvider(null);
+    setSingleVideoProvider(null);
+  };
+
+  const toggleGenerateAiFirstFrames = () => {
+    setGenerateAiFirstFrames((value) => {
+      const next = !value;
+      if (next) {
+        setUseSceneImages(false);
+        setSceneImageFiles([]);
+        setSceneImagePreviews([]);
+      }
+      return next;
+    });
   };
 
   const handleSceneImagesChange = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -800,6 +1063,146 @@ export default function Home() {
     }
   };
 
+  const requestWorkflowRefinement = async (content: string) => {
+    const response = await fetch(`${apiBase}/api/refine/workflow`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        script: content,
+        videoProvider: workflowProviderSelection,
+      }),
+    });
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+    const data = await response.json();
+    return (data.refinedScript ?? data.refined_script ?? content).trim() || content;
+  };
+
+  const requestSingleRefinement = async (content: string) => {
+    const response = await fetch(`${apiBase}/api/refine/single`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: content }),
+    });
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+    const data = await response.json();
+    return (data.refinedPrompt ?? data.refined_prompt ?? content).trim() || content;
+  };
+
+  const submitWorkflowRequest = async (scriptText: string, shouldRefine: boolean) => {
+    const trimmedScript = scriptText.trim();
+    if (!trimmedScript) {
+      setCombinedError("Please provide a storyboard script before starting the workflow.");
+      return false;
+    }
+
+    setIsSubmittingCombined(true);
+    setCombinedError(null);
+    try {
+      const payload: Record<string, unknown> = { script: trimmedScript };
+      payload.videoProvider = workflowProviderSelection;
+      payload.useSceneImages = useSceneImages && !generateAiFirstFrames;
+      payload.generateAiFirstFrame = generateAiFirstFrames;
+      payload.resolution = combinedResolution;
+      payload.generationMode = generationMode;
+      payload.refineWithGpt5 = shouldRefine;
+      payload.sceneDuration = Number(sceneDuration);
+      if (useSceneImages && sceneImageFiles.length) {
+        const uploads = await Promise.all(
+          sceneImageFiles.map(async (file) => ({
+            filename: file.name,
+            dataUrl: await readFileAsDataUrl(file),
+            contentType: file.type,
+          })),
+        );
+        payload.sceneImages = uploads;
+      }
+
+      const response = await fetch(`${apiBase}/api/workflows`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      const data: JobStatus = await response.json();
+      setJob(data);
+      setActiveJobId(data.job_id);
+      setJobs((prev) => {
+        const others = prev.filter((item) => item.job_id !== data.job_id);
+        return [data, ...others];
+      });
+      setSelectedCombinedJobs(new Set());
+      setIsCreateWorkflowModalOpen(false);
+      return true;
+    } catch (err) {
+      console.error(err);
+      setCombinedError(
+        "Unable to start workflow. Confirm the FastAPI server is running and accepts requests.",
+      );
+      return false;
+    } finally {
+      setIsSubmittingCombined(false);
+    }
+  };
+
+  const submitSingleRequest = async (promptText: string, shouldRefine: boolean) => {
+    const trimmedPrompt = promptText.trim();
+    if (!trimmedPrompt) {
+      setSingleError("Enter a prompt before requesting a video clip.");
+      return false;
+    }
+
+    setIsSubmittingSingle(true);
+    setSingleError(null);
+    try {
+      const payload: Record<string, unknown> = {
+        prompt: trimmedPrompt,
+        resolution: singleResolution,
+        duration: Number(singleDuration),
+        refineWithGpt5: shouldRefine,
+      };
+      payload.videoProvider = singleProviderSelection;
+
+      if (singleReferenceFile) {
+        payload.referenceImage = {
+          filename: singleReferenceFile.name,
+          dataUrl: await readFileAsDataUrl(singleReferenceFile),
+          contentType: singleReferenceFile.type,
+        };
+      }
+
+      const response = await fetch(`${apiBase}/api/single-videos`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      const data: SingleVideoJob = await response.json();
+      setSingleJob(data);
+      setActiveSingleJobId(data.job_id);
+      setSingleJobs((prev) => {
+        const others = prev.filter((item) => item.job_id !== data.job_id);
+        return [data, ...others];
+      });
+      setSelectedSingleJobs(new Set());
+      setIsCreateSingleVideoModalOpen(false);
+      return true;
+    } catch (err) {
+      console.error(err);
+      setSingleError("Unable to start the single-video job. Verify the backend is reachable.");
+      return false;
+    } finally {
+      setIsSubmittingSingle(false);
+    }
+  };
+
   const submitRemix = async (sceneOrder: number) => {
     if (!job?.job_id) {
       setCombinedError("Start a workflow before remixing scenes.");
@@ -813,7 +1216,7 @@ export default function Home() {
     setCombinedError(null);
     setRemixSubmitting((prev) => ({ ...prev, [sceneOrder]: true }));
     try {
-      const response = await fetch(`${API_BASE}/api/workflows/${job.job_id}/scenes/${sceneOrder}/remix`, {
+      const response = await fetch(`${apiBase}/api/workflows/${job.job_id}/scenes/${sceneOrder}/remix`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt }),
@@ -835,6 +1238,41 @@ export default function Home() {
     await submitRemix(sceneOrder);
   };
 
+  const handleRegenerateScene = async (sceneOrder: number, promptOverride?: string) => {
+    if (!job?.job_id) {
+      setCombinedError("Start a workflow before regenerating scenes.");
+      return;
+    }
+    const trimmedOverride = promptOverride?.trim() ?? "";
+    setCombinedError(null);
+    setSceneRegenerating((prev) => ({ ...prev, [sceneOrder]: true }));
+    try {
+      const hasOverride = Boolean(trimmedOverride);
+      const response = await fetch(`${apiBase}/api/workflows/${job.job_id}/scenes/${sceneOrder}/regenerate`, {
+        method: "POST",
+        headers: hasOverride ? { "Content-Type": "application/json" } : undefined,
+        body: hasOverride ? JSON.stringify({ prompt: trimmedOverride }) : undefined,
+      });
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      const data: JobStatus = await response.json();
+      setJob(data);
+      setJobs((prev) => {
+        const others = prev.filter((item) => item.job_id !== data.job_id);
+        return [data, ...others];
+      });
+      if (hasOverride) {
+        setScenePromptEdits((prev) => ({ ...prev, [sceneOrder]: trimmedOverride }));
+      }
+    } catch (err) {
+      console.error(err);
+      setCombinedError("Failed to regenerate this scene. Confirm the backend is reachable.");
+    } finally {
+      setSceneRegenerating((prev) => ({ ...prev, [sceneOrder]: false }));
+    }
+  };
+
   const handleSelectVersion = async (sceneOrder: number, versionId: string) => {
     if (!job?.job_id) {
       setCombinedError("Start a workflow before selecting scene versions.");
@@ -843,7 +1281,7 @@ export default function Home() {
     setCombinedError(null);
     setSelectionSubmitting((prev) => ({ ...prev, [versionId]: true }));
     try {
-      const response = await fetch(`${API_BASE}/api/workflows/${job.job_id}/scenes/${sceneOrder}/select`, {
+      const response = await fetch(`${apiBase}/api/workflows/${job.job_id}/scenes/${sceneOrder}/select`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ versionId }),
@@ -866,7 +1304,7 @@ export default function Home() {
     setCombinedError(null);
     setIsRecomposing(true);
     try {
-      const response = await fetch(`${API_BASE}/api/workflows/${job.job_id}/recompose`, {
+      const response = await fetch(`${apiBase}/api/workflows/${job.job_id}/recompose`, {
         method: "POST",
       });
       if (!response.ok) {
@@ -888,101 +1326,60 @@ export default function Home() {
       return;
     }
 
-    setIsSubmittingCombined(true);
-    setCombinedError(null);
-    try {
-      const payload: Record<string, unknown> = { script: trimmed };
-      payload.useSceneImages = useSceneImages;
-      payload.resolution = combinedResolution;
-      payload.generationMode = generationMode;
-      payload.refineWithGpt5 = refineWorkflowWithGpt5;
-      if (useSceneImages && sceneImageFiles.length) {
-        const uploads = await Promise.all(
-          sceneImageFiles.map(async (file) => ({
-            filename: file.name,
-            dataUrl: await readFileAsDataUrl(file),
-            contentType: file.type,
-          })),
+    if (refineWorkflowWithGpt5) {
+      setIsSubmittingCombined(true);
+      setCombinedError(null);
+      try {
+        const refined = await requestWorkflowRefinement(trimmed);
+        setRefinementReview({
+          mode: "workflow",
+          originalText: trimmed,
+          refinedText: refined,
+        });
+        setRefinementDraft(refined || trimmed);
+      } catch (err) {
+        console.error(err);
+        setCombinedError(
+          "Unable to refine the storyboard. Continue without refinement or try again.",
         );
-        payload.sceneImages = uploads;
+      } finally {
+        setIsSubmittingCombined(false);
       }
-
-      const response = await fetch(`${API_BASE}/api/workflows`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!response.ok) {
-        throw new Error(await response.text());
-      }
-      const data: JobStatus = await response.json();
-      setJob(data);
-      setActiveJobId(data.job_id);
-      setJobs((prev) => {
-        const others = prev.filter((item) => item.job_id !== data.job_id);
-        return [data, ...others];
-      });
-      setSelectedCombinedJobs(new Set());
-      setIsCreateWorkflowModalOpen(false);
-    } catch (err) {
-      console.error(err);
-      setCombinedError(
-        "Unable to start workflow. Confirm the FastAPI server is running and accepts requests.",
-      );
-    } finally {
-      setIsSubmittingCombined(false);
+      return;
     }
+
+    await submitWorkflowRequest(trimmed, false);
   };
 
   const handleSingleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const trimmed = singlePrompt.trim();
     if (!trimmed) {
-      setSingleError("Enter a prompt before requesting a Sora2 video.");
+      setSingleError("Enter a prompt before requesting a video clip.");
       return;
     }
 
-    setIsSubmittingSingle(true);
-    setSingleError(null);
-    try {
-      const payload: Record<string, unknown> = {
-        prompt: trimmed,
-        resolution: singleResolution,
-        duration: Number(singleDuration),
-        refineWithGpt5: refineSingleWithGpt5,
-      };
-
-      if (singleReferenceFile) {
-        payload.referenceImage = {
-          filename: singleReferenceFile.name,
-          dataUrl: await readFileAsDataUrl(singleReferenceFile),
-          contentType: singleReferenceFile.type,
-        };
+    if (refineSingleWithGpt5) {
+      setIsSubmittingSingle(true);
+      setSingleError(null);
+      try {
+        const refined = await requestSingleRefinement(trimmed);
+        setRefinementReview({
+          mode: "single",
+          originalText: trimmed,
+          refinedText: refined,
+        });
+        setRefinementDraft(refined || trimmed);
+      } catch (err) {
+        console.error(err);
+        setSingleError("Unable to refine the prompt. Continue without refinement or try again.");
+      } finally {
+        setIsSubmittingSingle(false);
       }
-
-      const response = await fetch(`${API_BASE}/api/single-videos`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!response.ok) {
-        throw new Error(await response.text());
-      }
-      const data: SingleVideoJob = await response.json();
-      setSingleJob(data);
-      setActiveSingleJobId(data.job_id);
-      setSingleJobs((prev) => {
-        const others = prev.filter((item) => item.job_id !== data.job_id);
-        return [data, ...others];
-      });
-      setSelectedSingleJobs(new Set());
-      setIsCreateSingleVideoModalOpen(false);
-    } catch (err) {
-      console.error(err);
-      setSingleError("Unable to start the single-video job. Verify the backend is reachable.");
-    } finally {
-      setIsSubmittingSingle(false);
+      return;
     }
+
+    await submitSingleRequest(trimmed, false);
   };
 
   const handleSingleRemixSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -1000,7 +1397,7 @@ export default function Home() {
     setSingleError(null);
     setSingleRemixSubmitting(true);
     try {
-      const response = await fetch(`${API_BASE}/api/single-videos/${singleJob.job_id}/remix`, {
+      const response = await fetch(`${apiBase}/api/single-videos/${singleJob.job_id}/remix`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt: trimmed }),
@@ -1020,6 +1417,61 @@ export default function Home() {
       setSingleError("Unable to submit single-video remix. Confirm the backend endpoint is reachable.");
     } finally {
       setSingleRemixSubmitting(false);
+    }
+  };
+
+  const handleRefinementProceed = async () => {
+    if (!refinementReview) return;
+    const finalText =
+      refinementDraft.trim() || refinementReview.refinedText || refinementReview.originalText;
+    if (refinementReview.mode === "workflow") {
+      const success = await submitWorkflowRequest(finalText, false);
+      if (success) {
+        setRefinementReview(null);
+        setCopyNotice(null);
+      }
+    } else {
+      const success = await submitSingleRequest(finalText, false);
+      if (success) {
+        setRefinementReview(null);
+        setCopyNotice(null);
+      }
+    }
+  };
+
+  const handleRefinementDismiss = () => {
+    setRefinementReview(null);
+    setRefinementDraft("");
+    setCopyNotice(null);
+  };
+
+  const handleSelectSingleVersion = async (versionId: string) => {
+    if (!singleJob?.job_id) {
+      setSingleError("Start a single-video job before selecting versions.");
+      return;
+    }
+    setSingleError(null);
+    setSingleSelectionSubmitting((prev) => ({ ...prev, [versionId]: true }));
+    try {
+      const response = await fetch(`${apiBase}/api/single-videos/${singleJob.job_id}/select`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ versionId }),
+      });
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      const data: SingleVideoJob = await response.json();
+      setSingleJob(data);
+      setSingleJobs((prev) => {
+        const others = prev.filter((item) => item.job_id !== data.job_id);
+        return [data, ...others];
+      });
+    } catch (err) {
+      console.error(err);
+      setSingleError("Unable to update selected version. Please try again.");
+    } finally {
+      setSingleSelectionSubmitting((prev) => ({ ...prev, [versionId]: false }));
     }
   };
 
@@ -1054,7 +1506,7 @@ export default function Home() {
     let deletionError: string | null = null;
     for (const jobId of Array.from(selectedCombinedJobs)) {
       try {
-        const response = await fetch(`${API_BASE}/api/workflows/${jobId}`, {
+        const response = await fetch(`${apiBase}/api/workflows/${jobId}`, {
           method: "DELETE",
         });
         if (!response.ok) {
@@ -1079,7 +1531,7 @@ export default function Home() {
     let deletionError: string | null = null;
     for (const jobId of Array.from(selectedSingleJobs)) {
       try {
-        const response = await fetch(`${API_BASE}/api/single-videos/${jobId}`, {
+        const response = await fetch(`${apiBase}/api/single-videos/${jobId}`, {
           method: "DELETE",
         });
         if (!response.ok) {
@@ -1102,7 +1554,10 @@ export default function Home() {
       <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-950 px-4 py-10 text-slate-900 dark:text-slate-100">
         <div className="w-full max-w-md rounded-md border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 shadow-2xl">
           <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-500">{translate("Sora2 Studio")}</p>
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-500">{translate("Streams Studio")}</p>
+              <p className="text-[9px] text-slate-400">{translate("video generation workflow by AI")}</p>
+            </div>
             <div className="flex items-center gap-3"><ThemeToggle /><LanguageToggle /></div>
           </div>
           <div className="space-y-2 text-center">
@@ -1163,15 +1618,15 @@ export default function Home() {
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-3">
             <Image
-              src="/sora2_logo.jpg"
-              alt={translate("Sora Agent Workflow logo")}
+              src={theme === "dark" ? "/streams_logo_dark_background.png" : "/streams_logo_white_background.png"}
+              alt={translate("Streams Agent Workflow logo")}
               width={40}
               height={40}
               className="h-10 w-10 rounded border border-slate-300 object-cover shadow-sm shadow-black/50 dark:border-slate-700"
               priority
             />
             <div>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-500">{translate("Sora2 Studio")}</p>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-500">{translate("Streams Studio")}</p>
             </div>
           </div>
           <div className="h-6 w-px bg-slate-400 dark:bg-slate-600" />
@@ -1202,7 +1657,13 @@ export default function Home() {
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-3"><ThemeToggle /><LanguageToggle /></div>
           <span className={`${pillButtonClass} whitespace-nowrap`}>
-            {translate("API ·")} <span className="font-mono text-[11px] text-slate-500">{displayApiBase || API_BASE}</span>
+            {translate("Video backend")}:{" "}
+            <span className="font-mono text-[11px] text-slate-500">
+              {(activeVideoProvider ?? translate("Unknown")).toUpperCase()}
+            </span>
+          </span>
+          <span className={`${pillButtonClass} whitespace-nowrap`}>
+            {translate("API ·")} <span className="font-mono text-[11px] text-slate-500">{displayApiBase || apiBase}</span>
           </span>
           <button
             type="button"
@@ -1253,6 +1714,7 @@ export default function Home() {
                         </th>
                         <th scope="col" className="px-6 py-3 text-left">{translate("Job ID")}</th>
                         <th scope="col" className="px-6 py-3 text-left">{translate("Status")}</th>
+                        <th scope="col" className="px-6 py-3 text-left">{translate("Video backend")}</th>
                         <th scope="col" className="px-6 py-3 text-left">{translate("Mode")}</th>
                         <th scope="col" className="px-6 py-3 text-left">{translate("Resolution")}</th>
                         <th scope="col" className="px-6 py-3 text-left">{translate("Progress")}</th>
@@ -1289,6 +1751,9 @@ export default function Home() {
                                 <span className={`text-xs font-semibold uppercase tracking-wide ${token.className}`}>{token.label}</span>
                                 <span className="text-[11px] text-slate-500">{stageLabel(item.stage, language)}</span>
                               </div>
+                            </td>
+                            <td className="px-6 py-4 text-xs text-slate-500 dark:text-slate-400">
+                              {(item.video_provider || "sora2").toUpperCase()}
                             </td>
                             <td className="px-6 py-4 text-xs text-slate-500 dark:text-slate-400">
                               {translate(item.generation_mode === "sequence" ? "Sequence" : "Parallel")}
@@ -1341,6 +1806,7 @@ export default function Home() {
                         </th>
                         <th scope="col" className="px-6 py-3 text-left">{translate("Job ID")}</th>
                         <th scope="col" className="px-6 py-3 text-left">{translate("Status")}</th>
+                        <th scope="col" className="px-6 py-3 text-left">{translate("Video backend")}</th>
                         <th scope="col" className="px-6 py-3 text-left">{translate("Resolution")}</th>
                         <th scope="col" className="px-6 py-3 text-left">{translate("Duration")}</th>
                         <th scope="col" className="px-6 py-3 text-left">{translate("Progress")}</th>
@@ -1377,6 +1843,9 @@ export default function Home() {
                                 <span className={`text-xs font-semibold uppercase tracking-wide ${token.className}`}>{token.label}</span>
                                 <span className="text-[11px] text-slate-500">{stageLabel(item.status, language)}</span>
                               </div>
+                            </td>
+                            <td className="px-6 py-4 text-xs text-slate-500 dark:text-slate-400">
+                              {(item.video_provider || "sora2").toUpperCase()}
                             </td>
                             <td className="px-6 py-4 text-xs text-slate-500 dark:text-slate-400">{item.resolution}</td>
                             <td className="px-6 py-4 text-xs text-slate-500 dark:text-slate-400">
@@ -1427,7 +1896,21 @@ export default function Home() {
               onChange={(event) => setScript(event.target.value)}
             />
 
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Video backend")}</label>
+                <select
+                  value={workflowProviderSelection}
+                  onChange={(event) => setWorkflowVideoProvider(event.target.value)}
+                  className="w-full rounded border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 shadow-inner focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-800"
+                >
+                  {availableVideoProviders.map((option) => (
+                    <option key={option} value={option}>
+                      {option.toUpperCase()}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <div className="space-y-2">
                 <label className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Resolution")}</label>
                 <select
@@ -1443,11 +1926,54 @@ export default function Home() {
                 </select>
               </div>
               <div className="space-y-2">
+                <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Scene duration")}</span>
+                <div className="flex gap-2">
+                  {workflowDurationOptions.map((option) => {
+                    const isActive = sceneDuration === option;
+                    return (
+                      <label
+                        key={option}
+                        className={`flex-1 cursor-pointer rounded-md border px-3 py-2 text-center text-sm font-semibold transition ${
+                          isActive
+                            ? "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm"
+                            : "border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200"
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="scene-duration"
+                          value={option}
+                          checked={isActive}
+                          onChange={(event) => setSceneDuration(event.target.value as DurationOption)}
+                          className="sr-only"
+                        />
+                        {option}
+                        {translate("s")}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
                 <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Scene references")}</span>
                 <button
                   type="button"
-                  onClick={() => setUseSceneImages((value) => !value)}
-                  className={`flex items-center gap-3 rounded border px-4 py-3 text-sm font-semibold transition ${
+                  onClick={() =>
+                    setUseSceneImages((value) => {
+                      const next = !value;
+                      if (next) {
+                        setGenerateAiFirstFrames(false);
+                      } else {
+                        setSceneImageFiles([]);
+                        setSceneImagePreviews([]);
+                      }
+                      return next;
+                    })
+                  }
+                  className={`flex w-full items-center gap-3 rounded border px-4 py-3 text-sm font-semibold transition ${
                     useSceneImages
                       ? "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm"
                       : "border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200"
@@ -1466,6 +1992,34 @@ export default function Home() {
                   </span>
                   {useSceneImages ? translate("Scene images enabled") : translate("No scene references")}
                 </button>
+              </div>
+              <div className="space-y-2">
+                <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("AI first frames")}</span>
+                <button
+                  type="button"
+                  onClick={toggleGenerateAiFirstFrames}
+                  className={`flex w-full items-center gap-3 rounded border px-4 py-3 text-sm font-semibold transition ${
+                    generateAiFirstFrames
+                      ? "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm"
+                      : "border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200"
+                  }`}
+                >
+                  <span className={`inline-flex h-5 w-10 items-center rounded-full border transition ${
+                    generateAiFirstFrames
+                      ? "border-slate-500 bg-slate-600"
+                      : "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700"
+                  }`}>
+                    <span
+                      className={`ml-1 inline-block h-3.5 w-3.5 rounded-full bg-slate-200 transition ${
+                        generateAiFirstFrames ? "translate-x-4" : "translate-x-0"
+                      }`}
+                    />
+                  </span>
+                  {translate(generateAiFirstFrames ? "AI start stills enabled" : "No AI first frames")}
+                </button>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {translate("Use GPT-5 + gpt-image-1 to seed each scene.")}
+                </p>
               </div>
             </div>
 
@@ -1587,7 +2141,7 @@ export default function Home() {
                 )}
               </button>
               <p className="text-xs text-slate-500">
-                {translate("API target:")} <span className="font-mono text-[11px] text-slate-500">{API_BASE}/api/workflows</span>
+                {translate("API target:")} <span className="font-mono text-[11px] text-slate-500">{apiBase}/api/workflows</span>
               </p>
             </div>
           </form>
@@ -1601,17 +2155,31 @@ export default function Home() {
             </div>
           )}
           <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
-            {translate("Submit a single prompt directly to the Sora2 API. Optionally attach a still reference, select the render resolution, and choose a supported clip duration.")}
+            {translate("Submit a single prompt directly to the selected video backend. Optionally attach a still reference, select the render resolution, and choose a supported clip duration.")}
           </p>
           <form className="space-y-5" onSubmit={handleSingleSubmit}>
             <textarea
               className="min-h-[220px] w-full resize-none rounded border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-4 py-3 text-sm text-slate-900 dark:text-slate-100 shadow-inner placeholder:text-slate-500 transition focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-800"
-              placeholder={translate("Describe the scene, motion, cinematography, and mood for Sora2...")}
+              placeholder={translate("Describe the scene, motion, cinematography, and mood for the selected video backend...")}
               value={singlePrompt}
               onChange={(event) => setSinglePrompt(event.target.value)}
             />
 
             <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Video backend")}</label>
+                <select
+                  value={singleProviderSelection}
+                  onChange={(event) => setSingleVideoProvider(event.target.value)}
+                  className="w-full rounded border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 shadow-inner focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-800"
+                >
+                  {availableVideoProviders.map((option) => (
+                    <option key={option} value={option}>
+                      {option.toUpperCase()}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <div className="space-y-2">
                 <label className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Resolution")}</label>
                 <select
@@ -1630,7 +2198,7 @@ export default function Home() {
                 <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Duration")}</span
 >
                 <div className="flex gap-2">
-                  {durationOptions.map((option) => {
+                  {singleDurationOptions.map((option) => {
                     const isActive = singleDuration === option;
                     return (
                       <label
@@ -1646,7 +2214,7 @@ export default function Home() {
                           name="single-duration"
                           value={option}
                           checked={isActive}
-                          onChange={(event) => setSingleDuration(event.target.value as (typeof durationOptions)[number])}
+                          onChange={(event) => setSingleDuration(event.target.value as DurationOption)}
                           className="sr-only"
                         />
                         {option}
@@ -1732,7 +2300,7 @@ export default function Home() {
                 )}
               </button>
               <p className="text-xs text-slate-500">
-                {translate("API target:")} <span className="font-mono text-[11px] text-slate-500">{API_BASE}/api/single-videos</span>
+                {translate("API target:")} <span className="font-mono text-[11px] text-slate-500">{apiBase}/api/single-videos</span>
               </p>
             </div>
           </form>
@@ -1750,8 +2318,29 @@ export default function Home() {
                   <p className="text-xs uppercase tracking-wide text-slate-500">
                     {translate("Mode:")} {translate(job.generation_mode === "sequence" ? "Sequence" : "Parallel")}
                   </p>
+                  <p className="text-xs uppercase tracking-wide text-slate-500">
+                    {translate("Video backend")}: {(job.video_provider ?? translate("Unknown")).toUpperCase()}
+                  </p>
                 </div>
-                <span className={`text-xs font-semibold uppercase tracking-wide ${currentStatusToken.className}`}>{currentStatusToken.label}</span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className={`text-xs font-semibold uppercase tracking-wide ${currentStatusToken.className}`}>{currentStatusToken.label}</span>
+                  {job.script?.trim() ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPromptPreview({
+                          sceneLabel: translate("Workflow prompt"),
+                          versionLabel: translate("Storyboard Script"),
+                          prompt: job.script ?? "",
+                        })
+                      }
+                      className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1 text-[11px] font-semibold text-slate-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-800 dark:hover:text-slate-100"
+                    >
+                      <DocumentTextIcon className="h-4 w-4" />
+                      {translate("View input prompt")}
+                    </button>
+                  ) : null}
+                </div>
               </div>
 
               <div className="mt-6 space-y-3">
@@ -1761,7 +2350,7 @@ export default function Home() {
                 </div>
                 <div className="h-2.5 overflow-hidden rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800">
                   <div
-                    className="h-full rounded-full bg-slate-100 transition-all duration-500 ease-out"
+                    className="h-full rounded-full bg-slate-500 dark:bg-slate-200 transition-[width] duration-500 ease-out"
                     style={{ width: `${combinedProgressPercent}%` }}
                   />
                 </div>
@@ -1788,7 +2377,7 @@ export default function Home() {
                 </div>
               </dl>
 
-              {finalVideoUrl && (
+              {hasScenes && (
                 <div className="mt-8 space-y-3">
                   <div className="flex items-center justify-between gap-3">
                     <h3 className="text-sm font-semibold text-slate-600 dark:text-slate-300">{translate("Final Video")}</h3>
@@ -1799,25 +2388,37 @@ export default function Home() {
                       className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {isRecomposing ? <ArrowPathIcon className="h-4 w-4 animate-spin" /> : <ArrowPathIcon className="h-4 w-4" />}
-                      {translate("Regenerate Final Video")}
+                      {translate(finalVideoUrl ? "Regenerate Final Video" : "Compose Available Scenes")}
                     </button>
                   </div>
-                  <video
-                    controls
-                    className="max-h-[420px] w-full rounded border border-slate-200 dark:border-slate-800 bg-black/60"
-                    src={finalVideoUrl}
-                  >
-                    {translate("Your browser does not support HTML5 video.")}
-                  </video>
-                  <a
-                    href={finalVideoUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-2 text-sm font-medium text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-slate-100"
-                  >
-                    <PlayCircleIcon className="h-4 w-4" />
-                    {translate("Open MP4 in new tab")}
-                  </a>
+                  {!finalVideoUrl && (
+                    <div className="flex items-center gap-2 rounded-md border border-amber-200 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+                      <ExclamationTriangleIcon className="h-4 w-4" />
+                      {translate(
+                        "Some scenes finished before an error. Compose the available clips or regenerate blocked scenes, then try again.",
+                      )}
+                    </div>
+                  )}
+                  {finalVideoUrl ? (
+                    <>
+                      <video
+                        controls
+                        className="max-h-[420px] w-full rounded border border-slate-200 dark:border-slate-800 bg-black/60"
+                        src={finalVideoUrl}
+                      >
+                        {translate("Your browser does not support HTML5 video.")}
+                      </video>
+                      <a
+                        href={finalVideoUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-2 text-sm font-medium text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-slate-100"
+                      >
+                        <PlayCircleIcon className="h-4 w-4" />
+                        {translate("Open MP4 in new tab")}
+                      </a>
+                    </>
+                  ) : null}
                 </div>
               )}
 
@@ -1831,6 +2432,8 @@ export default function Home() {
                     {job.scenes.map((scene) => {
                       const versions = scene.versions ?? [];
                       const selectedVersion = versions.find((version) => version.version_id === scene.selected_version_id) ?? versions[0];
+                      const isRegenerating = Boolean(sceneRegenerating[scene.order]);
+            const firstFrameUrl = showAiFirstFrames ? buildAssetUrl(apiBase, scene.first_frame_url) : null;
 
                       return (
                         <div
@@ -1849,9 +2452,58 @@ export default function Home() {
                             </span>
                           </div>
 
-                          <p className="mt-2 text-[11px] text-slate-500">
-                            {translate("Video ID:")} {selectedVersion?.video_id ?? translate("Unavailable")}
-                          </p>
+                          {firstFrameUrl ? (
+                            <div className="mt-3 rounded-md border border-slate-300 dark:border-slate-700 bg-slate-100/50 dark:bg-slate-800/50 p-2">
+                              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                                {translate("AI first frame preview")}
+                              </p>
+                              <Image
+                                src={firstFrameUrl}
+                                alt={`${scene.label} ${translate("AI first frame preview")}`}
+                                width={320}
+                                height={200}
+                                unoptimized
+                                className="mt-2 h-32 w-full rounded object-cover"
+                              />
+                            </div>
+                          ) : null}
+
+                          <div className="mt-3 space-y-2">
+                            <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                              {translate("Edit prompt before regenerating")}
+                            </label>
+                            <textarea
+                              className="w-full rounded-md border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-xs text-slate-900 dark:text-slate-100 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-800"
+                              value={scenePromptEdits[scene.order] ?? selectedVersion?.prompt ?? ""}
+                              onChange={(event) =>
+                                setScenePromptEdits((prev) => ({ ...prev, [scene.order]: event.target.value }))
+                              }
+                              placeholder={translate("Edit prompt before regenerating")}
+                            />
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                                {translate("Video ID:")} {selectedVersion?.video_id ?? translate("Unavailable")}
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleRegenerateScene(
+                                    scene.order,
+                                    scenePromptEdits[scene.order] ?? selectedVersion?.prompt ?? "",
+                                  )
+                                }
+                                disabled={isRegenerating}
+                                className="inline-flex items-center gap-1 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                {isRegenerating ? (
+                                  <ArrowPathIcon className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <ArrowPathIcon className="h-3.5 w-3.5" />
+                                )}
+                                {isRegenerating ? translate("Regenerating...") : translate("Regenerate Scene")}
+                              </button>
+                            </div>
+                          </div>
 
                           {versions.length ? (
                             <div className="mt-4 space-y-3">
@@ -1859,8 +2511,8 @@ export default function Home() {
                                 {translate("Versions")}
                               </h4>
                               {versions.map((version) => {
-                                const versionVideoUrl = buildAssetUrl(version.video_url);
-                                const versionLastFrameUrl = showSequenceReferences ? buildAssetUrl(version.last_frame_url) : null;
+                              const versionVideoUrl = buildAssetUrl(apiBase, version.video_url);
+                              const versionLastFrameUrl = showSequenceReferences ? buildAssetUrl(apiBase, version.last_frame_url) : null;
                                 const isActive = version.version_id === scene.selected_version_id;
                                 const isBusy = Boolean(selectionSubmitting[version.version_id]);
                                 return (
@@ -1922,9 +2574,20 @@ export default function Home() {
                                       </div>
                                     ) : null}
                                     {version.prompt ? (
-                                      <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                                        {translate("Prompt:")} <span className="font-mono text-[11px] text-slate-500">{version.prompt}</span>
-                                      </p>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setPromptPreview({
+                                            sceneLabel: scene.label,
+                                            versionLabel: version.label,
+                                            prompt: version.prompt ?? "",
+                                          })
+                                        }
+                                        className="mt-3 inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200"
+                                      >
+                                        <DocumentTextIcon className="h-4 w-4" />
+                                        {translate("View system prompt")}
+                                      </button>
                                     ) : null}
                                     {version.video_id ? (
                                       <p className="text-[11px] text-slate-500">{translate("Azure video ID:")} {version.video_id}</p>
@@ -2012,8 +2675,29 @@ export default function Home() {
                     <FilmIcon className="h-5 w-5 text-slate-500 dark:text-slate-400" />
                     {translate("Single Video Status")}
                   </h2>
+                  <p className="text-xs uppercase tracking-wide text-slate-500">
+                    {translate("Video backend")}: {(singleJob.video_provider ?? translate("Unknown")).toUpperCase()}
+                  </p>
                 </div>
-                <span className={`text-xs font-semibold uppercase tracking-wide ${singleStatusToken.className}`}>{singleStatusToken.label}</span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className={`text-xs font-semibold uppercase tracking-wide ${singleStatusToken.className}`}>{singleStatusToken.label}</span>
+                  {singleJob.prompt?.trim() ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPromptPreview({
+                          sceneLabel: translate("Single video prompt"),
+                          versionLabel: translate("Submitted prompt"),
+                          prompt: singleJob.prompt,
+                        })
+                      }
+                      className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1 text-[11px] font-semibold text-slate-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-800 dark:hover:text-slate-100"
+                    >
+                      <DocumentTextIcon className="h-4 w-4" />
+                      {translate("View input prompt")}
+                    </button>
+                  ) : null}
+                </div>
               </div>
 
               <div className="mt-6 space-y-3">
@@ -2023,7 +2707,7 @@ export default function Home() {
                 </div>
                 <div className="h-2.5 overflow-hidden rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800">
                   <div
-                    className="h-full rounded-full bg-slate-100 transition-all duration-500 ease-out"
+                    className="h-full rounded-full bg-slate-500 dark:bg-slate-200 transition-[width] duration-500 ease-out"
                     style={{ width: `${singleProgressPercent}%` }}
                   />
                 </div>
@@ -2123,7 +2807,7 @@ export default function Home() {
                   <h3 className="text-sm font-semibold text-slate-600 dark:text-slate-300">{translate("Versions")}</h3>
                   <div className="space-y-3">
                     {singleJob.versions.map((version) => {
-                      const versionVideoUrl = buildAssetUrl(version.video_url);
+                      const versionVideoUrl = buildAssetUrl(apiBase, version.video_url);
                       const isActive = version.version_id === singleJob.selected_version_id;
                       return (
                         <div
@@ -2139,11 +2823,22 @@ export default function Home() {
                                 {version.source} • {formatTimeDistance(version.created_at)}
                               </p>
                             </div>
-                            {isActive ? (
-                              <span className="rounded-full border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50 dark:bg-emerald-950/30 px-2 py-0.5 text-[11px] font-semibold text-emerald-400">
-                                {translate("Selected")}
-                              </span>
-                            ) : null}
+                            <button
+                              type="button"
+                              onClick={() => handleSelectSingleVersion(version.version_id)}
+                              disabled={isActive || singleSelectionSubmitting[version.version_id]}
+                              className={`rounded-md border px-3 py-1 text-xs font-semibold transition ${
+                                isActive
+                                  ? "border-emerald-200 dark:border-emerald-900/50 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-400"
+                                  : "border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200 disabled:opacity-60"
+                              }`}
+                            >
+                              {isActive
+                                ? translate("Selected")
+                                : singleSelectionSubmitting[version.version_id]
+                                  ? translate("Selecting...")
+                                  : translate("Use this version")}
+                            </button>
                           </div>
                           {versionVideoUrl ? (
                             <video
@@ -2199,6 +2894,134 @@ export default function Home() {
               ) : null}
             </div>
           )}
+        </Modal>
+
+        <Modal
+          isOpen={Boolean(refinementReview)}
+          onClose={handleRefinementDismiss}
+          title={translate("Review refined prompt")}
+          maxWidth="max-w-4xl"
+        >
+          {refinementReview ? (
+            <div className="space-y-4">
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                {translate(
+                  refinementReview.mode === "workflow"
+                    ? "GPT-5 refined your storyboard. Edit it below or proceed."
+                    : "GPT-5 refined your prompt. Edit it below or proceed.",
+                )}
+              </p>
+              <div className="space-y-2">
+                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  {translate("Refined prompt")}
+                </label>
+                <textarea
+                  className="min-h-[200px] w-full rounded-md border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-800"
+                  value={refinementDraft}
+                  onChange={(event) => setRefinementDraft(event.target.value)}
+                />
+              </div>
+              <div className="rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 p-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  {translate("Original input")}
+                </p>
+                <div className="mt-2 max-h-32 overflow-y-auto rounded bg-slate-100 dark:bg-slate-800 p-2">
+                  <pre className="whitespace-pre-wrap break-words font-mono text-[12px] leading-relaxed text-slate-800 dark:text-slate-100">
+                    {refinementReview.originalText}
+                  </pre>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                {copyNotice ? (
+                  <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                    {translate(copyNotice)}
+                  </span>
+                ) : (
+                  <span className="text-[11px] text-slate-500">
+                    {translate("Copy or update the prompt before proceeding.")}
+                  </span>
+                )}
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleCopyPrompt(
+                        refinementDraft.trim()
+                          ? refinementDraft
+                          : refinementReview.refinedText || refinementReview.originalText,
+                      )
+                    }
+                    className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-800 dark:hover:text-slate-100"
+                  >
+                    <DocumentTextIcon className="h-4 w-4" />
+                    {translate("Copy prompt")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleRefinementDismiss}
+                    className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-800 dark:hover:text-slate-100"
+                  >
+                    {translate("Back to edit")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleRefinementProceed}
+                    disabled={refinementReview.mode === "workflow" ? isSubmittingCombined : isSubmittingSingle}
+                    className="inline-flex items-center gap-2 rounded-md bg-slate-900 px-4 py-2 text-xs font-semibold text-white dark:bg-slate-100 dark:text-slate-900 shadow-sm shadow-slate-900/50 transition hover:bg-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {refinementReview.mode === "workflow" ? (
+                      isSubmittingCombined ? <ArrowPathIcon className="h-4 w-4 animate-spin" /> : <PaperAirplaneIcon className="h-4 w-4" />
+                    ) : isSubmittingSingle ? (
+                      <ArrowPathIcon className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <PaperAirplaneIcon className="h-4 w-4" />
+                    )}
+                    {translate(refinementReview.mode === "workflow" ? "Proceed to workflow" : "Proceed to single video")}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </Modal>
+
+        <Modal
+          isOpen={Boolean(promptPreview)}
+          onClose={() => {
+            setPromptPreview(null);
+            setCopyNotice(null);
+          }}
+          title={translate("Prompt details")}
+          maxWidth="max-w-3xl"
+        >
+          {promptPreview ? (
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  {promptPreview.sceneLabel} • {promptPreview.versionLabel}
+                </p>
+                <div className="flex items-center gap-2">
+                  {copyNotice ? (
+                    <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                      {translate(copyNotice)}
+                    </span>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => handleCopyPrompt(promptPreview.prompt)}
+                    className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-[11px] font-semibold text-slate-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-800 dark:hover:text-slate-100"
+                  >
+                    <DocumentTextIcon className="h-4 w-4" />
+                    {translate("Copy prompt")}
+                  </button>
+                </div>
+              </div>
+              <div className="max-h-[50vh] overflow-y-auto rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 p-3">
+                <pre className="whitespace-pre-wrap break-words font-mono text-[13px] leading-relaxed text-slate-800 dark:text-slate-100">
+                  {promptPreview.prompt}
+                </pre>
+              </div>
+            </div>
+          ) : null}
         </Modal>
 
       </div>

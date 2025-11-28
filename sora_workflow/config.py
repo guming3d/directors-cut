@@ -29,10 +29,11 @@ SCENE_IMAGE_DIR = ROOT / "scene_start_screen"
 
 # Static assets & patterns
 DEFAULT_SORA_RESOLUTION = "720x1280"
-SORA_CLIP_DURATION_SECONDS = 4
+SORA_CLIP_DURATION_SECONDS = 8
 SORA_PROMPT_GUIDE_URL = "https://cookbook.openai.com/examples/sora/sora2_prompting_guide"
 STATIC_URL_PREFIX = "/static"
 SCENE_IMAGE_PATTERN = re.compile(r"scene0*(\d+)\.(?:png|jpe?g)$", re.IGNORECASE)
+SCENE_TAIL_PATTERN = re.compile(r"scene0*(\d+)_tail\.(?:png|jpe?g)$", re.IGNORECASE)
 DATA_URL_PATTERN = re.compile(r"^data:(?P<mime>[\w/+.-]+);base64,(?P<data>.+)$", re.IGNORECASE)
 RESOLUTION_PATTERN = re.compile(r"^\d+x\d+$")
 HEADER_PATTERN = re.compile(r"^\*\*\s*(Scene\s+(\d+)[^*]*)\*\*$", re.IGNORECASE)
@@ -42,23 +43,88 @@ try:
 except AttributeError:  # pragma: no cover - Pillow < 10 fallback
     SCENE_IMAGE_RESAMPLE = Image.LANCZOS
 
+try:
+    SORA_BLOCK_RETRIES = max(1, int(os.getenv("SORA_BLOCK_RETRIES", "3")))
+except ValueError:  # pragma: no cover - defensive fallback
+    SORA_BLOCK_RETRIES = 3
+
+# Video provider defaults
+SUPPORTED_VIDEO_PROVIDERS = ("sora2", "kling")
+_provider_env = (os.getenv("VIDEO_PROVIDER") or "sora2").strip().lower()
+DEFAULT_VIDEO_PROVIDER = _provider_env if _provider_env in SUPPORTED_VIDEO_PROVIDERS else "sora2"
+SORA_ALLOWED_DURATIONS = (4, 8, 12)
+KLING_ALLOWED_DURATIONS = (5, 10)
+
+
+def normalize_video_provider(value: Optional[str]) -> str:
+    if not value:
+        return DEFAULT_VIDEO_PROVIDER
+    lowered = value.strip().lower()
+    if lowered not in SUPPORTED_VIDEO_PROVIDERS:
+        return DEFAULT_VIDEO_PROVIDER
+    return lowered
+
+
+def allowed_durations_for_provider(value: Optional[str]) -> tuple[int, ...]:
+    provider = normalize_video_provider(value)
+    return KLING_ALLOWED_DURATIONS if provider == "kling" else SORA_ALLOWED_DURATIONS
+
+
+# Kling configuration
+def _float_env(name: str, default: str) -> float:
+    try:
+        return float(os.getenv(name, default))
+    except (TypeError, ValueError):
+        return float(default)
+
+
+KLING_API_BASE_URL = (os.getenv("KLING_API_BASE_URL") or "https://api-beijing.klingai.com").rstrip("/")
+KLING_API_KEY = os.getenv("KLING_API_KEY")
+KLING_ACCESS_KEY = os.getenv("KLING_ACCESS_KEY")
+KLING_SECRET_KEY = os.getenv("KLING_SECRET_KEY")
+try:
+    _kling_token_ttl = int(os.getenv("KLING_TOKEN_TTL", "1800"))
+except ValueError:
+    _kling_token_ttl = 1800
+KLING_TOKEN_TTL_SECONDS = max(300, _kling_token_ttl)
+KLING_DEFAULT_MODEL_NAME = os.getenv("KLING_MODEL_NAME", "kling-v1")
+KLING_DEFAULT_MODE = os.getenv("KLING_MODE", "std")
+KLING_POLL_INTERVAL_SECONDS = max(1.0, _float_env("KLING_POLL_INTERVAL", "3"))
+KLING_POLL_TIMEOUT_SECONDS = max(60.0, _float_env("KLING_POLL_TIMEOUT", "900"))
+KLING_DOWNLOAD_CHUNK_SIZE = max(262144, int(os.getenv("KLING_DOWNLOAD_CHUNK_SIZE", "1048576")))
+
 # Azure configuration
 DIRECTOR_REFINEMENT_DEPLOYMENT = (
     os.getenv("DIRECTOR_REFINEMENT_DEPLOYMENT")
     or os.getenv("AZURE_OPENAI_GPT41_DEPLOYMENT")
+    or os.getenv("AZURE_OPENAI_GPT41_DEPLOYMENT_NAME")
     or os.getenv("AZURE_OPENAI_RESPONSES_DEPLOYMENT")
+    or os.getenv("AZURE_OPENAI_RESPONSES_DEPLOYMENT_NAME")
     or os.getenv("AZURE_OPENAI_DEPLOYMENT")
+    or os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME")
 )
 GPT5_REFINEMENT_DEPLOYMENT = (
     os.getenv("AZURE_OPENAI_GPT5_DEPLOYMENT")
+    or os.getenv("AZURE_OPENAI_GPT5_DEPLOYMENT_NAME")
     or os.getenv("AZURE_OPENAI_RESPONSES_DEPLOYMENT")
+    or os.getenv("AZURE_OPENAI_RESPONSES_DEPLOYMENT_NAME")
     or os.getenv("AZURE_OPENAI_DEPLOYMENT")
+    or os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME")
 )
 AZURE_TEXT_ENDPOINT = (os.getenv("AZURE_OPENAI_ENDPOINT") or os.getenv("ENDPOINT_URL") or "").rstrip("/")
 AZURE_TEXT_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
 AZURE_TEXT_API_VERSION = os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-15-preview")
+AZURE_IMAGE_API_VERSION = os.getenv("AZURE_OPENAI_IMAGE_API_VERSION", "2025-04-01-preview")
+AZURE_IMAGE_DEPLOYMENT = (
+    os.getenv("AZURE_OPENAI_GPT_IMAGE_DEPLOYMENT")
+    or os.getenv("AZURE_OPENAI_GPT_IMAGE_DEPLOYMENT_NAME")
+    or os.getenv("AZURE_OPENAI_IMAGE_DEPLOYMENT")
+    or os.getenv("AZURE_OPENAI_IMAGE_DEPLOYMENT_NAME")
+    or "gpt-image-1"
+)
 _TEXT_CLIENT: AzureOpenAI | None = None
 _VIDEO_CLIENT: AsyncOpenAI | None = None
+_IMAGE_CLIENT: AzureOpenAI | None = None
 
 
 def _configure_logging() -> logging.Logger:
@@ -92,6 +158,10 @@ logger = _configure_logging()
 def azure_text_client() -> AzureOpenAI | None:
     """Create or reuse a shared Azure OpenAI client for GPT refinement."""
 
+    print(f"DEBUG: DIRECTOR_REFINEMENT_DEPLOYMENT = {DIRECTOR_REFINEMENT_DEPLOYMENT!r}")
+    print(f"DEBUG: GPT5_REFINEMENT_DEPLOYMENT = {GPT5_REFINEMENT_DEPLOYMENT!r}")
+    print(f"DEBUG: AZURE_TEXT_ENDPOINT = {AZURE_TEXT_ENDPOINT!r}")
+
     if not (DIRECTOR_REFINEMENT_DEPLOYMENT or GPT5_REFINEMENT_DEPLOYMENT):
         return None
     if not AZURE_TEXT_ENDPOINT or not AZURE_TEXT_API_KEY:
@@ -104,6 +174,8 @@ def azure_text_client() -> AzureOpenAI | None:
     except NameError:
         client = None
 
+    print(f"DEBUG: _TEXT_CLIENT exists = {client is not None}")
+
     if client is None:
         client = AzureOpenAI(
             api_key=AZURE_TEXT_API_KEY,
@@ -111,6 +183,10 @@ def azure_text_client() -> AzureOpenAI | None:
             api_version=AZURE_TEXT_API_VERSION,
         )
         _TEXT_CLIENT = client  # type: ignore[assignment]
+        print("DEBUG: Created new AzureOpenAI client")
+    else:
+        print("DEBUG: Reusing existing AzureOpenAI client")
+    
     return client
 
 
@@ -126,6 +202,29 @@ def video_client() -> AsyncOpenAI:
         raise RuntimeError("Configure AZURE_OPENAI_API_KEY or OPENAI_API_KEY before using remix features.")
     _VIDEO_CLIENT = AsyncOpenAI(api_key=api_key, base_url=f"{endpoint}/openai/v1/", timeout=900.0)
     return _VIDEO_CLIENT
+
+
+def azure_image_client() -> AzureOpenAI | None:
+    """Create or reuse a shared Azure OpenAI client for image generation."""
+
+    if not AZURE_TEXT_ENDPOINT or not AZURE_TEXT_API_KEY:
+        logger.debug("Azure OpenAI credentials not configured; skipping image client.")
+        return None
+
+    global _IMAGE_CLIENT  # type: ignore[assignment]
+    try:
+        client = _IMAGE_CLIENT
+    except NameError:
+        client = None
+
+    if client is None:
+        client = AzureOpenAI(
+            api_key=AZURE_TEXT_API_KEY,
+            azure_endpoint=AZURE_TEXT_ENDPOINT,
+            api_version=AZURE_IMAGE_API_VERSION,
+        )
+        _IMAGE_CLIENT = client  # type: ignore[assignment]
+    return client
 
 
 def extract_response_text(response: Any) -> str:
@@ -171,15 +270,29 @@ def allowed_origins() -> list[str]:
 
 
 __all__ = [
+    "AZURE_IMAGE_API_VERSION",
+    "AZURE_IMAGE_DEPLOYMENT",
     "AZURE_TEXT_API_KEY",
     "AZURE_TEXT_API_VERSION",
     "AZURE_TEXT_ENDPOINT",
     "DATA_URL_PATTERN",
     "DEFAULT_SORA_RESOLUTION",
+    "DEFAULT_VIDEO_PROVIDER",
     "DIRECTOR_REFINEMENT_DEPLOYMENT",
     "FINAL_VIDEO_PATH",
     "GPT5_REFINEMENT_DEPLOYMENT",
     "HEADER_PATTERN",
+    "KLING_API_BASE_URL",
+    "KLING_API_KEY",
+    "KLING_ACCESS_KEY",
+    "KLING_SECRET_KEY",
+    "KLING_TOKEN_TTL_SECONDS",
+    "KLING_DEFAULT_MODE",
+    "KLING_DEFAULT_MODEL_NAME",
+    "KLING_DOWNLOAD_CHUNK_SIZE",
+    "KLING_POLL_INTERVAL_SECONDS",
+    "KLING_POLL_TIMEOUT_SECONDS",
+    "KLING_ALLOWED_DURATIONS",
     "OUTPUT_DIR",
     "PROMPTS_DIR",
     "RESOLUTION_PATTERN",
@@ -188,19 +301,26 @@ __all__ = [
     "SCENE_IMAGE_PATTERN",
     "SCENE_IMAGE_RESAMPLE",
     "SCENE_IMAGE_SIZE",
+    "SCENE_TAIL_PATTERN",
     "SCENES_DIR",
     "SCRIPT_PATH",
     "SINGLE_VIDEO_DB_PATH",
+    "SUPPORTED_VIDEO_PROVIDERS",
     "SINGLE_VIDEO_JOBS_DIR",
     "SORA_CLIENT",
     "SORA_CLIP_DURATION_SECONDS",
+    "SORA_ALLOWED_DURATIONS",
     "SORA_PROMPT_GUIDE_URL",
+    "SORA_BLOCK_RETRIES",
     "STATIC_URL_PREFIX",
     "TMP_DIR",
     "WORKFLOW_DB_PATH",
     "allowed_origins",
+    "azure_image_client",
     "azure_text_client",
     "extract_response_text",
     "logger",
+    "normalize_video_provider",
+    "allowed_durations_for_provider",
     "video_client",
 ]

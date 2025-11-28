@@ -13,8 +13,10 @@ from tinydb import Query, TinyDB
 
 from .config import (
     DEFAULT_SORA_RESOLUTION,
+    DEFAULT_VIDEO_PROVIDER,
     OUTPUT_DIR,
     SINGLE_VIDEO_DB_PATH,
+    SORA_CLIP_DURATION_SECONDS,
     WORKFLOW_DB_PATH,
     logger,
 )
@@ -83,6 +85,7 @@ def _scene_version_to_record(version: SceneVersionEntry) -> dict[str, Any]:
         "source": version.source,
         "created_at": _serialize_datetime(version.created_at),
         "last_frame_path": version.last_frame_path,
+        "first_frame_path": version.first_frame_path,
     }
 
 
@@ -99,6 +102,7 @@ def _scene_version_from_record(payload: dict[str, Any]) -> SceneVersionEntry:
         source=payload.get("source", "original"),
         created_at=_deserialize_datetime(payload.get("created_at")) or utc_now(),
         last_frame_path=payload.get("last_frame_path"),
+        first_frame_path=payload.get("first_frame_path"),
     )
 
 
@@ -114,6 +118,7 @@ def _scene_status_to_record(scene: SceneStatus) -> dict[str, Any]:
         "selected_version_id": scene.selected_version_id,
         "versions": [_scene_version_to_record(version) for version in scene.versions],
         "last_frame_path": scene.last_frame_path,
+        "first_frame_path": scene.first_frame_path,
     }
 
 
@@ -135,6 +140,7 @@ def _scene_status_from_record(payload: dict[str, Any]) -> SceneStatus:
         selected_version_id=payload.get("selected_version_id"),
         versions=versions,
         last_frame_path=payload.get("last_frame_path"),
+        first_frame_path=payload.get("first_frame_path"),
     )
     if scene.selected_version_id:
         try:
@@ -150,7 +156,10 @@ def _workflow_state_to_record(job: WorkflowJobState) -> dict[str, Any]:
         "status": job.status,
         "stage": job.stage,
         "progress": job.progress,
+        "video_provider": job.video_provider,
         "resolution": job.resolution,
+        "script": job.script,
+        "script_path": job.script_path,
         "started_at": _serialize_datetime(job.started_at),
         "completed_at": _serialize_datetime(job.completed_at),
         "error": job.error,
@@ -162,6 +171,8 @@ def _workflow_state_to_record(job: WorkflowJobState) -> dict[str, Any]:
         "scenes": [_scene_status_to_record(scene) for scene in job.scenes],
         "download_variant": job.download_variant,
         "generation_mode": job.generation_mode,
+        "scene_duration": job.scene_duration,
+        "generate_ai_first_frame": job.generate_ai_first_frame,
     }
 
 
@@ -171,7 +182,10 @@ def _workflow_state_from_record(payload: dict[str, Any]) -> WorkflowJobState:
         status=payload.get("status", "queued"),
         stage=payload.get("stage"),
         progress=float(payload.get("progress", 0.0)),
+        video_provider=payload.get("video_provider") or DEFAULT_VIDEO_PROVIDER,
         resolution=payload.get("resolution") or DEFAULT_SORA_RESOLUTION,
+        script=payload.get("script") or "",
+        script_path=payload.get("script_path"),
         started_at=_deserialize_datetime(payload.get("started_at")) or utc_now(),
         completed_at=_deserialize_datetime(payload.get("completed_at")),
         error=payload.get("error"),
@@ -183,6 +197,8 @@ def _workflow_state_from_record(payload: dict[str, Any]) -> WorkflowJobState:
         scenes=[_scene_status_from_record(item) for item in payload.get("scenes", [])],
         download_variant=payload.get("download_variant"),
         generation_mode=payload.get("generation_mode", "parallel"),
+        scene_duration=int(payload.get("scene_duration", SORA_CLIP_DURATION_SECONDS)),
+        generate_ai_first_frame=bool(payload.get("generate_ai_first_frame", False)),
     )
 
 
@@ -284,6 +300,12 @@ class WorkflowJobStore:
             job.resolution = resolution
             self._persist(job)
 
+    async def set_video_provider(self, job_id: str, video_provider: str) -> None:
+        async with self._lock:
+            job = self._require(job_id)
+            job.video_provider = video_provider
+            self._persist(job)
+
     async def set_download_variant(self, job_id: str, download_variant: str) -> None:
         async with self._lock:
             job = self._require(job_id)
@@ -295,6 +317,35 @@ class WorkflowJobStore:
             job = self._require(job_id)
             job.generation_mode = generation_mode
             self._persist(job)
+
+    async def set_scene_duration(self, job_id: str, scene_duration: int) -> None:
+        async with self._lock:
+            job = self._require(job_id)
+            job.scene_duration = scene_duration
+            self._persist(job)
+
+    async def set_generate_ai_first_frame(self, job_id: str, enabled: bool) -> None:
+        async with self._lock:
+            job = self._require(job_id)
+            job.generate_ai_first_frame = enabled
+            self._persist(job)
+
+    async def set_script(self, job_id: str, script_text: str, script_path: Optional[str] = None) -> None:
+        async with self._lock:
+            job = self._require(job_id)
+            job.script = script_text
+            job.script_path = script_path
+            self._persist(job)
+
+    async def get_resolution(self, job_id: str) -> str:
+        async with self._lock:
+            job = self._require(job_id)
+            return job.resolution
+
+    async def get_video_provider(self, job_id: str) -> str:
+        async with self._lock:
+            job = self._require(job_id)
+            return job.video_provider
 
     async def record_scene_completion(self, job_id: str, render) -> None:
         from .models import SceneRender
@@ -314,6 +365,7 @@ class WorkflowJobStore:
                 prompt_path=render.prompt_path,
                 source=render.version_source,
                 last_frame_path=render.last_frame_path,
+                first_frame_path=render.first_frame_path,
             )
             scene = SceneStatus(
                 order=render.order,
@@ -324,6 +376,7 @@ class WorkflowJobStore:
                 log_path=render.log_path,
                 client_log_path=render.client_log_path,
                 last_frame_path=render.last_frame_path,
+                first_frame_path=render.first_frame_path,
             )
             scene.versions.append(version)
             scene.set_selected_version(version)
@@ -415,6 +468,7 @@ class WorkflowJobStore:
             job.stage = "completed"
             job.progress = 1.0
             job.completed_at = utc_now()
+            job.error = None
             job.final_video_path = final_video_path
             job.manifest = manifest
             job.add_message("completed", "Workflow complete.")
@@ -461,11 +515,15 @@ class WorkflowJobStore:
                         created_at=version.created_at,
                         last_frame_path=version.last_frame_path,
                         last_frame_url=build_static_asset_url(version.last_frame_path),
+                        first_frame_path=version.first_frame_path,
+                        first_frame_url=build_static_asset_url(version.first_frame_path),
                     )
                     for idx, version in enumerate(scene.versions)
                 ],
                 last_frame_path=scene.last_frame_path,
                 last_frame_url=build_static_asset_url(scene.last_frame_path),
+                first_frame_path=scene.first_frame_path,
+                first_frame_url=build_static_asset_url(scene.first_frame_path),
             )
             for scene in sorted(job.scenes, key=lambda item: item.order)
         ]
@@ -474,7 +532,10 @@ class WorkflowJobStore:
             status=job.status,
             stage=job.stage,
             progress=job.progress,
+            video_provider=job.video_provider,
             resolution=job.resolution,
+            script=job.script,
+            script_path=job.script_path,
             started_at=job.started_at,
             completed_at=job.completed_at,
             error=job.error,
@@ -484,6 +545,8 @@ class WorkflowJobStore:
             messages=messages,
             scenes=scenes,
             generation_mode=job.generation_mode,
+            scene_duration=job.scene_duration,
+            generate_ai_first_frame=job.generate_ai_first_frame,
         )
 
     async def get_status(self, job_id: str) -> JobStatusResponse:
@@ -591,6 +654,7 @@ def _single_video_state_to_record(job: SingleVideoJobState) -> dict[str, Any]:
     return {
         "job_id": job.job_id,
         "prompt": job.prompt,
+        "video_provider": job.video_provider,
         "resolution": job.resolution,
         "duration": job.duration,
         "download_variant": job.download_variant,
@@ -613,6 +677,7 @@ def _single_video_state_from_record(payload: dict[str, Any]) -> SingleVideoJobSt
     return SingleVideoJobState(
         job_id=payload.get("job_id", str(uuid.uuid4())),
         prompt=payload.get("prompt", ""),
+        video_provider=payload.get("video_provider") or DEFAULT_VIDEO_PROVIDER,
         resolution=payload.get("resolution") or DEFAULT_SORA_RESOLUTION,
         duration=int(payload.get("duration", 8)),
         download_variant=payload.get("download_variant", "video"),
@@ -657,6 +722,7 @@ class SingleVideoJobStore:
         resolution: str,
         duration: int,
         download_variant: str,
+        video_provider: str,
     ) -> None:
         async with self._lock:
             state = SingleVideoJobState(
@@ -665,17 +731,32 @@ class SingleVideoJobStore:
                 resolution=resolution,
                 duration=duration,
                 download_variant=download_variant,
+                video_provider=video_provider,
             )
             state.add_message("queued", "Job queued.")
             self._jobs[job_id] = state
             self._persist(state)
+
+    async def set_video_provider(self, job_id: str, video_provider: str) -> None:
+        async with self._lock:
+            job = self._require(job_id)
+            job.video_provider = video_provider
+            self._persist(job)
+
+    async def get_video_provider(self, job_id: str) -> str:
+        async with self._lock:
+            job = self._require(job_id)
+            return job.video_provider
 
     async def mark_running(self, job_id: str) -> None:
         async with self._lock:
             job = self._require(job_id)
             job.status = "running"
             job.progress = max(job.progress, 0.05)
-            job.add_message("running", "Submitting video generation request to Sora2.")
+            job.add_message(
+                "running",
+                f"Submitting video generation request to {job.video_provider.upper()} backend.",
+            )
             self._persist(job)
 
     async def update_progress(self, job_id: str, progress: float, message: str | None = None) -> None:
@@ -719,6 +800,16 @@ class SingleVideoJobStore:
             job.error = error
             job.completed_at = utc_now()
             job.add_message("failed", error)
+            self._persist(job)
+
+    async def set_single_selection(self, job_id: str, version_id: str) -> None:
+        async with self._lock:
+            job = self._require(job_id)
+            version = next((v for v in job.versions if v.version_id == version_id), None)
+            if version is None:
+                raise KeyError(version_id)
+            job.set_active_version(version)
+            job.add_message("running", f"Selected {version.label or version.version_id} as active version.")
             self._persist(job)
 
     async def record_version(
@@ -802,6 +893,7 @@ class SingleVideoJobStore:
             status=job.status,
             progress=job.progress,
             prompt=job.prompt,
+            video_provider=job.video_provider,
             resolution=job.resolution,
             duration=job.duration,
             download_variant=job.download_variant,

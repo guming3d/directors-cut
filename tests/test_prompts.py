@@ -23,5 +23,8 @@ def test_parse_script_extracts_scenes():
 
 def test_build_prompt_text_includes_orientation():
     prompt = build_prompt_text("Intro", "A short line.", 4, "720x1280")
-    assert "720x1280" in prompt
-    assert "portrait orientation" in prompt
+    assert prompt.startswith("Intro")
+    assert "A short line." in prompt
+    assert "Scene title" not in prompt
+    assert "Clip duration" not in prompt
+    assert "Output resolution" not in prompt
