@@ -19,6 +19,7 @@ from .config import (
     ROOT,
     SCENE_IMAGE_DIR,
     SORA_CLIENT,
+    allowed_durations_for_provider,
     logger,
     normalize_video_provider,
 )
@@ -69,6 +70,13 @@ def prepare_request_for_job(job_id: str, payload: StartWorkflowPayload) -> Video
             "Resolution must be in WIDTHxHEIGHT format, e.g. 720x1280."
         )
     scene_duration = int(payload.scene_duration)
+    video_provider = normalize_video_provider(payload.video_provider)
+    allowed_durations = allowed_durations_for_provider(video_provider)
+    if scene_duration not in allowed_durations:
+        allowed_str = ", ".join(str(value) for value in allowed_durations)
+        raise ValueError(
+            f"{video_provider.upper()} supports scene durations of {allowed_str} seconds."
+        )
 
     use_scene_images = payload.use_scene_images
     if use_scene_images is None:
@@ -110,8 +118,6 @@ def prepare_request_for_job(job_id: str, payload: StartWorkflowPayload) -> Video
         )
         use_scene_images = False
 
-    video_provider = normalize_video_provider(payload.video_provider)
-
     request = VideoWorkflowRequest(
         script_path=str(script_path),
         output_dir=str(job_dir),
@@ -150,6 +156,13 @@ def prepare_single_video_job(
     prompt = (prompt or "").strip()
     if not prompt:
         raise ValueError("Prompt text is required.")
+    provider = normalize_video_provider(video_provider)
+    allowed_durations = allowed_durations_for_provider(provider)
+    if duration not in allowed_durations:
+        allowed_str = ", ".join(str(value) for value in allowed_durations)
+        raise ValueError(
+            f"{provider.upper()} supports single clip durations of {allowed_str} seconds."
+        )
 
     job_dir = SINGLE_VIDEO_JOBS_DIR / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
@@ -183,7 +196,7 @@ def prepare_single_video_job(
         video_path=video_path,
         reference_image_path=reference_path,
         reference_image_paths=reference_paths,
-        video_provider=normalize_video_provider(video_provider),
+        video_provider=provider,
         job_dir=job_dir,
     )
 

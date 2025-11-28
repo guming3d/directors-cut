@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .config import (
     DEFAULT_SORA_RESOLUTION,
@@ -24,6 +24,7 @@ from .config import (
     SORA_CLIP_DURATION_SECONDS,
     SORA_BLOCK_RETRIES,
     TMP_DIR,
+    allowed_durations_for_provider,
 )
 from .utils import utc_now
 
@@ -90,9 +91,9 @@ class VideoWorkflowRequest(BaseModel):
         default=DEFAULT_SORA_RESOLUTION,
         description="Clip resolution string, e.g. 720x1280.",
     )
-    scene_duration: Literal[4, 8, 12] = Field(
+    scene_duration: int = Field(
         default=SORA_CLIP_DURATION_SECONDS,
-        description="Duration in seconds applied to every scene clip.",
+        description="Scene duration in seconds (Sora: 4/8/12, Kling: 5/10).",
     )
     thread_count: int = Field(
         default=int(os.getenv("SORA_WORKFLOW_THREADS", "3")),
@@ -125,6 +126,16 @@ class VideoWorkflowRequest(BaseModel):
         default=False,
         description="Indicates whether GPT-5 storyboard refinement was requested.",
     )
+
+    @model_validator(mode="after")
+    def validate_scene_duration(self) -> "VideoWorkflowRequest":
+        allowed = allowed_durations_for_provider(self.video_provider)
+        if self.scene_duration not in allowed:
+            allowed_str = ", ".join(str(value) for value in allowed)
+            raise ValueError(
+                f"{self.video_provider.upper()} supports scene durations of {allowed_str} seconds."
+            )
+        return self
 
 
 @dataclass
@@ -422,11 +433,21 @@ class StartWorkflowPayload(BaseModel):
         alias="refineWithGpt5",
         description="When true, runs the submitted script through GPT-5 before planning scenes.",
     )
-    scene_duration: Literal[4, 8, 12] = Field(
+    scene_duration: int = Field(
         default=SORA_CLIP_DURATION_SECONDS,
         alias="sceneDuration",
-        description="Scene runtime in seconds for every rendered clip.",
+        description="Scene runtime in seconds (Sora: 4/8/12, Kling: 5/10).",
     )
+
+    @model_validator(mode="after")
+    def validate_scene_duration(self) -> "StartWorkflowPayload":
+        allowed = allowed_durations_for_provider(self.video_provider)
+        if self.scene_duration not in allowed:
+            allowed_str = ", ".join(str(value) for value in allowed)
+            raise ValueError(
+                f"{self.video_provider.upper()} supports scene durations of {allowed_str} seconds."
+            )
+        return self
 
 
 class SingleVideoPayload(BaseModel):
@@ -442,8 +463,9 @@ class SingleVideoPayload(BaseModel):
         alias="videoProvider",
         description="Video backend to use for this single clip (sora2 or kling).",
     )
-    duration: Literal[4, 8, 12] = Field(
-        default=8, description="Video duration in seconds (allowed: 4, 8, 12)."
+    duration: int = Field(
+        default=8,
+        description="Video duration in seconds (Sora: 4/8/12, Kling: 5/10).",
     )
     download_variant: Optional[str] = Field(
         default=None,
@@ -465,6 +487,16 @@ class SingleVideoPayload(BaseModel):
         alias="refineWithGpt5",
         description="When true, uses GPT-5 to refine the prompt before submitting to Sora2.",
     )
+
+    @model_validator(mode="after")
+    def validate_duration(self) -> "SingleVideoPayload":
+        allowed = allowed_durations_for_provider(self.video_provider)
+        if self.duration not in allowed:
+            allowed_str = ", ".join(str(value) for value in allowed)
+            raise ValueError(
+                f"{self.video_provider.upper()} supports single clip durations of {allowed_str} seconds."
+            )
+        return self
 
 
 class SceneRemixPayload(BaseModel):
