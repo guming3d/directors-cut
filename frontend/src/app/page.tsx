@@ -17,7 +17,8 @@ import {
 } from "@heroicons/react/24/outline";
 import Image from "next/image";
 
-const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000").replace(/\/$/, "");
+const RAW_API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "").replace(/\/$/, "");
+const DEFAULT_API_BASE = (RAW_API_BASE || "http://localhost:8000").replace(/\/$/, "");
 
 type JobMessage = {
   timestamp: string;
@@ -452,9 +453,9 @@ const formatTimeDistance = (value: string | null) => {
   return date.toLocaleString();
 };
 
-const buildAssetUrl = (path: string | null | undefined) => {
+const buildAssetUrl = (base: string, path: string | null | undefined) => {
   if (!path) return null;
-  return `${API_BASE}${path}`;
+  return `${base}${path}`;
 };
 
 const getStatusToken = (status: string | undefined, language: Language) => {
@@ -545,6 +546,31 @@ export default function Home() {
     };
   }, []);
 
+  const [apiBase, setApiBase] = useState<string>(DEFAULT_API_BASE);
+
+  useEffect(() => {
+    if (RAW_API_BASE) {
+      return;
+    }
+    if (typeof window === "undefined") {
+      return;
+    }
+    const origin = window.location.origin.replace(/\/$/, "");
+    let shouldStickToDefault = false;
+    try {
+      // Avoid overwriting the explicit backend URL when the UI runs on the local Next.js dev server.
+      const url = new URL(origin);
+      const devPorts = new Set(["3000", "3001", "3002"]);
+      const isLocalhost = url.hostname === "localhost" || url.hostname === "127.0.0.1";
+      shouldStickToDefault = isLocalhost && devPorts.has(url.port || "");
+    } catch {
+      // no-op: fall back to default apiBase
+    }
+    if (!shouldStickToDefault && origin && origin !== apiBase) {
+      setApiBase(origin);
+    }
+  }, [apiBase]);
+
   // Combined workflow state
   const [script, setScript] = useState("");
   const [useSceneImages, setUseSceneImages] = useState(false);
@@ -601,7 +627,7 @@ export default function Home() {
 
   const loadCombinedJobs = useCallback(async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/workflows`);
+      const response = await fetch(`${apiBase}/api/workflows`);
       if (!response.ok) {
         throw new Error(await response.text());
       }
@@ -639,7 +665,7 @@ export default function Home() {
 
   const loadSingleJobs = useCallback(async () => {
     try {
-      const response = await fetch(`${API_BASE}/api/single-videos`);
+      const response = await fetch(`${apiBase}/api/single-videos`);
       if (!response.ok) {
         throw new Error(await response.text());
       }
@@ -700,7 +726,7 @@ export default function Home() {
     let disposed = false;
     const fetchProvider = async () => {
       try {
-        const response = await fetch(`${API_BASE}/api/providers/active`);
+        const response = await fetch(`${apiBase}/api/providers/active`);
         if (!response.ok) {
           throw new Error(await response.text());
         }
@@ -769,7 +795,7 @@ export default function Home() {
 
     const fetchStatus = async () => {
       try {
-        const response = await fetch(`${API_BASE}/api/workflows/${activeJobId}`);
+        const response = await fetch(`${apiBase}/api/workflows/${activeJobId}`);
         if (!response.ok) {
           throw new Error(await response.text());
         }
@@ -823,7 +849,7 @@ export default function Home() {
 
     const fetchStatus = async () => {
       try {
-        const response = await fetch(`${API_BASE}/api/single-videos/${activeSingleJobId}`);
+        const response = await fetch(`${apiBase}/api/single-videos/${activeSingleJobId}`);
         if (!response.ok) {
           throw new Error(await response.text());
         }
@@ -878,7 +904,7 @@ export default function Home() {
     return Math.max(0, Math.min(100, Math.round(value * 100)));
   }, [singleJob]);
 
-  const finalVideoUrl = buildAssetUrl(job?.final_video_url);
+  const finalVideoUrl = buildAssetUrl(apiBase, job?.final_video_url);
   const hasScenes = Boolean(job?.scenes?.length);
   const isWorkflowActive = job?.status === "running" || job?.status === "queued";
   const canRecompose = Boolean(hasScenes && !isWorkflowActive);
@@ -886,7 +912,7 @@ export default function Home() {
   const showSequenceReferences = job?.generation_mode === "sequence";
   const showAiFirstFrames = Boolean(job?.generate_ai_first_frame);
 
-  const singleVideoUrl = buildAssetUrl(singleJob?.video_url);
+  const singleVideoUrl = buildAssetUrl(apiBase, singleJob?.video_url);
   const singleStatusToken = getStatusToken(singleJob?.status, language);
   const workflowProviderSelection =
     workflowVideoProvider ?? availableVideoProviders[0] ?? VIDEO_PROVIDER_OPTIONS[0];
@@ -900,7 +926,7 @@ export default function Home() {
     "rounded-md border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/50 p-6 shadow-2xl backdrop-blur-xl";
   const pillButtonClass =
     "rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100/50 dark:bg-slate-100 dark:bg-slate-800/50 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400";
-  const displayApiBase = API_BASE.replace(/^https?:\/\//, "");
+  const displayApiBase = apiBase.replace(/^https?:\/\//, "");
   const scrollToWorkspaceTop = () => {
     if (typeof window !== "undefined") {
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -1037,7 +1063,7 @@ export default function Home() {
   };
 
   const requestWorkflowRefinement = async (content: string) => {
-    const response = await fetch(`${API_BASE}/api/refine/workflow`, {
+    const response = await fetch(`${apiBase}/api/refine/workflow`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ script: content }),
@@ -1050,7 +1076,7 @@ export default function Home() {
   };
 
   const requestSingleRefinement = async (content: string) => {
-    const response = await fetch(`${API_BASE}/api/refine/single`, {
+    const response = await fetch(`${apiBase}/api/refine/single`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ prompt: content }),
@@ -1091,7 +1117,7 @@ export default function Home() {
         payload.sceneImages = uploads;
       }
 
-      const response = await fetch(`${API_BASE}/api/workflows`, {
+      const response = await fetch(`${apiBase}/api/workflows`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -1146,7 +1172,7 @@ export default function Home() {
         };
       }
 
-      const response = await fetch(`${API_BASE}/api/single-videos`, {
+      const response = await fetch(`${apiBase}/api/single-videos`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -1186,7 +1212,7 @@ export default function Home() {
     setCombinedError(null);
     setRemixSubmitting((prev) => ({ ...prev, [sceneOrder]: true }));
     try {
-      const response = await fetch(`${API_BASE}/api/workflows/${job.job_id}/scenes/${sceneOrder}/remix`, {
+      const response = await fetch(`${apiBase}/api/workflows/${job.job_id}/scenes/${sceneOrder}/remix`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt }),
@@ -1218,7 +1244,7 @@ export default function Home() {
     setSceneRegenerating((prev) => ({ ...prev, [sceneOrder]: true }));
     try {
       const hasOverride = Boolean(trimmedOverride);
-      const response = await fetch(`${API_BASE}/api/workflows/${job.job_id}/scenes/${sceneOrder}/regenerate`, {
+      const response = await fetch(`${apiBase}/api/workflows/${job.job_id}/scenes/${sceneOrder}/regenerate`, {
         method: "POST",
         headers: hasOverride ? { "Content-Type": "application/json" } : undefined,
         body: hasOverride ? JSON.stringify({ prompt: trimmedOverride }) : undefined,
@@ -1251,7 +1277,7 @@ export default function Home() {
     setCombinedError(null);
     setSelectionSubmitting((prev) => ({ ...prev, [versionId]: true }));
     try {
-      const response = await fetch(`${API_BASE}/api/workflows/${job.job_id}/scenes/${sceneOrder}/select`, {
+      const response = await fetch(`${apiBase}/api/workflows/${job.job_id}/scenes/${sceneOrder}/select`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ versionId }),
@@ -1274,7 +1300,7 @@ export default function Home() {
     setCombinedError(null);
     setIsRecomposing(true);
     try {
-      const response = await fetch(`${API_BASE}/api/workflows/${job.job_id}/recompose`, {
+      const response = await fetch(`${apiBase}/api/workflows/${job.job_id}/recompose`, {
         method: "POST",
       });
       if (!response.ok) {
@@ -1367,7 +1393,7 @@ export default function Home() {
     setSingleError(null);
     setSingleRemixSubmitting(true);
     try {
-      const response = await fetch(`${API_BASE}/api/single-videos/${singleJob.job_id}/remix`, {
+      const response = await fetch(`${apiBase}/api/single-videos/${singleJob.job_id}/remix`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt: trimmed }),
@@ -1423,7 +1449,7 @@ export default function Home() {
     setSingleError(null);
     setSingleSelectionSubmitting((prev) => ({ ...prev, [versionId]: true }));
     try {
-      const response = await fetch(`${API_BASE}/api/single-videos/${singleJob.job_id}/select`, {
+      const response = await fetch(`${apiBase}/api/single-videos/${singleJob.job_id}/select`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ versionId }),
@@ -1476,7 +1502,7 @@ export default function Home() {
     let deletionError: string | null = null;
     for (const jobId of Array.from(selectedCombinedJobs)) {
       try {
-        const response = await fetch(`${API_BASE}/api/workflows/${jobId}`, {
+        const response = await fetch(`${apiBase}/api/workflows/${jobId}`, {
           method: "DELETE",
         });
         if (!response.ok) {
@@ -1501,7 +1527,7 @@ export default function Home() {
     let deletionError: string | null = null;
     for (const jobId of Array.from(selectedSingleJobs)) {
       try {
-        const response = await fetch(`${API_BASE}/api/single-videos/${jobId}`, {
+        const response = await fetch(`${apiBase}/api/single-videos/${jobId}`, {
           method: "DELETE",
         });
         if (!response.ok) {
@@ -1630,7 +1656,7 @@ export default function Home() {
             </span>
           </span>
           <span className={`${pillButtonClass} whitespace-nowrap`}>
-            {translate("API ·")} <span className="font-mono text-[11px] text-slate-500">{displayApiBase || API_BASE}</span>
+            {translate("API ·")} <span className="font-mono text-[11px] text-slate-500">{displayApiBase || apiBase}</span>
           </span>
           <button
             type="button"
@@ -2100,7 +2126,7 @@ export default function Home() {
                 )}
               </button>
               <p className="text-xs text-slate-500">
-                {translate("API target:")} <span className="font-mono text-[11px] text-slate-500">{API_BASE}/api/workflows</span>
+                {translate("API target:")} <span className="font-mono text-[11px] text-slate-500">{apiBase}/api/workflows</span>
               </p>
             </div>
           </form>
@@ -2259,7 +2285,7 @@ export default function Home() {
                 )}
               </button>
               <p className="text-xs text-slate-500">
-                {translate("API target:")} <span className="font-mono text-[11px] text-slate-500">{API_BASE}/api/single-videos</span>
+                {translate("API target:")} <span className="font-mono text-[11px] text-slate-500">{apiBase}/api/single-videos</span>
               </p>
             </div>
           </form>
@@ -2392,7 +2418,7 @@ export default function Home() {
                       const versions = scene.versions ?? [];
                       const selectedVersion = versions.find((version) => version.version_id === scene.selected_version_id) ?? versions[0];
                       const isRegenerating = Boolean(sceneRegenerating[scene.order]);
-                      const firstFrameUrl = showAiFirstFrames ? buildAssetUrl(scene.first_frame_url) : null;
+            const firstFrameUrl = showAiFirstFrames ? buildAssetUrl(apiBase, scene.first_frame_url) : null;
 
                       return (
                         <div
@@ -2470,8 +2496,8 @@ export default function Home() {
                                 {translate("Versions")}
                               </h4>
                               {versions.map((version) => {
-                                const versionVideoUrl = buildAssetUrl(version.video_url);
-                                const versionLastFrameUrl = showSequenceReferences ? buildAssetUrl(version.last_frame_url) : null;
+                              const versionVideoUrl = buildAssetUrl(apiBase, version.video_url);
+                              const versionLastFrameUrl = showSequenceReferences ? buildAssetUrl(apiBase, version.last_frame_url) : null;
                                 const isActive = version.version_id === scene.selected_version_id;
                                 const isBusy = Boolean(selectionSubmitting[version.version_id]);
                                 return (
@@ -2766,7 +2792,7 @@ export default function Home() {
                   <h3 className="text-sm font-semibold text-slate-600 dark:text-slate-300">{translate("Versions")}</h3>
                   <div className="space-y-3">
                     {singleJob.versions.map((version) => {
-                      const versionVideoUrl = buildAssetUrl(version.video_url);
+                      const versionVideoUrl = buildAssetUrl(apiBase, version.video_url);
                       const isActive = version.version_id === singleJob.selected_version_id;
                       return (
                         <div
