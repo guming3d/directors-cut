@@ -175,6 +175,7 @@ const LANGUAGE_OPTIONS: Language[] = ["en", "zh"];
 
 const durationOptions = ["4", "8", "12"] as const;
 const resolutionOptions = ["720x1280", "1280x720", "1920x1080"] as const;
+const VIDEO_PROVIDER_OPTIONS = ["sora2", "kling"] as const;
 
 const AUTH_USERNAME = "user";
 const AUTH_PASSWORD = "sora2isgreat";
@@ -336,13 +337,13 @@ const zhTranslations: Record<string, string> = {
   "Generated Video": "已生成视频",
   "Video pending...": "视频生成中…",
   "Generate Single Clip": "创建单条视频",
-  "Submit a single prompt directly to the Sora2 API. Optionally attach a still reference, select the render resolution, and choose a supported clip duration.": "将单条提示直接提交给 Sora2 API，可附加参考图、选择分辨率并设置片段时长。",
-  "Describe the scene, motion, cinematography, and mood for Sora2...": "描述场景、运动、镜头语言与情绪…",
+  "Submit a single prompt directly to the selected video backend. Optionally attach a still reference, select the render resolution, and choose a supported clip duration.": "将单条提示提交到所选视频引擎，可附加参考图、选择分辨率并设置片段时长。",
+  "Describe the scene, motion, cinematography, and mood for the selected video backend...": "描述场景、运动、镜头语言与情绪，系统会交付给指定的视频引擎…",
   "Duration": "时长",
   "Generate Clip": "生成片段",
   "Reference image (optional)": "参考图（可选）",
   "Reference preview": "参考图预览",
-  "Enter a prompt before requesting a Sora2 video.": "提交前请先填写提示词。",
+  "Enter a prompt before requesting a video clip.": "提交前请先填写提示词。",
   "Refine script with GPT-5": "使用 GPT-5 优化剧本",
   "Use GPT-5 to polish the storyboard before planning scenes.": "在规划场景前，用 GPT-5 打磨分镜文案。",
   "Refine prompt with GPT-5": "使用 GPT-5 优化提示词",
@@ -376,6 +377,15 @@ const zhTranslations: Record<string, string> = {
   "Unable to refine the storyboard. Continue without refinement or try again.": "无法优化分镜。可直接继续或稍后再试。",
   "Unable to refine the prompt. Continue without refinement or try again.": "无法优化提示词。可直接继续或稍后再试。",
   "Submitted prompt": "已提交的提示词",
+};
+
+const normalizeProvider = (value?: string | null) => {
+  const normalized = (value ?? "").trim().toLowerCase();
+  return (VIDEO_PROVIDER_OPTIONS as readonly string[]).includes(
+    normalized as (typeof VIDEO_PROVIDER_OPTIONS)[number],
+  )
+    ? normalized
+    : null;
 };
 
 const translateValue = (language: Language, value: string) => (language === "zh" ? zhTranslations[value] ?? value : value);
@@ -542,6 +552,8 @@ export default function Home() {
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [job, setJob] = useState<JobStatus | null>(null);
   const [activeVideoProvider, setActiveVideoProvider] = useState<string | null>(null);
+  const [availableVideoProviders, setAvailableVideoProviders] = useState<string[]>([...VIDEO_PROVIDER_OPTIONS]);
+  const [workflowVideoProvider, setWorkflowVideoProvider] = useState<string | null>(null);
   const [isSubmittingCombined, setIsSubmittingCombined] = useState(false);
   const [combinedError, setCombinedError] = useState<string | null>(null);
   const [selectedCombinedJobs, setSelectedCombinedJobs] = useState<Set<string>>(new Set());
@@ -562,6 +574,7 @@ export default function Home() {
   const [singleJobs, setSingleJobs] = useState<SingleVideoJob[]>([]);
   const [activeSingleJobId, setActiveSingleJobId] = useState<string | null>(null);
   const [singleJob, setSingleJob] = useState<SingleVideoJob | null>(null);
+  const [singleVideoProvider, setSingleVideoProvider] = useState<string | null>(null);
   const [isSubmittingSingle, setIsSubmittingSingle] = useState(false);
   const [singleError, setSingleError] = useState<string | null>(null);
   const [selectedSingleJobs, setSelectedSingleJobs] = useState<Set<string>>(new Set());
@@ -663,6 +676,9 @@ export default function Home() {
       setSingleJob(null);
       setActiveSingleJobId(null);
       setActiveVideoProvider(null);
+      setAvailableVideoProviders([...VIDEO_PROVIDER_OPTIONS]);
+      setWorkflowVideoProvider(null);
+      setSingleVideoProvider(null);
       return;
     }
     void loadCombinedJobs();
@@ -672,6 +688,7 @@ export default function Home() {
   useEffect(() => {
     if (!isAuthenticated) {
       setActiveVideoProvider(null);
+      setAvailableVideoProviders([...VIDEO_PROVIDER_OPTIONS]);
       return;
     }
     let disposed = false;
@@ -681,15 +698,26 @@ export default function Home() {
         if (!response.ok) {
           throw new Error(await response.text());
         }
-        const data: { active?: string } = await response.json();
+        const data: { active?: string; available?: string[] } = await response.json();
         if (!disposed) {
-          const value = (data.active ?? "").trim();
-          setActiveVideoProvider(value ? value : null);
+          const normalizedAvailable = Array.isArray(data.available)
+            ? data.available
+                .map((value) => normalizeProvider(value))
+                .filter((value): value is string => Boolean(value))
+            : [];
+          const providerChoices =
+            normalizedAvailable.length > 0
+              ? normalizedAvailable
+              : [...VIDEO_PROVIDER_OPTIONS];
+          setAvailableVideoProviders(providerChoices);
+          const normalizedActive = normalizeProvider(data.active);
+          setActiveVideoProvider(normalizedActive ?? providerChoices[0] ?? null);
         }
       } catch (err) {
         console.error(err);
         if (!disposed) {
           setActiveVideoProvider(null);
+          setAvailableVideoProviders([...VIDEO_PROVIDER_OPTIONS]);
         }
       }
     };
@@ -698,6 +726,30 @@ export default function Home() {
       disposed = true;
     };
   }, [isAuthenticated]);
+
+  useEffect(() => {
+    setWorkflowVideoProvider((current) => {
+      if (current && availableVideoProviders.includes(current)) {
+        return current;
+      }
+      if (activeVideoProvider && availableVideoProviders.includes(activeVideoProvider)) {
+        return activeVideoProvider;
+      }
+      return availableVideoProviders[0] ?? VIDEO_PROVIDER_OPTIONS[0];
+    });
+  }, [availableVideoProviders, activeVideoProvider]);
+
+  useEffect(() => {
+    setSingleVideoProvider((current) => {
+      if (current && availableVideoProviders.includes(current)) {
+        return current;
+      }
+      if (activeVideoProvider && availableVideoProviders.includes(activeVideoProvider)) {
+        return activeVideoProvider;
+      }
+      return availableVideoProviders[0] ?? VIDEO_PROVIDER_OPTIONS[0];
+    });
+  }, [availableVideoProviders, activeVideoProvider]);
 
   useEffect(() => {
     if (!activeJobId || !isAuthenticated) return;
@@ -830,6 +882,10 @@ export default function Home() {
 
   const singleVideoUrl = buildAssetUrl(singleJob?.video_url);
   const singleStatusToken = getStatusToken(singleJob?.status, language);
+  const workflowProviderSelection =
+    workflowVideoProvider ?? availableVideoProviders[0] ?? VIDEO_PROVIDER_OPTIONS[0];
+  const singleProviderSelection =
+    singleVideoProvider ?? availableVideoProviders[0] ?? VIDEO_PROVIDER_OPTIONS[0];
 
 
   const panelCardClass =
@@ -896,6 +952,10 @@ export default function Home() {
     }
     setUsername("");
     setPassword("");
+    setActiveVideoProvider(null);
+    setAvailableVideoProviders([...VIDEO_PROVIDER_OPTIONS]);
+    setWorkflowVideoProvider(null);
+    setSingleVideoProvider(null);
   };
 
   const toggleGenerateAiFirstFrames = () => {
@@ -990,6 +1050,7 @@ export default function Home() {
     setCombinedError(null);
     try {
       const payload: Record<string, unknown> = { script: trimmedScript };
+      payload.videoProvider = workflowProviderSelection;
       payload.useSceneImages = useSceneImages && !generateAiFirstFrames;
       payload.generateAiFirstFrame = generateAiFirstFrames;
       payload.resolution = combinedResolution;
@@ -1039,7 +1100,7 @@ export default function Home() {
   const submitSingleRequest = async (promptText: string, shouldRefine: boolean) => {
     const trimmedPrompt = promptText.trim();
     if (!trimmedPrompt) {
-      setSingleError("Enter a prompt before requesting a Sora2 video.");
+      setSingleError("Enter a prompt before requesting a video clip.");
       return false;
     }
 
@@ -1052,6 +1113,7 @@ export default function Home() {
         duration: Number(singleDuration),
         refineWithGpt5: shouldRefine,
       };
+      payload.videoProvider = singleProviderSelection;
 
       if (singleReferenceFile) {
         payload.referenceImage = {
@@ -1240,7 +1302,7 @@ export default function Home() {
     event.preventDefault();
     const trimmed = singlePrompt.trim();
     if (!trimmed) {
-      setSingleError("Enter a prompt before requesting a Sora2 video.");
+      setSingleError("Enter a prompt before requesting a video clip.");
       return;
     }
 
@@ -1772,6 +1834,20 @@ export default function Home() {
 
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <div className="space-y-2">
+                <label className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Video backend")}</label>
+                <select
+                  value={workflowProviderSelection}
+                  onChange={(event) => setWorkflowVideoProvider(event.target.value)}
+                  className="w-full rounded border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 shadow-inner focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-800"
+                >
+                  {availableVideoProviders.map((option) => (
+                    <option key={option} value={option}>
+                      {option.toUpperCase()}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-2">
                 <label className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Resolution")}</label>
                 <select
                   value={combinedResolution}
@@ -2012,17 +2088,31 @@ export default function Home() {
             </div>
           )}
           <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
-            {translate("Submit a single prompt directly to the Sora2 API. Optionally attach a still reference, select the render resolution, and choose a supported clip duration.")}
+            {translate("Submit a single prompt directly to the selected video backend. Optionally attach a still reference, select the render resolution, and choose a supported clip duration.")}
           </p>
           <form className="space-y-5" onSubmit={handleSingleSubmit}>
             <textarea
               className="min-h-[220px] w-full resize-none rounded border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-4 py-3 text-sm text-slate-900 dark:text-slate-100 shadow-inner placeholder:text-slate-500 transition focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-800"
-              placeholder={translate("Describe the scene, motion, cinematography, and mood for Sora2...")}
+              placeholder={translate("Describe the scene, motion, cinematography, and mood for the selected video backend...")}
               value={singlePrompt}
               onChange={(event) => setSinglePrompt(event.target.value)}
             />
 
             <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Video backend")}</label>
+                <select
+                  value={singleProviderSelection}
+                  onChange={(event) => setSingleVideoProvider(event.target.value)}
+                  className="w-full rounded border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 shadow-inner focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-800"
+                >
+                  {availableVideoProviders.map((option) => (
+                    <option key={option} value={option}>
+                      {option.toUpperCase()}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <div className="space-y-2">
                 <label className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Resolution")}</label>
                 <select
