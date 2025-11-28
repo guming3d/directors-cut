@@ -4,13 +4,21 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Sequence
+from threading import Lock
+from typing import Any, Sequence, Tuple
 
 import httpx
 
+try:  # pragma: no cover - optional when using legacy tokens
+    import jwt
+except ImportError:  # pragma: no cover
+    jwt = None
+
 from .config import (
+    KLING_ACCESS_KEY,
     KLING_API_BASE_URL,
     KLING_API_KEY,
     KLING_DEFAULT_CFG_SCALE,
@@ -19,6 +27,8 @@ from .config import (
     KLING_DOWNLOAD_CHUNK_SIZE,
     KLING_POLL_INTERVAL_SECONDS,
     KLING_POLL_TIMEOUT_SECONDS,
+    KLING_SECRET_KEY,
+    KLING_TOKEN_TTL_SECONDS,
     logger,
 )
 from .utils import resolution_to_size
@@ -50,11 +60,66 @@ def resolution_to_aspect_ratio_code(resolution: str) -> str:
     return "16:9" if width > height else "9:16"
 
 
+_token_lock = Lock()
+_cached_token: str | None = None
+_cached_token_expires_at: int | None = None
+_cached_token_source: str | None = None
+
+
+def _issue_kling_token(now: int) -> Tuple[str, str, int | None]:
+    if KLING_ACCESS_KEY and KLING_SECRET_KEY:
+        if jwt is None:
+            raise KlingAPIError(
+                "PyJWT is required to derive Kling tokens from KLING_ACCESS_KEY/KLING_SECRET_KEY."
+            )
+        headers = {"alg": "HS256", "typ": "JWT"}
+        expires_at = now + KLING_TOKEN_TTL_SECONDS
+        payload = {
+            "iss": KLING_ACCESS_KEY,
+            "exp": expires_at,
+            "nbf": max(0, now - 5),
+        }
+        try:
+            token = jwt.encode(payload, KLING_SECRET_KEY, algorithm="HS256", headers=headers)
+        except Exception as exc:  # pragma: no cover - PyJWT surfaces details
+            raise KlingAPIError(f"Failed to encode Kling auth token: {exc}") from exc
+        if isinstance(token, bytes):
+            token = token.decode("utf-8")
+        return token, "aksk", expires_at
+    if KLING_API_KEY:
+        return KLING_API_KEY, "api_key", None
+    raise KlingAPIError(
+        "Configure KLING_ACCESS_KEY and KLING_SECRET_KEY (preferred) or set KLING_API_KEY for legacy auth."
+    )
+
+
+def generate_kling_auth_token(*, force_refresh: bool = False) -> tuple[str, str, int | None]:
+    """Return the cached Kling auth token (and its source/expiry)."""
+
+    global _cached_token, _cached_token_expires_at, _cached_token_source
+    now = int(time.time())
+    with _token_lock:
+        if (
+            not force_refresh
+            and _cached_token
+            and (
+                _cached_token_expires_at is None
+                or now < max(0, _cached_token_expires_at - 30)
+            )
+        ):
+            return _cached_token, _cached_token_source or "unknown", _cached_token_expires_at
+
+        token, source, expires_at = _issue_kling_token(now)
+        _cached_token = token
+        _cached_token_source = source
+        _cached_token_expires_at = expires_at
+        return token, source, expires_at
+
+
 def _build_headers() -> dict[str, str]:
-    if not KLING_API_KEY:
-        raise KlingAPIError("KLING_API_KEY is not configured; cannot call Kling APIs.")
+    token, _, _ = generate_kling_auth_token()
     return {
-        "Authorization": f"Bearer {KLING_API_KEY}",
+        "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
     }
 
@@ -185,6 +250,7 @@ __all__ = [
     "KlingAPIError",
     "KlingRenderResult",
     "encode_image_to_base64",
+    "generate_kling_auth_token",
     "render_kling_clip",
     "resolution_to_aspect_ratio_code",
 ]
