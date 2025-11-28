@@ -29,12 +29,12 @@
 
 ## Deployment & Operations
 - `.env` drives local runs and Azure deployment; keep `.env.example` in sync when adding env vars (API keys, deployment names, CORS origins, thread limits, moderation retry counts, download variants). The frontend uses `.env.local` for `NEXT_PUBLIC_API_BASE_URL`.
-- Kling deployments require `KLING_API_BASE_URL`, `KLING_API_KEY`, and optional tuning knobs (`KLING_MODEL_NAME`, `KLING_MODE`, `KLING_CFG_SCALE`, `KLING_POLL_INTERVAL`, `KLING_POLL_TIMEOUT`). Document any additional requirements in `.env.example` and README when they appear.
+- Kling deployments require `KLING_API_BASE_URL`, `KLING_ACCESS_KEY`, and `KLING_SECRET_KEY` so the client can mint short-lived tokens (tune `KLING_TOKEN_TTL` as needed). Optional knobs (`KLING_MODEL_NAME`, `KLING_MODE`, `KLING_CFG_SCALE`, `KLING_POLL_INTERVAL`, `KLING_POLL_TIMEOUT`) remain available; document any additions in `.env.example` and README. Keep `verify_kling_token.py` handy for local credential checks.
 - `output/` is runtime storage for prompts, scenes, final videos, logs, and TinyDB (`workflow_jobs.json`, `single_video_jobs.json`); avoid committing generated artifacts.
 - FastAPI serves static assets from `output/` under `/static`; keep generated files within that tree so dashboard links resolve.
 - Sequence mode chains clips via the first start image; ensure `scene_start_screen` counts match scene totals or handle uploads via the API.
 
 ## Security & Configuration Tips
 - Never commit live Azure/OpenAI keys or user content. Use `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`/`ENDPOINT_URL`, `DEPLOYMENT_NAME`, `VIDEO_DOWNLOAD_VARIANT`, `SORA_WORKFLOW_ALLOWED_ORIGINS`, etc., via environment variables.
-- Treat `KLING_API_KEY` the same way—configure it via the environment, never in source, and redact task IDs or video URLs from logs before sharing outside the repo.
+- Treat `KLING_ACCESS_KEY`, `KLING_SECRET_KEY`, and any legacy `KLING_API_KEY` values the same way—configure them via the environment, never in source, and redact task IDs or video URLs from logs before sharing outside the repo.
 - When sharing logs or manifests, strip job IDs and personal scripts. Remix/regenerate endpoints rely on stored `video_id` metadata—keep those JSON files intact in `output/` when debugging.

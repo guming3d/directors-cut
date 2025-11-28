@@ -73,6 +73,13 @@ def _float_env(name: str, default: str) -> float:
 
 KLING_API_BASE_URL = (os.getenv("KLING_API_BASE_URL") or "https://api-beijing.klingai.com").rstrip("/")
 KLING_API_KEY = os.getenv("KLING_API_KEY")
+KLING_ACCESS_KEY = os.getenv("KLING_ACCESS_KEY")
+KLING_SECRET_KEY = os.getenv("KLING_SECRET_KEY")
+try:
+    _kling_token_ttl = int(os.getenv("KLING_TOKEN_TTL", "1800"))
+except ValueError:
+    _kling_token_ttl = 1800
+KLING_TOKEN_TTL_SECONDS = max(300, _kling_token_ttl)
 KLING_DEFAULT_MODEL_NAME = os.getenv("KLING_MODEL_NAME", "kling-v1")
 KLING_DEFAULT_MODE = os.getenv("KLING_MODE", "std")
 KLING_DEFAULT_CFG_SCALE = max(0.0, min(1.0, _float_env("KLING_CFG_SCALE", "0.5")))
@@ -271,6 +278,9 @@ __all__ = [
     "HEADER_PATTERN",
     "KLING_API_BASE_URL",
     "KLING_API_KEY",
+    "KLING_ACCESS_KEY",
+    "KLING_SECRET_KEY",
+    "KLING_TOKEN_TTL_SECONDS",
     "KLING_DEFAULT_CFG_SCALE",
     "KLING_DEFAULT_MODE",
     "KLING_DEFAULT_MODEL_NAME",
