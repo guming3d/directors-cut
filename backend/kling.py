@@ -227,8 +227,6 @@ async def render_kling_clip(
     ) as client:
         create_path = f"/v1/videos/{endpoint}"
         try:
-            print("GUMING debug>>>>")
-            print(request_payload)
             response = await client.post(create_path, json=request_payload)
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
@@ -246,8 +244,6 @@ async def render_kling_clip(
             logger.error("Kling create request encountered network error: %s", exc)
             raise
 
-        print("GUMING debug<<<<")
-        print(response)
         payload = response.json()
         if payload.get("code") != 0:
             raise KlingAPIError(f"Kling API returned error: {payload}")
