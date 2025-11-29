@@ -662,7 +662,7 @@ export default function Home() {
         "Unable to load existing workflows. Start one below or verify the API URL.",
       );
     }
-  }, []);
+  }, [apiBase]);
 
   const loadSingleJobs = useCallback(async () => {
     try {
@@ -698,7 +698,7 @@ export default function Home() {
       console.error(err);
       setSingleError("Unable to load single-video jobs. Verify the API endpoint.");
     }
-  }, []);
+  }, [apiBase]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -758,7 +758,7 @@ export default function Home() {
     return () => {
       disposed = true;
     };
-  }, [isAuthenticated]);
+  }, [isAuthenticated, apiBase]);
 
   useEffect(() => {
     setWorkflowVideoProvider((current) => {
@@ -837,7 +837,7 @@ export default function Home() {
         clearTimeout(timeout);
       }
     };
-  }, [activeJobId, isAuthenticated]);
+  }, [activeJobId, isAuthenticated, apiBase]);
 
   useEffect(() => {
     setScenePromptEdits({});
@@ -891,7 +891,7 @@ export default function Home() {
         clearInterval(interval);
       }
     };
-  }, [activeSingleJobId, isAuthenticated]);
+  }, [activeSingleJobId, isAuthenticated, apiBase]);
 
   const combinedProgressPercent = useMemo(() => {
     if (!job) return 0;
