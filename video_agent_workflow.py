@@ -6,21 +6,21 @@ import argparse
 import asyncio
 from pathlib import Path
 
-from sora_workflow import (
+from backend import (
     DEFAULT_SORA_RESOLUTION,
     SCRIPT_PATH,
     create_sora_video_workflow,
     fastapi_app,
     workflow,
 )
-from sora_workflow.config import (
+from backend.config import (
     DEFAULT_VIDEO_PROVIDER,
     FINAL_VIDEO_PATH,
     SORA_CLIP_DURATION_SECONDS,
     allowed_durations_for_provider,
     normalize_video_provider,
 )
-from sora_workflow.models import VideoWorkflowRequest
+from backend.models import VideoWorkflowRequest
 
 
 async def _run_once(request: VideoWorkflowRequest) -> None:

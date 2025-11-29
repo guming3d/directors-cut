@@ -10,8 +10,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-import sora_workflow.config as config
-import sora_workflow.kling as kling_module
+import backend.config as config
+import backend.kling as kling_module
 
 
 def _reload_kling(monkeypatch, **env):
@@ -57,6 +57,5 @@ def test_generate_kling_token_from_access_secret(monkeypatch):
     assert cached_token == token
     assert cached_source == source
     assert cached_exp == expires_at
-
 
 

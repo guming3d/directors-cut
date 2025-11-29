@@ -2,7 +2,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from sora_workflow.images import prepare_scene_start_images, prepare_scene_tail_image
+from backend.images import prepare_scene_start_images, prepare_scene_tail_image
 
 
 def test_prepare_scene_start_images_resizes(tmp_path):

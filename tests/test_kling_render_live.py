@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from sora_workflow.kling import render_kling_clip  # noqa: E402
+from backend.kling import render_kling_clip  # noqa: E402
 
 
 REQUIRED_ENV_VARS = ("KLING_ACCESS_KEY", "KLING_SECRET_KEY")

@@ -130,10 +130,10 @@ _IMAGE_CLIENT: AzureOpenAI | None = None
 def _configure_logging() -> logging.Logger:
     level_name = (os.getenv("LOG_LEVEL") or "ERROR").upper()
     level = getattr(logging, level_name, logging.ERROR)
-    log_path = OUTPUT_DIR / "sora_workflow.log"
+    log_path = OUTPUT_DIR / "video_workflow.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
-    logger = logging.getLogger("sora_workflow")
+    logger = logging.getLogger("video_workflow")
     if logger.handlers:
         return logger
     logger.setLevel(level)

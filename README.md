@@ -30,7 +30,7 @@ pip install -U agent_framework openai python-dotenv pillow fastapi uvicorn[stand
 Run the workflow API:
 
 ```bash
-uvicorn sora_agent_workflow:fastapi_app --host 0.0.0.0 --port 8000
+uvicorn video_agent_workflow:fastapi_app --host 0.0.0.0 --port 8000
 ```
 
 Key routes:

@@ -1,6 +1,6 @@
 import textwrap
 
-from sora_workflow.prompts import build_prompt_text, parse_script
+from backend.prompts import build_prompt_text, parse_script
 
 
 def test_parse_script_extracts_scenes():

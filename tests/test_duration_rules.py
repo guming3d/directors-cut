@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from sora_workflow.models import (
+from backend.models import (
     SingleVideoPayload,
     StartWorkflowPayload,
     VideoWorkflowRequest,

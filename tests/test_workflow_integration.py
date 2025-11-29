@@ -4,10 +4,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from sora_workflow import DEFAULT_SORA_RESOLUTION
-from sora_workflow.agents import Sora2Agent
-from sora_workflow.models import ScenePlan, SceneRender, VideoWorkflowRequest
-from sora_workflow.workflow import create_sora_video_workflow
+from backend import DEFAULT_SORA_RESOLUTION
+from backend.agents import Sora2Agent
+from backend.models import ScenePlan, SceneRender, VideoWorkflowRequest
+from backend.workflow import create_sora_video_workflow
 
 
 @pytest.mark.asyncio
@@ -67,9 +67,9 @@ async def test_workflow_runs_with_stubbed_agents(tmp_path, monkeypatch):
         target.write_text("final-video", encoding="utf-8")
         return "ok", ""
 
-    monkeypatch.setattr("sora_workflow.agents.refine_scene_description", fake_refine)
+    monkeypatch.setattr("backend.agents.refine_scene_description", fake_refine)
     monkeypatch.setattr(Sora2Agent, "_invoke_sora", fake_invoke)
-    monkeypatch.setattr("sora_workflow.agents.run_subprocess", fake_run_subprocess)
+    monkeypatch.setattr("backend.agents.run_subprocess", fake_run_subprocess)
 
     result = await workflow.run(request)
     assert result is not None
@@ -125,7 +125,7 @@ async def test_invoke_scene_with_kling_backend(tmp_path, monkeypatch):
             video_url="https://example.com/video.mp4",
         )
 
-    monkeypatch.setattr("sora_workflow.agents.render_kling_clip", fake_render_kling_clip)
+    monkeypatch.setattr("backend.agents.render_kling_clip", fake_render_kling_clip)
 
     agent = Sora2Agent()
     render = await agent._invoke_scene(plan, request, Path(request.scenes_dir), scene_images=[])
