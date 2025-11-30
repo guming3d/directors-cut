@@ -555,7 +555,6 @@ async def _run_gpt_image_edit(client, image_path: Path, prompt_text: str, resolu
                 prompt=prompt_text,
                 image=fh,
                 size=azure_size,
-                response_format="b64_json",
                 input_fidelity="high",
                 background="auto",
             )
