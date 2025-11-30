@@ -24,9 +24,11 @@ SORA_CLIENT = ROOT / "sora-openai-client.py"
 TMP_DIR = OUTPUT_DIR / "tmp"
 SINGLE_VIDEO_JOBS_DIR = OUTPUT_DIR / "single_videos"
 VIDEO_INSIGHT_JOBS_DIR = OUTPUT_DIR / "video_insights"
+VIDEO_REPRODUCE_JOBS_DIR = OUTPUT_DIR / "video_reproduce"
 WORKFLOW_DB_PATH = OUTPUT_DIR / "db" / "workflow_jobs.json"
 SINGLE_VIDEO_DB_PATH = OUTPUT_DIR / "db" / "single_video_jobs.json"
 VIDEO_INSIGHT_DB_PATH = OUTPUT_DIR / "db" / "video_insight_jobs.json"
+VIDEO_REPRODUCE_DB_PATH = OUTPUT_DIR / "db" / "video_reproduce_jobs.json"
 SCENE_IMAGE_DIR = ROOT / "scene_start_screen"
 
 # Static assets & patterns
@@ -49,6 +51,12 @@ try:
     SORA_BLOCK_RETRIES = max(1, int(os.getenv("SORA_BLOCK_RETRIES", "3")))
 except ValueError:  # pragma: no cover - defensive fallback
     SORA_BLOCK_RETRIES = 3
+
+try:
+    _reproduce_threads = int(os.getenv("REPRODUCE_THREADS", "3"))
+except ValueError:
+    _reproduce_threads = 3
+REPRODUCE_DEFAULT_THREADS = max(1, _reproduce_threads)
 
 # Video provider defaults
 SUPPORTED_VIDEO_PROVIDERS = ("sora2", "kling")

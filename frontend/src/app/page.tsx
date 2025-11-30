@@ -163,6 +163,68 @@ type VideoInsightJob = {
   messages: JobMessage[];
 };
 
+type ReproduceSegmentVersion = {
+  version_id: string;
+  prompt: string;
+  status: string;
+  video_path: string | null;
+  video_url: string | null;
+  log_path: string | null;
+  log_url: string | null;
+  client_log_path: string | null;
+  client_log_url: string | null;
+  task_id: string | null;
+  error: string | null;
+  created_at: string;
+};
+
+type VideoReproduceSegment = {
+  segment_id: string | null;
+  order: number;
+  label: string;
+  description: string;
+  start_seconds: number;
+  end_seconds: number;
+  duration_seconds: number;
+  kling_duration_seconds: number;
+  tags: string[];
+  start_frame_path: string | null;
+  start_frame_url: string | null;
+  end_frame_path: string | null;
+  end_frame_url: string | null;
+  stylized_start_frame_path: string | null;
+  stylized_start_frame_url: string | null;
+  stylized_end_frame_path: string | null;
+  stylized_end_frame_url: string | null;
+  gpt_image_prompt_path: string | null;
+  gpt_image_prompt_url: string | null;
+  original_video_path: string | null;
+  original_video_url: string | null;
+  status: string;
+  selected_version_id: string | null;
+  versions: ReproduceSegmentVersion[];
+};
+
+type VideoReproduceJob = {
+  job_id: string;
+  filename: string;
+  content_type: string | null;
+  status: string;
+  progress: number;
+  thread_count: number;
+  resolution: string;
+  started_at: string;
+  completed_at: string | null;
+  error: string | null;
+  notes: string | null;
+  video_path: string | null;
+  video_url: string | null;
+  final_video_path: string | null;
+  final_video_url: string | null;
+  messages: JobMessage[];
+  segments: VideoReproduceSegment[];
+};
+
 type PromptPreview = {
   sceneLabel: string;
   versionLabel: string;
@@ -207,7 +269,7 @@ const stageIcons: Record<string, typeof DocumentTextIcon> = {
 
 const terminalStatuses = new Set(["completed", "failed"]);
 
-type TabId = "combined" | "single" | "insight";
+type TabId = "combined" | "single" | "insight" | "reproduce";
 
 type Language = "en" | "zh";
 
@@ -215,6 +277,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: "combined", label: "Storyboard workspace" },
   { id: "single", label: "Single clip console" },
   { id: "insight", label: "Video insight" },
+  { id: "reproduce", label: "Video reproduce" },
 ];
 const LANGUAGE_OPTIONS: Language[] = ["en", "zh"];
 
@@ -272,6 +335,7 @@ const zhTranslations: Record<string, string> = {
   "Failed to regenerate this scene. Confirm the backend is reachable.": "无法重新生成该场景，请确认后端可用。",
   "Failed": "失败",
   "Final Video": "最终视频",
+  "Merged Kling video": "合并后的 Kling 视频",
   "Generate a clip to see it listed here.": "先生成一个片段即可在此查看。",
   "Generate video": "生成视频",
   "Generating video": "生成视频中",
@@ -292,6 +356,7 @@ const zhTranslations: Record<string, string> = {
   "Monitor orchestrator agents, track scene deliveries, and keep your queue aligned with Sora best practices.": "监控调度代理、跟踪场景交付，并让队列遵循 Sora 最佳实践。",
   "Orchestrate multi-scene storyboards, monitor scene renders, and review delivery timelines. The workspace syncs live with your FastAPI backend.": "编排多场景分镜，监控渲染并审阅交付时间线。该工作区与 FastAPI 后端实时同步。",
   "Parallel": "并行",
+  "Parallel Kling renders": "Kling 并行数",
   "Paste your storyboard with scene headings.": "请按场景标题粘贴分镜。",
   "Password": "密码",
   "Plan scenes in parallel": "并行规划场景",
@@ -318,6 +383,9 @@ const zhTranslations: Record<string, string> = {
   "Scene images enabled": "已启用场景参考图",
   "Scene reference": "场景参考图",
   "Scene references": "场景参考图",
+  "Original segment": "原始片段",
+  "Reproduced clip": "复刻片段",
+  "Segment": "片段",
   "Scene duration": "场景时长",
   "Scene Renders": "场景渲染",
   "Scene": "场景",
@@ -388,6 +456,7 @@ const zhTranslations: Record<string, string> = {
   "Unavailable": "不可用",
   "Generated Video": "已生成视频",
   "Video pending...": "视频生成中…",
+  "Image pending...": "图像生成中…",
   "Generate Single Clip": "创建单条视频",
   "Submit a single prompt directly to the selected video backend. Optionally attach a still reference, select the render resolution, and choose a supported clip duration.": "将单条提示提交到所选视频引擎，可附加参考图、选择分辨率并设置片段时长。",
   "Describe the scene, motion, cinematography, and mood for the selected video backend...": "描述场景、运动、镜头语言与情绪，系统会交付给指定的视频引擎…",
@@ -431,11 +500,17 @@ const zhTranslations: Record<string, string> = {
   "Submitted prompt": "已提交的提示词",
   "Analyze Video": "分析视频",
   "Video insight": "视频洞察",
+  "Video reproduce": "视频复刻",
   "Video insight jobs": "视频洞察任务",
+  "Reproduce jobs": "复刻任务",
+  "Investigate and reproduce uploaded videos.": "使用内容理解与 Kling 复刻上传的视频。",
   "Upload a video to see analysis jobs here.": "上传视频以查看分析任务。",
+  "Upload a video to reproduce segments.": "上传视频以拆分并复刻片段。",
   "Upload video for analysis": "上传用于分析的视频",
+  "Upload video for reproduction": "上传待复刻视频",
   "Uploaded video": "已上传视频",
   "Notes (optional)": "备注（可选）",
+  "Content notes": "任务备注",
   "Describe any context for this clip": "描述此视频的上下文",
   "Result files": "结果文件",
   "Open analyzed video": "打开已分析视频",
@@ -445,6 +520,8 @@ const zhTranslations: Record<string, string> = {
   "Video segments": "视频段落",
   "Start frame": "起始帧",
   "End frame": "结束帧",
+  "Stylized start frame": "风格化起始帧",
+  "Stylized end frame": "风格化结束帧",
   "Timestamp": "时间戳",
   "Tags": "标签",
   "Confidence": "置信度",
@@ -460,7 +537,17 @@ const zhTranslations: Record<string, string> = {
   "Unable to analyze video. Confirm the backend endpoint is reachable.": "无法分析该视频，请确认后端可访问。",
   "Content type": "内容类型",
   "Unable to load video insights. Verify the API endpoint.": "无法加载视频洞察，请检查 API 地址。",
+  "Unable to load reproduce jobs. Verify the API endpoint.": "无法加载复刻任务，请检查 API 地址。",
+  "Unable to load reproduce job details. Verify the API endpoint.": "无法刷新复刻任务详情，请检查 API 地址。",
   "Unable to delete one or more insight jobs.": "部分视频洞察任务无法删除。",
+  "Unable to delete one or more reproduce jobs.": "部分复刻任务无法删除。",
+  "Unable to start reproduce workflow. Confirm the backend is reachable.": "无法启动复刻流程，请确认后端可访问。",
+  "Unable to regenerate this segment. Verify the API endpoint.": "无法重新生成该片段，请检查 API 地址。",
+  "Start reproduce workflow": "启动复刻流程",
+  "Original segment": "原始片段",
+  "Reproduced clip": "复刻片段",
+  "Regenerate segment": "重新生成片段",
+  "Thread count must be between 1 and 10.": "线程数需在 1 到 10 之间。",
 };
 
 const normalizeProvider = (value?: string | null) => {
@@ -528,6 +615,17 @@ const formatTimeDistance = (value: string | null) => {
     return "—";
   }
   return date.toLocaleString();
+};
+
+const formatSeconds = (value: number | null | undefined) => {
+  if (value == null || Number.isNaN(value)) return "—";
+  const total = Math.max(0, Number(value));
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  if (minutes > 0) {
+    return `${minutes}m ${seconds.toFixed(1)}s`;
+  }
+  return `${seconds.toFixed(1)}s`;
 };
 
 const formatSegmentTimestampDisplay = (seconds?: number | null, fallback?: string | null) => {
@@ -720,6 +818,7 @@ export default function Home() {
   const [refinementDraft, setRefinementDraft] = useState("");
   const [copyNotice, setCopyNotice] = useState<string | null>(null);
   const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reproduceJobIdRef = useRef<string | null>(null);
 
   // Video insight state
   const [insightJobs, setInsightJobs] = useState<VideoInsightJob[]>([]);
@@ -732,10 +831,25 @@ export default function Home() {
   const [insightFormError, setInsightFormError] = useState<string | null>(null);
   const [isSubmittingInsight, setIsSubmittingInsight] = useState(false);
 
+  // Video reproduce state
+  const [reproduceJobs, setReproduceJobs] = useState<VideoReproduceJob[]>([]);
+  const [reproduceJob, setReproduceJob] = useState<VideoReproduceJob | null>(null);
+  const [activeReproduceJobId, setActiveReproduceJobId] = useState<string | null>(null);
+  const [selectedReproduceJobs, setSelectedReproduceJobs] = useState<Set<string>>(new Set());
+  const [reproduceFile, setReproduceFile] = useState<File | null>(null);
+  const [reproduceNotes, setReproduceNotes] = useState("");
+  const [reproduceThreads, setReproduceThreads] = useState("3");
+  const [reproduceError, setReproduceError] = useState<string | null>(null);
+  const [reproduceFormError, setReproduceFormError] = useState<string | null>(null);
+  const [isSubmittingReproduce, setIsSubmittingReproduce] = useState(false);
+  const [regeneratingSegment, setRegeneratingSegment] = useState<number | null>(null);
+  const [segmentPrompts, setSegmentPrompts] = useState<Record<number, string>>({});
+
   // Modal states
   const [isCreateWorkflowModalOpen, setIsCreateWorkflowModalOpen] = useState(false);
   const [isCreateSingleVideoModalOpen, setIsCreateSingleVideoModalOpen] = useState(false);
   const [isCreateInsightModalOpen, setIsCreateInsightModalOpen] = useState(false);
+  const [isCreateReproduceModalOpen, setIsCreateReproduceModalOpen] = useState(false);
   const [isJobDetailModalOpen, setIsJobDetailModalOpen] = useState(false);
 
   const loadCombinedJobs = useCallback(async () => {
@@ -848,6 +962,42 @@ export default function Home() {
     }
   }, [apiBase]);
 
+  const loadReproduceJobs = useCallback(async () => {
+    try {
+      const response = await fetch(`${apiBase}/api/reproduce`);
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      const data: VideoReproduceJob[] = await response.json();
+      setReproduceJobs(data);
+      if (data.length === 0) {
+        setReproduceJob(null);
+        setActiveReproduceJobId(null);
+      } else {
+        setReproduceJob((current) =>
+          current && data.some((item) => item.job_id === current.job_id) ? current : data[0],
+        );
+        setActiveReproduceJobId((current) =>
+          current && data.some((item) => item.job_id === current) ? current : data[0].job_id,
+        );
+      }
+      setSelectedReproduceJobs((previous) => {
+        if (previous.size === 0) return previous;
+        const next = new Set<string>();
+        data.forEach((item) => {
+          if (previous.has(item.job_id)) {
+            next.add(item.job_id);
+          }
+        });
+        return next;
+      });
+      setReproduceError(null);
+    } catch (err) {
+      console.error(err);
+      setReproduceError("Unable to load reproduce jobs. Verify the API endpoint.");
+    }
+  }, [apiBase]);
+
   useEffect(() => {
     if (!isAuthenticated) {
       setJobs([]);
@@ -860,6 +1010,11 @@ export default function Home() {
       setInsightJob(null);
       setActiveInsightJobId(null);
       setSelectedInsightJobs(new Set());
+      setReproduceJobs([]);
+      setReproduceJob(null);
+      setActiveReproduceJobId(null);
+      setSelectedReproduceJobs(new Set());
+      setSegmentPrompts({});
       setActiveVideoProvider(null);
       setAvailableVideoProviders([...VIDEO_PROVIDER_OPTIONS]);
       setWorkflowVideoProvider(null);
@@ -869,7 +1024,14 @@ export default function Home() {
     void loadCombinedJobs();
     void loadSingleJobs();
     void loadInsightJobs();
-  }, [isAuthenticated, loadCombinedJobs, loadSingleJobs, loadInsightJobs]);
+    void loadReproduceJobs();
+  }, [
+    isAuthenticated,
+    loadCombinedJobs,
+    loadSingleJobs,
+    loadInsightJobs,
+    loadReproduceJobs,
+  ]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -997,6 +1159,37 @@ export default function Home() {
   }, [job?.job_id]);
 
   useEffect(() => {
+    if (!reproduceJob) {
+      reproduceJobIdRef.current = null;
+      setSegmentPrompts({});
+      return;
+    }
+    const derivePrompt = (segment: VideoReproduceSegment) => {
+      const activeVersion = segment.versions.find((version) => version.version_id === segment.selected_version_id);
+      const fallback = segment.versions.at(-1);
+      return activeVersion?.prompt ?? fallback?.prompt ?? segment.description;
+    };
+    if (reproduceJobIdRef.current !== reproduceJob.job_id) {
+      reproduceJobIdRef.current = reproduceJob.job_id;
+      const defaults: Record<number, string> = {};
+      reproduceJob.segments.forEach((segment) => {
+        defaults[segment.order] = derivePrompt(segment);
+      });
+      setSegmentPrompts(defaults);
+      return;
+    }
+    setSegmentPrompts((previous) => {
+      const next = { ...previous };
+      reproduceJob.segments.forEach((segment) => {
+        if (next[segment.order] === undefined) {
+          next[segment.order] = derivePrompt(segment);
+        }
+      });
+      return next;
+    });
+  }, [reproduceJob]);
+
+  useEffect(() => {
     if (!activeSingleJobId || !isAuthenticated) return;
     let disposed = false;
     let interval: ReturnType<typeof setInterval> | undefined;
@@ -1089,6 +1282,53 @@ export default function Home() {
     };
   }, [activeInsightJobId, isAuthenticated, apiBase]);
 
+  useEffect(() => {
+    if (!activeReproduceJobId || !isAuthenticated) return;
+    let disposed = false;
+    let interval: ReturnType<typeof setInterval> | undefined;
+
+    const fetchStatus = async () => {
+      try {
+        const response = await fetch(`${apiBase}/api/reproduce/${activeReproduceJobId}`);
+        if (!response.ok) {
+          throw new Error(await response.text());
+        }
+        const data: VideoReproduceJob = await response.json();
+        if (disposed) return;
+        setReproduceJob(data);
+        setReproduceJobs((prev) => {
+          const index = prev.findIndex((item) => item.job_id === data.job_id);
+          if (index !== -1) {
+            const next = [...prev];
+            next[index] = data;
+            return next;
+          }
+          return [data, ...prev];
+        });
+        setReproduceError(null);
+        if (terminalStatuses.has(data.status) && interval) {
+          clearInterval(interval);
+          interval = undefined;
+        }
+      } catch (err) {
+        console.error(err);
+        if (!disposed) {
+          setReproduceError("Unable to load reproduce job details. Verify the API endpoint.");
+        }
+      }
+    };
+
+    void fetchStatus();
+    interval = setInterval(fetchStatus, 5000);
+
+    return () => {
+      disposed = true;
+      if (interval) {
+        clearInterval(interval);
+      }
+    };
+  }, [activeReproduceJobId, isAuthenticated, apiBase]);
+
   const combinedProgressPercent = useMemo(() => {
     if (!job) return 0;
     const value = Number.isFinite(job.progress) ? job.progress : 0;
@@ -1107,6 +1347,12 @@ export default function Home() {
     return Math.max(0, Math.min(100, Math.round(value * 100)));
   }, [insightJob]);
 
+  const reproduceProgressPercent = useMemo(() => {
+    if (!reproduceJob) return 0;
+    const value = Number.isFinite(reproduceJob.progress) ? reproduceJob.progress : 0;
+    return Math.max(0, Math.min(100, Math.round(value * 100)));
+  }, [reproduceJob]);
+
   const finalVideoUrl = buildAssetUrl(apiBase, job?.final_video_url);
   const hasScenes = Boolean(job?.scenes?.length);
   const isWorkflowActive = job?.status === "running" || job?.status === "queued";
@@ -1120,6 +1366,9 @@ export default function Home() {
   const insightVideoUrl = buildAssetUrl(apiBase, insightJob?.video_url);
   const insightResultUrl = buildAssetUrl(apiBase, insightJob?.result_url);
   const insightStatusToken = getStatusToken(insightJob?.status, language);
+  const reproduceSourceVideoUrl = buildAssetUrl(apiBase, reproduceJob?.video_url);
+  const reproduceFinalVideoUrl = buildAssetUrl(apiBase, reproduceJob?.final_video_url);
+  const reproduceStatusToken = getStatusToken(reproduceJob?.status, language);
   const workflowProviderSelection =
     workflowVideoProvider ?? availableVideoProviders[0] ?? VIDEO_PROVIDER_OPTIONS[0];
   const singleProviderSelection =
@@ -1144,6 +1393,9 @@ export default function Home() {
       setIsCreateWorkflowModalOpen(true);
     } else if (activeTab === "single") {
       setIsCreateSingleVideoModalOpen(true);
+    } else if (activeTab === "reproduce") {
+      setReproduceFormError(null);
+      setIsCreateReproduceModalOpen(true);
     } else {
       setInsightFormError(null);
       setIsCreateInsightModalOpen(true);
@@ -1679,6 +1931,141 @@ export default function Home() {
     }
   };
 
+  const handleReproduceFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null;
+    setReproduceFile(file);
+  };
+
+  const handleReproduceSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!reproduceFile) {
+      setReproduceFormError("Upload video for reproduction");
+      return;
+    }
+    const threads = Number.parseInt(reproduceThreads.trim() || "0", 10);
+    if (!Number.isFinite(threads) || threads < 1 || threads > 10) {
+      setReproduceFormError("Thread count must be between 1 and 10.");
+      return;
+    }
+    setReproduceFormError(null);
+    setIsSubmittingReproduce(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", reproduceFile);
+      if (reproduceNotes.trim()) {
+        formData.append("notes", reproduceNotes.trim());
+      }
+      formData.append("threadCount", String(threads));
+      const response = await fetch(`${apiBase}/api/reproduce`, {
+        method: "POST",
+        body: formData,
+      });
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      const data: VideoReproduceJob = await response.json();
+      setReproduceJobs((prev) => [data, ...prev.filter((item) => item.job_id !== data.job_id)]);
+      setReproduceJob(data);
+      setActiveReproduceJobId(data.job_id);
+      setReproduceFile(null);
+      setReproduceNotes("");
+      setSegmentPrompts({});
+      setReproduceError(null);
+      await loadReproduceJobs();
+    } catch (err) {
+      console.error(err);
+      setReproduceError("Unable to start reproduce workflow. Confirm the backend is reachable.");
+    } finally {
+      setIsSubmittingReproduce(false);
+    }
+  };
+
+  const toggleReproduceSelection = (jobId: string) => {
+    setSelectedReproduceJobs((previous) => {
+      const next = new Set(previous);
+      if (next.has(jobId)) {
+        next.delete(jobId);
+      } else {
+        next.add(jobId);
+      }
+      return next;
+    });
+  };
+
+  const handleDeleteReproduceJobs = useCallback(async () => {
+    if (!selectedReproduceJobs.size) return;
+    let encounteredError: string | null = null;
+    for (const jobId of selectedReproduceJobs) {
+      try {
+        const response = await fetch(`${apiBase}/api/reproduce/${jobId}`, {
+          method: "DELETE",
+        });
+        if (!response.ok) {
+          throw new Error(await response.text());
+        }
+      } catch (err) {
+        console.error(err);
+        encounteredError = "Unable to delete one or more reproduce jobs.";
+        break;
+      }
+    }
+    setSelectedReproduceJobs(new Set());
+    if (encounteredError) {
+      setReproduceError(encounteredError);
+    }
+    await loadReproduceJobs();
+  }, [selectedReproduceJobs, apiBase, loadReproduceJobs]);
+
+  const handleSegmentPromptChange = (order: number, value: string) => {
+    setSegmentPrompts((previous) => ({ ...previous, [order]: value }));
+  };
+
+  const handleSegmentRegenerate = useCallback(
+    async (order: number) => {
+      if (!reproduceJob) return;
+      const promptText = (segmentPrompts[order] ?? "").trim();
+      if (!promptText) {
+        setReproduceFormError("Copy or update the prompt before proceeding.");
+        return;
+      }
+      setReproduceFormError(null);
+      setRegeneratingSegment(order);
+      try {
+        const response = await fetch(
+          `${apiBase}/api/reproduce/${reproduceJob.job_id}/segments/${order}/regenerate`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ prompt: promptText }),
+          },
+        );
+        if (!response.ok) {
+          throw new Error(await response.text());
+        }
+        const data: VideoReproduceJob = await response.json();
+        setReproduceJob(data);
+        setReproduceJobs((prev) => {
+          const index = prev.findIndex((item) => item.job_id === data.job_id);
+          if (index !== -1) {
+            const next = [...prev];
+            next[index] = data;
+            return next;
+          }
+          return [data, ...prev];
+        });
+        setSegmentPrompts((previous) => ({ ...previous, [order]: promptText }));
+        setReproduceError(null);
+      } catch (err) {
+        console.error(err);
+        setReproduceError("Unable to regenerate this segment. Verify the API endpoint.");
+      } finally {
+        setRegeneratingSegment(null);
+        await loadReproduceJobs();
+      }
+    },
+    [apiBase, reproduceJob, segmentPrompts, loadReproduceJobs],
+  );
+
   const handleSingleRemixSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!singleJob?.job_id) {
@@ -2019,7 +2406,9 @@ export default function Home() {
               ? translate("Workflow Runs")
               : activeTab === "single"
                 ? translate("Recent Single Jobs")
-                : translate("Video insight jobs")}
+                : activeTab === "reproduce"
+                  ? translate("Reproduce jobs")
+                  : translate("Video insight jobs")}
           </h1>
           <button
             onClick={openPrimaryModal}
@@ -2029,7 +2418,9 @@ export default function Home() {
               ? translate("Start Workflow")
               : activeTab === "single"
                 ? translate("Generate Single Clip")
-                : translate("Analyze Video")}
+                : activeTab === "reproduce"
+                  ? translate("Start reproduce workflow")
+                  : translate("Analyze Video")}
           </button>
         </div>
 
@@ -2123,6 +2514,234 @@ export default function Home() {
                   </table>
                 </div>
               )}
+
+              {reproduceJob ? (
+                <div className="mt-8 space-y-6 rounded border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/40 p-5 shadow-inner shadow-black/10">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">{translate("Video reproduce")}</h3>
+                      <p className="text-xs uppercase tracking-wide text-slate-500">
+                        {translate("Uploaded video")}: {reproduceJob.filename}
+                      </p>
+                      {reproduceJob.notes ? (
+                        <p className="text-xs text-slate-500 dark:text-slate-400">{reproduceJob.notes}</p>
+                      ) : null}
+                    </div>
+                    <span className={`text-xs font-semibold uppercase tracking-wide ${reproduceStatusToken.className}`}>
+                      {reproduceStatusToken.label}
+                    </span>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+                      <span>{translate("Progress")}</span>
+                      <span>{reproduceProgressPercent}%</span>
+                    </div>
+                    <div className="h-2 overflow-hidden rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800">
+                      <div
+                        className="h-full rounded-full bg-slate-500 dark:bg-slate-200 transition-[width] duration-500 ease-out"
+                        style={{ width: `${reproduceProgressPercent}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  <dl className="grid gap-4 text-sm text-slate-600 dark:text-slate-300 sm:grid-cols-4">
+                    <div>
+                      <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Started")}</dt>
+                      <dd className="mt-1">{formatTimeDistance(reproduceJob.started_at)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Completed")}</dt>
+                      <dd className="mt-1">{reproduceJob.completed_at ? formatTimeDistance(reproduceJob.completed_at) : "—"}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Resolution")}</dt>
+                      <dd className="mt-1">{reproduceJob.resolution}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Parallel Kling renders")}</dt>
+                      <dd className="mt-1">{reproduceJob.thread_count}</dd>
+                    </div>
+                  </dl>
+
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <div>
+                      <h4 className="text-sm font-semibold text-slate-600 dark:text-slate-300">{translate("Uploaded video")}</h4>
+                      {reproduceSourceVideoUrl ? (
+                        <video
+                          controls
+                          className="mt-2 max-h-64 w-full rounded border border-slate-200 dark:border-slate-800 bg-black/60"
+                          src={reproduceSourceVideoUrl}
+                        >
+                          {translate("Your browser does not support HTML5 video.")}
+                        </video>
+                      ) : (
+                        <p className="mt-2 text-xs text-slate-500">{translate("Video pending...")}</p>
+                      )}
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-semibold text-slate-600 dark:text-slate-300">{translate("Merged Kling video")}</h4>
+                      {reproduceFinalVideoUrl ? (
+                        <video
+                          controls
+                          className="mt-2 max-h-64 w-full rounded border border-slate-200 dark:border-slate-800 bg-black/60"
+                          src={reproduceFinalVideoUrl}
+                        >
+                          {translate("Your browser does not support HTML5 video.")}
+                        </video>
+                      ) : (
+                        <p className="mt-2 text-xs text-slate-500">{translate("Video pending...")}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <h4 className="text-sm font-semibold text-slate-600 dark:text-slate-300">{translate("Video segments")}</h4>
+                    {reproduceJob.segments?.length ? (
+                      reproduceJob.segments.map((segment) => {
+                        const activeVersion =
+                          segment.versions.find((version) => version.version_id === segment.selected_version_id) ??
+                          segment.versions.at(-1);
+                        const originalSegmentUrl = buildAssetUrl(apiBase, segment.original_video_url);
+                        const klingSegmentUrl = buildAssetUrl(apiBase, activeVersion?.video_url);
+                        const startFrameUrl = buildAssetUrl(apiBase, segment.start_frame_url);
+                        const endFrameUrl = buildAssetUrl(apiBase, segment.end_frame_url);
+                        const stylizedStartFrameUrl = buildAssetUrl(apiBase, segment.stylized_start_frame_url);
+                        const stylizedEndFrameUrl = buildAssetUrl(apiBase, segment.stylized_end_frame_url);
+                        const framePreviews = [
+                          { key: "start", label: translate("Start frame"), url: startFrameUrl },
+                          { key: "stylized-start", label: translate("Stylized start frame"), url: stylizedStartFrameUrl },
+                          { key: "end", label: translate("End frame"), url: endFrameUrl },
+                          { key: "stylized-end", label: translate("Stylized end frame"), url: stylizedEndFrameUrl },
+                        ];
+                        const promptValue = segmentPrompts[segment.order] ?? "";
+                        const isBusy = regeneratingSegment === segment.order;
+                        return (
+                          <div
+                            key={segment.order}
+                            className="rounded border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/40 p-4 shadow-inner shadow-black/10"
+                          >
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div>
+                                <h5 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{segment.label}</h5>
+                                <p className="text-xs text-slate-500 dark:text-slate-400">
+                                  {formatSeconds(segment.start_seconds)} - {formatSeconds(segment.end_seconds)} · {formatSeconds(segment.duration_seconds)}
+                                </p>
+                              </div>
+                              <span className="rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                {translate("Segment")} {segment.order}
+                              </span>
+                            </div>
+                            <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">{segment.description}</p>
+                            {segment.tags?.length ? (
+                              <p className="text-xs text-slate-500 dark:text-slate-400">{segment.tags.join(", ")}</p>
+                            ) : null}
+                            <div className="mt-3 grid gap-3 md:grid-cols-2">
+                              <div>
+                                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{translate("Original segment")}</p>
+                                {originalSegmentUrl ? (
+                                  <video
+                                    controls
+                                    className="mt-1 max-h-48 w-full rounded border border-slate-200 dark:border-slate-800 bg-black/60"
+                                    src={originalSegmentUrl}
+                                  >
+                                    {translate("Version video unavailable.")}
+                                  </video>
+                                ) : (
+                                  <p className="mt-1 text-xs text-slate-500">{translate("Video pending...")}</p>
+                                )}
+                              </div>
+                              <div>
+                                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{translate("Reproduced clip")}</p>
+                                {klingSegmentUrl ? (
+                                  <video
+                                    controls
+                                    className="mt-1 max-h-48 w-full rounded border border-slate-200 dark:border-slate-800 bg-black/60"
+                                    src={klingSegmentUrl}
+                                  >
+                                    {translate("Version video unavailable.")}
+                                  </video>
+                                ) : (
+                                  <p className="mt-1 text-xs text-slate-500">{translate("Video pending...")}</p>
+                                )}
+                              </div>
+                            </div>
+                            <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                              {framePreviews.map((frame) => (
+                                <div key={`${segment.order}-${frame.key}`}>
+                                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{frame.label}</p>
+                                  {frame.url ? (
+                                    <Image
+                                      src={frame.url}
+                                      alt={`${segment.label} ${frame.label}`}
+                                      width={320}
+                                      height={180}
+                                      unoptimized
+                                      className="mt-1 h-28 w-full rounded object-cover"
+                                    />
+                                  ) : (
+                                    <p className="mt-1 text-xs text-slate-500">{translate("Image pending...")}</p>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                            <div className="mt-4 space-y-2">
+                              <textarea
+                                className="w-full rounded-md border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-xs text-slate-900 dark:text-slate-100 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-800"
+                                value={promptValue}
+                                onChange={(event) => handleSegmentPromptChange(segment.order, event.target.value)}
+                              />
+                              <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500 dark:text-slate-400">
+                                <span>
+                                  {translate("Status")}: {translate(segment.status)}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleSegmentRegenerate(segment.order)}
+                                  disabled={isBusy}
+                                  className="inline-flex items-center gap-1 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  {isBusy ? <ArrowPathIcon className="h-3.5 w-3.5 animate-spin" /> : <ArrowPathIcon className="h-3.5 w-3.5" />}
+                                  {translate("Regenerate segment")}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <p className="text-xs text-slate-500">{translate("No insights yet.")}</p>
+                    )}
+                  </div>
+
+                  {reproduceJob.messages?.length ? (
+                    <div className="space-y-2">
+                      <h4 className="text-sm font-semibold text-slate-600 dark:text-slate-300">{translate("Workflow Timeline")}</h4>
+                      <ol className="space-y-2 max-h-60 overflow-y-auto pr-2">
+                        {reproduceJob.messages.map((message, index) => {
+                          const Icon = stageIcons[message.stage] ?? ArrowPathIcon;
+                          return (
+                            <li
+                              key={`${message.timestamp}-${index}`}
+                              className="relative flex gap-3 rounded border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/40 p-2 shadow-inner shadow-black/10"
+                            >
+                              <div className="relative mt-0.5 flex h-6 w-6 items-center justify-center rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800">
+                                <Icon className="h-3.5 w-3.5 text-slate-500 dark:text-slate-400" />
+                              </div>
+                              <div>
+                                <p className="text-xs text-slate-600 dark:text-slate-300">{message.text}</p>
+                                <p className="text-[11px] text-slate-500">
+                                  {formatTimestamp(message.timestamp)} · {stageLabel(message.stage, language)}
+                                </p>
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ol>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
             </>
           )}
 
@@ -2309,6 +2928,101 @@ export default function Home() {
                                 <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
                                   {progressPercent}%
                                 </span>
+                              </div>
+                            </td>
+                            <td className="whitespace-nowrap px-6 py-4 text-xs text-slate-500">
+                              {formatTimeDistance(item.started_at)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          )}
+
+          {activeTab === "reproduce" && (
+            <>
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                {reproduceError ? (
+                  <p className="text-xs text-rose-500 dark:text-rose-300">{translate(reproduceError)}</p>
+                ) : (
+                  <p className="text-xs text-slate-500">
+                    {translate("Investigate and reproduce uploaded videos.")}
+                  </p>
+                )}
+                <button
+                  type="button"
+                  onClick={handleDeleteReproduceJobs}
+                  disabled={!selectedReproduceJobs.size}
+                  className="inline-flex items-center gap-1 rounded border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30 px-3 py-1.5 text-xs font-semibold text-rose-400 transition disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <TrashIcon className="h-4 w-4" />
+                  {translate("Delete Selected")}
+                </button>
+              </div>
+              {reproduceJobs.length === 0 ? (
+                <p className="text-sm text-slate-500 p-4">
+                  {translate("Upload a video to reproduce segments.")}
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800 text-sm">
+                    <thead className="bg-slate-50 dark:bg-slate-800/50 text-[11px] uppercase tracking-wide text-slate-500">
+                      <tr>
+                        <th scope="col" className="px-6 py-3 text-left">
+                          <span className="sr-only">{translate("Select workflows")}</span>
+                        </th>
+                        <th scope="col" className="px-6 py-3 text-left">{translate("Job ID")}</th>
+                        <th scope="col" className="px-6 py-3 text-left">{translate("Status")}</th>
+                        <th scope="col" className="px-6 py-3 text-left">{translate("Uploaded video")}</th>
+                        <th scope="col" className="px-6 py-3 text-left">{translate("Progress")}</th>
+                        <th scope="col" className="px-6 py-3 text-left">{translate("Started")}</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 dark:divide-slate-800 bg-white dark:bg-slate-900">
+                      {reproduceJobs.map((item) => {
+                        const token = getStatusToken(item.status, language);
+                        const isSelected = selectedReproduceJobs.has(item.job_id);
+                        const progressPercent = Math.min(100, Math.max(0, Math.round((item.progress ?? 0) * 100)));
+                        return (
+                          <tr
+                            key={item.job_id}
+                            onClick={() => {
+                              setActiveReproduceJobId(item.job_id);
+                              setReproduceJob(item);
+                            }}
+                            className="cursor-pointer transition hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                          >
+                            <td className="px-6 py-4">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => toggleReproduceSelection(item.job_id)}
+                                onClick={(event) => event.stopPropagation()}
+                                className="h-4 w-4 rounded border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700 text-indigo-500 focus:ring-indigo-500"
+                              />
+                            </td>
+                            <td className="whitespace-nowrap px-6 py-4 font-mono text-xs text-slate-500 dark:text-slate-400">
+                              {item.job_id.slice(0, 12)}
+                            </td>
+                            <td className="px-6 py-4">
+                              <span className={`text-xs font-semibold uppercase tracking-wide ${token.className}`}>
+                                {token.label}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 text-xs text-slate-500 dark:text-slate-400">{item.filename}</td>
+                            <td className="px-6 py-4">
+                              <div className="flex items-center gap-2">
+                                <div className="h-2 w-24 rounded-full bg-slate-100 dark:bg-slate-800">
+                                  <div
+                                    className="h-full rounded-full bg-slate-400 transition-all"
+                                    style={{ width: `${progressPercent}%` }}
+                                  />
+                                </div>
+                                <span className="text-xs text-slate-500 dark:text-slate-400">{progressPercent}%</span>
                               </div>
                             </td>
                             <td className="whitespace-nowrap px-6 py-4 text-xs text-slate-500">
@@ -2592,6 +3306,87 @@ export default function Home() {
               </button>
               <p className="text-xs text-slate-500">
                 {translate("API target:")} <span className="font-mono text-[11px] text-slate-500">{apiBase}/api/workflows</span>
+              </p>
+            </div>
+          </form>
+        </Modal>
+
+        <Modal
+          isOpen={isCreateReproduceModalOpen}
+          onClose={() => {
+            setIsCreateReproduceModalOpen(false);
+            setReproduceFormError(null);
+          }}
+          title={translate("Start reproduce workflow")}
+        >
+          {reproduceFormError && (
+            <div className="mb-4 flex items-start gap-3 rounded border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30 px-4 py-3 text-sm text-rose-400 shadow-md shadow-rose-900/20">
+              <ExclamationTriangleIcon className="h-5 w-5 flex-none text-rose-500" />
+              <span>{translate(reproduceFormError)}</span>
+            </div>
+          )}
+          <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
+            {translate("Upload video for reproduction")}
+          </p>
+          <form className="space-y-5" onSubmit={handleReproduceSubmit}>
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-slate-500 dark:text-slate-400">
+                {translate("Upload video for reproduction")}
+              </label>
+              <input
+                type="file"
+                accept="video/*"
+                onChange={handleReproduceFileChange}
+                className="max-w-xs text-xs text-slate-500"
+              />
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {reproduceFile ? reproduceFile.name : translate("Uploaded video")}
+              </p>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-slate-500 dark:text-slate-400">
+                {translate("Content notes")}
+              </label>
+              <textarea
+                className="min-h-[120px] w-full rounded border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-4 py-3 text-sm text-slate-900 dark:text-slate-100 shadow-inner placeholder:text-slate-500 transition focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-800"
+                placeholder={translate("Describe any context for this clip")}
+                value={reproduceNotes}
+                onChange={(event) => setReproduceNotes(event.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-slate-500 dark:text-slate-400">
+                {translate("Parallel Kling renders")}
+              </label>
+              <input
+                type="number"
+                min={1}
+                max={10}
+                value={reproduceThreads}
+                onChange={(event) => setReproduceThreads(event.target.value)}
+                className="w-32 rounded border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 shadow-inner focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-800"
+              />
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <button
+                type="submit"
+                disabled={isSubmittingReproduce}
+                className="inline-flex items-center justify-center gap-2 rounded-md bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white dark:bg-slate-100 dark:text-slate-900 shadow-sm shadow-slate-900/50 transition hover:bg-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isSubmittingReproduce ? (
+                  <>
+                    <ArrowPathIcon className="h-5 w-5 animate-spin" />
+                    {translate("Starting Workflow...")}
+                  </>
+                ) : (
+                  <>
+                    <PaperAirplaneIcon className="h-5 w-5" />
+                    {translate("Start reproduce workflow")}
+                  </>
+                )}
+              </button>
+              <p className="text-xs text-slate-500">
+                {translate("API target:")} <span className="font-mono text-[11px] text-slate-500">{apiBase}/api/reproduce</span>
               </p>
             </div>
           </form>

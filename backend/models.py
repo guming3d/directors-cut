@@ -326,6 +326,76 @@ class VideoInsightJobState:
         self.messages.append(ProgressMessage(timestamp=utc_now(), stage=stage, text=text))
 
 
+@dataclass
+class ReproduceSegmentVersion:
+    version_id: str
+    prompt: str
+    status: str = "queued"
+    video_path: Optional[str] = None
+    log_path: Optional[str] = None
+    client_log_path: Optional[str] = None
+    task_id: Optional[str] = None
+    error: Optional[str] = None
+    prompt_path: Optional[str] = None
+    created_at: datetime = field(default_factory=utc_now)
+
+
+@dataclass
+class VideoReproduceSegment:
+    order: int
+    label: str
+    description: str
+    start_seconds: float
+    end_seconds: float
+    duration_seconds: float
+    kling_duration_seconds: int
+    segment_id: Optional[str] = None
+    tags: list[str] = field(default_factory=list)
+    start_frame_path: Optional[str] = None
+    end_frame_path: Optional[str] = None
+    stylized_start_frame_path: Optional[str] = None
+    stylized_end_frame_path: Optional[str] = None
+    gpt_image_prompt_path: Optional[str] = None
+    original_video_path: Optional[str] = None
+    status: str = "queued"
+    versions: list[ReproduceSegmentVersion] = field(default_factory=list)
+    selected_version_id: Optional[str] = None
+
+    def select_version(self, version: ReproduceSegmentVersion) -> None:
+        self.selected_version_id = version.version_id
+
+    def get_version(self, version_id: Optional[str]) -> ReproduceSegmentVersion:
+        if version_id:
+            for candidate in self.versions:
+                if candidate.version_id == version_id:
+                    return candidate
+        if self.versions:
+            return self.versions[-1]
+        raise KeyError(f"Segment {self.order} has no versions recorded.")
+
+
+@dataclass
+class VideoReproduceJobState:
+    job_id: str
+    filename: str
+    content_type: Optional[str] = None
+    status: str = "queued"
+    progress: float = 0.0
+    started_at: datetime = field(default_factory=utc_now)
+    completed_at: Optional[datetime] = None
+    error: Optional[str] = None
+    video_path: Optional[str] = None
+    final_video_path: Optional[str] = None
+    notes: Optional[str] = None
+    thread_count: int = 3
+    resolution: str = DEFAULT_SORA_RESOLUTION
+    messages: list[ProgressMessage] = field(default_factory=list)
+    segments: list[VideoReproduceSegment] = field(default_factory=list)
+
+    def add_message(self, stage: str, text: str) -> None:
+        self.messages.append(ProgressMessage(timestamp=utc_now(), stage=stage, text=text))
+
+
 class JobMessageModel(BaseModel):
     timestamp: datetime
     stage: str
@@ -466,6 +536,68 @@ class VideoInsightJobResponse(BaseModel):
     messages: list[JobMessageModel]
     key_frames: list[VideoInsightKeyFrameModel] = Field(default_factory=list)
     segments: list[VideoInsightSegmentModel] = Field(default_factory=list)
+
+
+class ReproduceSegmentVersionModel(BaseModel):
+    version_id: str
+    prompt: str
+    status: str
+    video_path: Optional[str]
+    video_url: Optional[str]
+    log_path: Optional[str]
+    log_url: Optional[str]
+    client_log_path: Optional[str]
+    client_log_url: Optional[str]
+    task_id: Optional[str]
+    error: Optional[str]
+    created_at: datetime
+
+
+class VideoReproduceSegmentModel(BaseModel):
+    segment_id: Optional[str]
+    order: int
+    label: str
+    description: str
+    start_seconds: float
+    end_seconds: float
+    duration_seconds: float
+    kling_duration_seconds: int
+    tags: list[str] = Field(default_factory=list)
+    start_frame_path: Optional[str] = None
+    start_frame_url: Optional[str] = None
+    end_frame_path: Optional[str] = None
+    end_frame_url: Optional[str] = None
+    stylized_start_frame_path: Optional[str] = None
+    stylized_start_frame_url: Optional[str] = None
+    stylized_end_frame_path: Optional[str] = None
+    stylized_end_frame_url: Optional[str] = None
+    gpt_image_prompt_path: Optional[str] = None
+    gpt_image_prompt_url: Optional[str] = None
+    original_video_path: Optional[str] = None
+    original_video_url: Optional[str] = None
+    status: str
+    selected_version_id: Optional[str]
+    versions: list[ReproduceSegmentVersionModel] = Field(default_factory=list)
+
+
+class VideoReproduceJobResponse(BaseModel):
+    job_id: str
+    filename: str
+    content_type: Optional[str]
+    status: str
+    progress: float
+    thread_count: int
+    resolution: str
+    started_at: datetime
+    completed_at: Optional[datetime]
+    error: Optional[str]
+    notes: Optional[str]
+    video_path: Optional[str]
+    video_url: Optional[str]
+    final_video_path: Optional[str]
+    final_video_url: Optional[str]
+    messages: list[JobMessageModel]
+    segments: list[VideoReproduceSegmentModel] = Field(default_factory=list)
 
 
 class StartWorkflowPayload(BaseModel):
@@ -611,6 +743,11 @@ class SceneSelectionPayload(BaseModel):
         ..., alias="versionId", description="Identifier of the scene version to use in the final cut."
     )
 
+
+class ReproduceSegmentRegeneratePayload(BaseModel):
+    prompt: str
+
+
 class SingleVideoSelectionPayload(BaseModel):
     version_id: str = Field(
         ..., alias="versionId", description="Identifier of the single-video version to activate."
@@ -705,6 +842,8 @@ __all__ = [
     "JobMessageModel",
     "JobStatusResponse",
     "ProgressMessage",
+    "ReproduceSegmentVersion",
+    "ReproduceSegmentVersionModel",
     "SceneDraft",
     "ScenePlan",
     "ScenePlanBatch",
@@ -712,6 +851,7 @@ __all__ = [
     "SceneRegeneratePayload",
     "SceneRender",
     "SceneRenderBatch",
+    "ReproduceSegmentRegeneratePayload",
     "SceneSelectionPayload",
     "SceneStatus",
     "SceneStatusModel",
@@ -730,6 +870,10 @@ __all__ = [
     "VideoInsightKeyFrameModel",
     "VideoInsightSegment",
     "VideoInsightSegmentModel",
+    "VideoReproduceJobResponse",
+    "VideoReproduceJobState",
+    "VideoReproduceSegment",
+    "VideoReproduceSegmentModel",
     "VideoWorkflowRequest",
     "WorkflowJobState",
     "RefineWorkflowPayload",

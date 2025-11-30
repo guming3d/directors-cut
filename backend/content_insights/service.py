@@ -43,7 +43,7 @@ async def run_video_insight_job(job_id: str, video_path: Path) -> None:
         result = await client.analyze_video(video_path)
         await VIDEO_INSIGHT_STORE.update_progress(job_id, 0.8, "Azure analysis completed. Extracting insights.")
         key_frames, segments = summarize_content_understanding_result(result)
-        segments = await _attach_segment_frames(job_id, video_path, segments)
+        segments = await attach_segment_frames(job_id, video_path, segments)
         result_path = video_path.with_suffix(".json")
         await asyncio.to_thread(
             result_path.write_text,
@@ -59,14 +59,16 @@ async def run_video_insight_job(job_id: str, video_path: Path) -> None:
         await VIDEO_INSIGHT_STORE.mark_failed(job_id, str(exc))
 
 
-async def _attach_segment_frames(
+async def attach_segment_frames(
     job_id: str,
     video_path: Path,
     segments: list[VideoInsightSegment],
+    frames_dir: Path | None = None,
 ) -> list[VideoInsightSegment]:
     if not segments:
         return segments
-    frames_dir = video_insight_job_root(job_id) / "frames"
+    if frames_dir is None:
+        frames_dir = video_insight_job_root(job_id) / "frames"
     frames_dir.mkdir(parents=True, exist_ok=True)
     for index, segment in enumerate(segments):
         base_name = f"segment_{index:03d}"

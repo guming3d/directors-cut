@@ -17,6 +17,7 @@ from .config import (
     DEFAULT_SORA_RESOLUTION,
     DEFAULT_VIDEO_PROVIDER,
     OUTPUT_DIR,
+    REPRODUCE_DEFAULT_THREADS,
     RESOLUTION_PATTERN,
     SINGLE_VIDEO_JOBS_DIR,
     STATIC_URL_PREFIX,
@@ -30,6 +31,7 @@ from .models import (
     RefineWorkflowPayload,
     RefinedPromptResponse,
     RefinedScriptResponse,
+    ReproduceSegmentRegeneratePayload,
     SceneRemixPayload,
     SceneRegeneratePayload,
     SceneSelectionPayload,
@@ -39,6 +41,7 @@ from .models import (
     SingleVideoSelectionPayload,
     StartWorkflowPayload,
     VideoInsightJobResponse,
+    VideoReproduceJobResponse,
 )
 from .prompts import refine_text_with_gpt5
 from .content_insights.service import (
@@ -58,7 +61,13 @@ from .services import (
     run_single_video_remix,
     run_workflow_job,
 )
-from .stores import SINGLE_VIDEO_STORE, VIDEO_INSIGHT_STORE, WORKFLOW_JOB_STORE
+from .reproduce import regenerate_segment, reproduce_job_root, run_reproduce_job
+from .stores import (
+    SINGLE_VIDEO_STORE,
+    VIDEO_INSIGHT_STORE,
+    VIDEO_REPRODUCE_STORE,
+    WORKFLOW_JOB_STORE,
+)
 from .utils import normalize_script_text
 
 
@@ -383,6 +392,99 @@ async def delete_video_insight(job_id: str) -> dict[str, str]:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     shutil.rmtree(video_insight_job_root(job_id, ensure_exists=False), ignore_errors=True)
     return {"status": "deleted"}
+
+
+@fastapi_app.post("/api/reproduce", response_model=VideoReproduceJobResponse)
+async def create_reproduce_job(
+    video_file: UploadFile = File(..., alias="file"),
+    notes: str | None = Form(default=None),
+    thread_count: int | None = Form(default=None, alias="threadCount"),
+) -> VideoReproduceJobResponse:
+    if video_file.content_type and not video_file.content_type.startswith("video/"):
+        raise HTTPException(status_code=400, detail="Upload a valid video file (mp4, mov, webm).")
+    try:
+        ensure_content_understanding_ready()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    job_id = uuid.uuid4().hex
+    filename = _normalize_insight_filename(video_file.filename)
+    normalized_notes = (notes or "").strip() or None
+    try:
+        threads = int(thread_count) if thread_count is not None else REPRODUCE_DEFAULT_THREADS
+    except (TypeError, ValueError):
+        threads = REPRODUCE_DEFAULT_THREADS
+    threads = max(1, min(threads, 10))
+    await VIDEO_REPRODUCE_STORE.create_job(
+        job_id,
+        filename,
+        video_file.content_type,
+        normalized_notes,
+        threads,
+    )
+    job_dir = reproduce_job_root(job_id)
+    destination = job_dir / filename
+    try:
+        await _write_upload_to_file(video_file, destination)
+    except ValueError as exc:
+        destination.unlink(missing_ok=True)
+        await VIDEO_REPRODUCE_STORE.mark_failed(job_id, str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except OSError as exc:  # pragma: no cover - filesystem failure
+        destination.unlink(missing_ok=True)
+        await VIDEO_REPRODUCE_STORE.mark_failed(job_id, "Unable to store uploaded video.")
+        raise HTTPException(status_code=500, detail="Unable to persist uploaded video.") from exc
+
+    await VIDEO_REPRODUCE_STORE.set_video_path(job_id, str(destination))
+    asyncio.create_task(run_reproduce_job(job_id))
+    return await VIDEO_REPRODUCE_STORE.snapshot(job_id)
+
+
+@fastapi_app.get("/api/reproduce", response_model=list[VideoReproduceJobResponse])
+async def list_reproduce_jobs() -> list[VideoReproduceJobResponse]:
+    return await VIDEO_REPRODUCE_STORE.list_statuses()
+
+
+@fastapi_app.get("/api/reproduce/{job_id}", response_model=VideoReproduceJobResponse)
+async def get_reproduce_job(job_id: str) -> VideoReproduceJobResponse:
+    try:
+        return await VIDEO_REPRODUCE_STORE.snapshot(job_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Unknown job: {job_id}") from exc
+
+
+@fastapi_app.delete("/api/reproduce/{job_id}")
+async def delete_reproduce_job(job_id: str) -> dict[str, str]:
+    try:
+        await VIDEO_REPRODUCE_STORE.delete_job(job_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Unknown job: {job_id}") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    shutil.rmtree(reproduce_job_root(job_id, ensure_exists=False), ignore_errors=True)
+    return {"status": "deleted"}
+
+
+@fastapi_app.post(
+    "/api/reproduce/{job_id}/segments/{segment_order}/regenerate",
+    response_model=VideoReproduceJobResponse,
+)
+async def regenerate_reproduce_segment(
+    job_id: str,
+    segment_order: int,
+    payload: ReproduceSegmentRegeneratePayload,
+) -> VideoReproduceJobResponse:
+    prompt = (payload.prompt or "").strip()
+    if not prompt:
+        raise HTTPException(status_code=400, detail="Prompt text is required.")
+    try:
+        await regenerate_segment(job_id, segment_order, prompt)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Segment {segment_order} not found.") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return await VIDEO_REPRODUCE_STORE.snapshot(job_id)
 
 
 @fastapi_app.post(
