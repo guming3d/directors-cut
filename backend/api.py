@@ -8,11 +8,12 @@ import shutil
 import uuid
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from .config import (
+    CONTENT_UNDERSTANDING_MAX_UPLOAD_BYTES,
     DEFAULT_SORA_RESOLUTION,
     DEFAULT_VIDEO_PROVIDER,
     OUTPUT_DIR,
@@ -37,8 +38,14 @@ from .models import (
     SingleVideoRemixPayload,
     SingleVideoSelectionPayload,
     StartWorkflowPayload,
+    VideoInsightJobResponse,
 )
 from .prompts import refine_text_with_gpt5
+from .content_insights.service import (
+    ensure_content_understanding_ready,
+    run_video_insight_job,
+    video_insight_job_root,
+)
 from .services import (
     job_root,
     prepare_request_for_job,
@@ -51,7 +58,7 @@ from .services import (
     run_single_video_remix,
     run_workflow_job,
 )
-from .stores import SINGLE_VIDEO_STORE, WORKFLOW_JOB_STORE
+from .stores import SINGLE_VIDEO_STORE, VIDEO_INSIGHT_STORE, WORKFLOW_JOB_STORE
 from .utils import normalize_script_text
 
 
@@ -73,6 +80,32 @@ fastapi_app.mount(
     StaticFiles(directory=str(OUTPUT_DIR), check_dir=False),
     name="output",
 )
+
+
+def _normalize_insight_filename(filename: str | None) -> str:
+    base = (filename or "uploaded-video").strip() or "uploaded-video"
+    safe = Path(base).name or "uploaded-video"
+    if "." not in safe:
+        safe = f"{safe}.mp4"
+    return safe
+
+
+async def _write_upload_to_file(upload: UploadFile, destination: Path) -> int:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    total = 0
+    try:
+        with destination.open("wb") as buffer:
+            while True:
+                chunk = await upload.read(1024 * 1024)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > CONTENT_UNDERSTANDING_MAX_UPLOAD_BYTES:
+                    raise ValueError("Uploaded video exceeds configured size limit.")
+                buffer.write(chunk)
+    finally:
+        await upload.close()
+    return total
 
 
 @fastapi_app.get("/api/providers/active")
@@ -291,6 +324,65 @@ async def select_single_video_version(job_id: str, payload: SingleVideoSelection
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=f"Unable to select version {version_id} for job {job_id}.") from exc
     return await SINGLE_VIDEO_STORE.snapshot(job_id)
+
+
+@fastapi_app.post("/api/video-insights", response_model=VideoInsightJobResponse)
+async def create_video_insight_job(
+    video_file: UploadFile = File(..., alias="file"),
+    notes: str | None = Form(default=None),
+) -> VideoInsightJobResponse:
+    if video_file.content_type and not video_file.content_type.startswith("video/"):
+        raise HTTPException(status_code=400, detail="Upload a valid video file (mp4, mov, webm).")
+    try:
+        ensure_content_understanding_ready()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    job_id = uuid.uuid4().hex
+    filename = _normalize_insight_filename(video_file.filename)
+    normalized_notes = (notes or "").strip() or None
+    await VIDEO_INSIGHT_STORE.create_job(job_id, filename, video_file.content_type, normalized_notes)
+    job_dir = video_insight_job_root(job_id)
+    destination = job_dir / filename
+    try:
+        await _write_upload_to_file(video_file, destination)
+    except ValueError as exc:
+        destination.unlink(missing_ok=True)
+        await VIDEO_INSIGHT_STORE.mark_failed(job_id, str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except OSError as exc:  # pragma: no cover - filesystem failure
+        destination.unlink(missing_ok=True)
+        await VIDEO_INSIGHT_STORE.mark_failed(job_id, "Unable to store uploaded video.")
+        raise HTTPException(status_code=500, detail="Unable to persist uploaded video.") from exc
+
+    await VIDEO_INSIGHT_STORE.set_video_path(job_id, str(destination))
+    asyncio.create_task(run_video_insight_job(job_id, destination))
+    return await VIDEO_INSIGHT_STORE.snapshot(job_id)
+
+
+@fastapi_app.get("/api/video-insights", response_model=list[VideoInsightJobResponse])
+async def list_video_insights() -> list[VideoInsightJobResponse]:
+    return await VIDEO_INSIGHT_STORE.list_statuses()
+
+
+@fastapi_app.get("/api/video-insights/{job_id}", response_model=VideoInsightJobResponse)
+async def get_video_insight(job_id: str) -> VideoInsightJobResponse:
+    try:
+        return await VIDEO_INSIGHT_STORE.snapshot(job_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Unknown job: {job_id}") from exc
+
+
+@fastapi_app.delete("/api/video-insights/{job_id}")
+async def delete_video_insight(job_id: str) -> dict[str, str]:
+    try:
+        await VIDEO_INSIGHT_STORE.delete_job(job_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Unknown job: {job_id}") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    shutil.rmtree(video_insight_job_root(job_id, ensure_exists=False), ignore_errors=True)
+    return {"status": "deleted"}
 
 
 @fastapi_app.post(

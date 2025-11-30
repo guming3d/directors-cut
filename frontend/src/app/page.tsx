@@ -3,6 +3,7 @@
 import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState, useRef } from "react";
 import Modal from "@/components/Modal";
 import {
+  ArrowDownTrayIcon,
   ArrowPathIcon,
   CheckCircleIcon,
   ClockIcon,
@@ -120,6 +121,48 @@ type SingleVideoJob = {
   messages: JobMessage[];
 };
 
+type VideoInsightKeyFrame = {
+  frame_id: string | null;
+  timestamp: string | null;
+  description: string | null;
+  confidence: number | null;
+  tags: string[];
+};
+
+type VideoInsightSegment = {
+  segment_id: string | null;
+  label: string | null;
+  start: string | null;
+  end: string | null;
+  start_seconds?: number | null;
+  end_seconds?: number | null;
+  summary: string | null;
+  tags: string[];
+  start_frame_path?: string | null;
+  start_frame_url?: string | null;
+  end_frame_path?: string | null;
+  end_frame_url?: string | null;
+};
+
+type VideoInsightJob = {
+  job_id: string;
+  filename: string;
+  status: string;
+  progress: number;
+  content_type: string | null;
+  notes: string | null;
+  started_at: string;
+  completed_at: string | null;
+  error: string | null;
+  video_path: string | null;
+  video_url: string | null;
+  result_path: string | null;
+  result_url: string | null;
+  key_frames: VideoInsightKeyFrame[];
+  segments: VideoInsightSegment[];
+  messages: JobMessage[];
+};
+
 type PromptPreview = {
   sceneLabel: string;
   versionLabel: string;
@@ -164,13 +207,14 @@ const stageIcons: Record<string, typeof DocumentTextIcon> = {
 
 const terminalStatuses = new Set(["completed", "failed"]);
 
-type TabId = "combined" | "single";
+type TabId = "combined" | "single" | "insight";
 
 type Language = "en" | "zh";
 
 const TABS: { id: TabId; label: string }[] = [
   { id: "combined", label: "Storyboard workspace" },
   { id: "single", label: "Single clip console" },
+  { id: "insight", label: "Video insight" },
 ];
 const LANGUAGE_OPTIONS: Language[] = ["en", "zh"];
 
@@ -385,6 +429,38 @@ const zhTranslations: Record<string, string> = {
   "Unable to refine the storyboard. Continue without refinement or try again.": "无法优化分镜。可直接继续或稍后再试。",
   "Unable to refine the prompt. Continue without refinement or try again.": "无法优化提示词。可直接继续或稍后再试。",
   "Submitted prompt": "已提交的提示词",
+  "Analyze Video": "分析视频",
+  "Video insight": "视频洞察",
+  "Video insight jobs": "视频洞察任务",
+  "Upload a video to see analysis jobs here.": "上传视频以查看分析任务。",
+  "Upload video for analysis": "上传用于分析的视频",
+  "Uploaded video": "已上传视频",
+  "Notes (optional)": "备注（可选）",
+  "Describe any context for this clip": "描述此视频的上下文",
+  "Result files": "结果文件",
+  "Open analyzed video": "打开已分析视频",
+  "Download JSON result": "下载 JSON 结果",
+  "JSON result unavailable.": "JSON 结果不可用。",
+  "Key frames": "关键帧",
+  "Video segments": "视频段落",
+  "Start frame": "起始帧",
+  "End frame": "结束帧",
+  "Timestamp": "时间戳",
+  "Tags": "标签",
+  "Confidence": "置信度",
+  "Start": "开始",
+  "End": "结束",
+  "Summary": "摘要",
+  "No insights yet.": "尚无分析结果。",
+  "View full image": "查看完整图片",
+  "Export insights JSON": "导出洞察 JSON",
+  "Download processed insight data as JSON.": "下载当前洞察结果为 JSON。",
+  "Describe using Azure Content Understanding": "说明通过 Azure 内容理解的分析需求",
+  "Azure Content Understanding extracts key frames and segments.": "Azure 内容理解会返回关键帧与视频片段洞察。",
+  "Unable to analyze video. Confirm the backend endpoint is reachable.": "无法分析该视频，请确认后端可访问。",
+  "Content type": "内容类型",
+  "Unable to load video insights. Verify the API endpoint.": "无法加载视频洞察，请检查 API 地址。",
+  "Unable to delete one or more insight jobs.": "部分视频洞察任务无法删除。",
 };
 
 const normalizeProvider = (value?: string | null) => {
@@ -452,6 +528,30 @@ const formatTimeDistance = (value: string | null) => {
     return "—";
   }
   return date.toLocaleString();
+};
+
+const formatSegmentTimestampDisplay = (seconds?: number | null, fallback?: string | null) => {
+  if (typeof seconds === "number" && Number.isFinite(seconds)) {
+    const totalMilliseconds = Math.round(seconds * 1000);
+    const hours = Math.floor(totalMilliseconds / 3_600_000);
+    const minutes = Math.floor((totalMilliseconds % 3_600_000) / 60_000);
+    const secondsWhole = Math.floor((totalMilliseconds % 60_000) / 1000);
+    const milliseconds = totalMilliseconds % 1000;
+    let secondsText = secondsWhole.toString().padStart(2, "0");
+    if (milliseconds) {
+      const fractional = milliseconds.toString().padStart(3, "0").replace(/0+$/, "");
+      if (fractional) {
+        secondsText = `${secondsText}.${fractional}`;
+      }
+    }
+    const minuteText = minutes.toString().padStart(2, "0");
+    if (hours > 0) {
+      const hourText = hours.toString().padStart(2, "0");
+      return `${hourText}:${minuteText}:${secondsText}`;
+    }
+    return `${minuteText}:${secondsText}`;
+  }
+  return fallback ?? "—";
 };
 
 const buildAssetUrl = (base: string, path: string | null | undefined) => {
@@ -621,9 +721,21 @@ export default function Home() {
   const [copyNotice, setCopyNotice] = useState<string | null>(null);
   const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Video insight state
+  const [insightJobs, setInsightJobs] = useState<VideoInsightJob[]>([]);
+  const [insightJob, setInsightJob] = useState<VideoInsightJob | null>(null);
+  const [activeInsightJobId, setActiveInsightJobId] = useState<string | null>(null);
+  const [selectedInsightJobs, setSelectedInsightJobs] = useState<Set<string>>(new Set());
+  const [insightFile, setInsightFile] = useState<File | null>(null);
+  const [insightNotes, setInsightNotes] = useState("");
+  const [insightError, setInsightError] = useState<string | null>(null);
+  const [insightFormError, setInsightFormError] = useState<string | null>(null);
+  const [isSubmittingInsight, setIsSubmittingInsight] = useState(false);
+
   // Modal states
   const [isCreateWorkflowModalOpen, setIsCreateWorkflowModalOpen] = useState(false);
   const [isCreateSingleVideoModalOpen, setIsCreateSingleVideoModalOpen] = useState(false);
+  const [isCreateInsightModalOpen, setIsCreateInsightModalOpen] = useState(false);
   const [isJobDetailModalOpen, setIsJobDetailModalOpen] = useState(false);
 
   const loadCombinedJobs = useCallback(async () => {
@@ -700,6 +812,42 @@ export default function Home() {
     }
   }, [apiBase]);
 
+  const loadInsightJobs = useCallback(async () => {
+    try {
+      const response = await fetch(`${apiBase}/api/video-insights`);
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      const data: VideoInsightJob[] = await response.json();
+      setInsightJobs(data);
+      if (data.length === 0) {
+        setInsightJob(null);
+        setActiveInsightJobId(null);
+      } else {
+        setInsightJob((current) =>
+          current && data.some((item) => item.job_id === current.job_id) ? current : data[0],
+        );
+        setActiveInsightJobId((current) =>
+          current && data.some((item) => item.job_id === current) ? current : data[0].job_id,
+        );
+      }
+      setSelectedInsightJobs((previous) => {
+        if (previous.size === 0) return previous;
+        const next = new Set<string>();
+        data.forEach((item) => {
+          if (previous.has(item.job_id)) {
+            next.add(item.job_id);
+          }
+        });
+        return next;
+      });
+      setInsightError(null);
+    } catch (err) {
+      console.error(err);
+      setInsightError("Unable to load video insights. Verify the API endpoint.");
+    }
+  }, [apiBase]);
+
   useEffect(() => {
     if (!isAuthenticated) {
       setJobs([]);
@@ -708,6 +856,10 @@ export default function Home() {
       setSingleJobs([]);
       setSingleJob(null);
       setActiveSingleJobId(null);
+      setInsightJobs([]);
+      setInsightJob(null);
+      setActiveInsightJobId(null);
+      setSelectedInsightJobs(new Set());
       setActiveVideoProvider(null);
       setAvailableVideoProviders([...VIDEO_PROVIDER_OPTIONS]);
       setWorkflowVideoProvider(null);
@@ -716,7 +868,8 @@ export default function Home() {
     }
     void loadCombinedJobs();
     void loadSingleJobs();
-  }, [isAuthenticated, loadCombinedJobs, loadSingleJobs]);
+    void loadInsightJobs();
+  }, [isAuthenticated, loadCombinedJobs, loadSingleJobs, loadInsightJobs]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -893,6 +1046,49 @@ export default function Home() {
     };
   }, [activeSingleJobId, isAuthenticated, apiBase]);
 
+  useEffect(() => {
+    if (!activeInsightJobId || !isAuthenticated) return;
+    let disposed = false;
+    let interval: ReturnType<typeof setInterval> | undefined;
+
+    const fetchStatus = async () => {
+      try {
+        const response = await fetch(`${apiBase}/api/video-insights/${activeInsightJobId}`);
+        if (!response.ok) {
+          throw new Error(await response.text());
+        }
+        const data: VideoInsightJob = await response.json();
+        if (disposed) {
+          return;
+        }
+        setInsightJob(data);
+        setInsightJobs((prev) => {
+          const others = prev.filter((item) => item.job_id !== data.job_id);
+          return [data, ...others];
+        });
+        if (terminalStatuses.has(data.status) && interval) {
+          clearInterval(interval);
+          interval = undefined;
+        }
+      } catch (err) {
+        console.error(err);
+        if (!disposed) {
+          setInsightError("Unable to load video insights. Verify the API endpoint.");
+        }
+      }
+    };
+
+    void fetchStatus();
+    interval = setInterval(fetchStatus, 5000);
+
+    return () => {
+      disposed = true;
+      if (interval) {
+        clearInterval(interval);
+      }
+    };
+  }, [activeInsightJobId, isAuthenticated, apiBase]);
+
   const combinedProgressPercent = useMemo(() => {
     if (!job) return 0;
     const value = Number.isFinite(job.progress) ? job.progress : 0;
@@ -905,6 +1101,12 @@ export default function Home() {
     return Math.max(0, Math.min(100, Math.round(value * 100)));
   }, [singleJob]);
 
+  const insightProgressPercent = useMemo(() => {
+    if (!insightJob) return 0;
+    const value = Number.isFinite(insightJob.progress) ? insightJob.progress : 0;
+    return Math.max(0, Math.min(100, Math.round(value * 100)));
+  }, [insightJob]);
+
   const finalVideoUrl = buildAssetUrl(apiBase, job?.final_video_url);
   const hasScenes = Boolean(job?.scenes?.length);
   const isWorkflowActive = job?.status === "running" || job?.status === "queued";
@@ -915,6 +1117,9 @@ export default function Home() {
 
   const singleVideoUrl = buildAssetUrl(apiBase, singleJob?.video_url);
   const singleStatusToken = getStatusToken(singleJob?.status, language);
+  const insightVideoUrl = buildAssetUrl(apiBase, insightJob?.video_url);
+  const insightResultUrl = buildAssetUrl(apiBase, insightJob?.result_url);
+  const insightStatusToken = getStatusToken(insightJob?.status, language);
   const workflowProviderSelection =
     workflowVideoProvider ?? availableVideoProviders[0] ?? VIDEO_PROVIDER_OPTIONS[0];
   const singleProviderSelection =
@@ -933,6 +1138,47 @@ export default function Home() {
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
   };
+
+  const openPrimaryModal = () => {
+    if (activeTab === "combined") {
+      setIsCreateWorkflowModalOpen(true);
+    } else if (activeTab === "single") {
+      setIsCreateSingleVideoModalOpen(true);
+    } else {
+      setInsightFormError(null);
+      setIsCreateInsightModalOpen(true);
+    }
+  };
+
+  const handleExportInsight = useCallback(() => {
+    if (!insightJob) return;
+    if (typeof window === "undefined") return;
+    try {
+      const payload = {
+        jobId: insightJob.job_id,
+        filename: insightJob.filename,
+        status: insightJob.status,
+        startedAt: insightJob.started_at,
+        completedAt: insightJob.completed_at,
+        videoUrl: insightVideoUrl,
+        resultUrl: insightResultUrl,
+        notes: insightJob.notes,
+        keyFrames: insightJob.key_frames,
+        segments: insightJob.segments,
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `${insightJob.job_id}_insights.json`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error(err);
+    }
+  }, [insightJob, insightVideoUrl, insightResultUrl]);
 
   const handleCopyPrompt = async (text: string) => {
     if (copyTimeoutRef.current) {
@@ -1006,6 +1252,10 @@ export default function Home() {
     setAvailableVideoProviders([...VIDEO_PROVIDER_OPTIONS]);
     setWorkflowVideoProvider(null);
     setSingleVideoProvider(null);
+    setInsightJobs([]);
+    setInsightJob(null);
+    setActiveInsightJobId(null);
+    setSelectedInsightJobs(new Set());
   };
 
   const toggleGenerateAiFirstFrames = () => {
@@ -1382,6 +1632,53 @@ export default function Home() {
     await submitSingleRequest(trimmed, false);
   };
 
+  const handleInsightFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null;
+    setInsightFile(file);
+  };
+
+  const handleInsightSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!insightFile) {
+      setInsightFormError("Upload video for analysis");
+      return;
+    }
+    setInsightFormError(null);
+    setIsSubmittingInsight(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", insightFile);
+      const trimmedNotes = insightNotes.trim();
+      if (trimmedNotes) {
+        formData.append("notes", trimmedNotes);
+      }
+      const response = await fetch(`${apiBase}/api/video-insights`, {
+        method: "POST",
+        body: formData,
+      });
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      const data: VideoInsightJob = await response.json();
+      setInsightJobs((prev) => {
+        const others = prev.filter((item) => item.job_id !== data.job_id);
+        return [data, ...others];
+      });
+      setInsightJob(data);
+      setActiveInsightJobId(data.job_id);
+      setInsightFile(null);
+      setInsightNotes("");
+      setIsCreateInsightModalOpen(false);
+      setInsightFormError(null);
+      await loadInsightJobs();
+    } catch (err) {
+      console.error(err);
+      setInsightFormError("Unable to analyze video. Confirm the backend endpoint is reachable.");
+    } finally {
+      setIsSubmittingInsight(false);
+    }
+  };
+
   const handleSingleRemixSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!singleJob?.job_id) {
@@ -1499,6 +1796,18 @@ export default function Home() {
     });
   };
 
+  const toggleInsightSelection = (jobId: string) => {
+    setSelectedInsightJobs((prev) => {
+      const next = new Set(prev);
+      if (next.has(jobId)) {
+        next.delete(jobId);
+      } else {
+        next.add(jobId);
+      }
+      return next;
+    });
+  };
+
   const handleDeleteCombinedJobs = async () => {
     if (selectedCombinedJobs.size === 0) {
       return;
@@ -1547,6 +1856,34 @@ export default function Home() {
     if (deletionError) {
       setSingleError(deletionError);
     }
+  };
+
+  const handleDeleteInsightJobs = async () => {
+    if (!selectedInsightJobs.size) return;
+    const jobIds = Array.from(selectedInsightJobs);
+    let encounteredError: string | null = null;
+    await Promise.all(
+      jobIds.map(async (jobId) => {
+        try {
+          const response = await fetch(`${apiBase}/api/video-insights/${jobId}`, {
+            method: "DELETE",
+          });
+          if (!response.ok) {
+            throw new Error(await response.text());
+          }
+        } catch (err) {
+          console.error(err);
+          encounteredError = "Unable to delete one or more insight jobs.";
+        }
+      }),
+    );
+    if (encounteredError) {
+      setInsightError(encounteredError);
+    } else {
+      setInsightError(null);
+    }
+    setSelectedInsightJobs(new Set());
+    await loadInsightJobs();
   };
 
   if (!isAuthenticated) {
@@ -1678,13 +2015,21 @@ export default function Home() {
       <div className="relative mx-auto min-h-screen w-full px-4 pb-10 pt-6 max-w-7xl">
         <div className="mb-6 flex justify-between items-center">
           <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
-            {activeTab === "combined" ? translate("Workflow Runs") : translate("Recent Single Jobs")}
+            {activeTab === "combined"
+              ? translate("Workflow Runs")
+              : activeTab === "single"
+                ? translate("Recent Single Jobs")
+                : translate("Video insight jobs")}
           </h1>
           <button
-            onClick={() => activeTab === "combined" ? setIsCreateWorkflowModalOpen(true) : setIsCreateSingleVideoModalOpen(true)}
+            onClick={openPrimaryModal}
             className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white dark:bg-slate-100 dark:text-slate-900 shadow-sm hover:bg-slate-700 transition"
           >
-            {activeTab === "combined" ? translate("Start Workflow") : translate("Generate Single Clip")}
+            {activeTab === "combined"
+              ? translate("Start Workflow")
+              : activeTab === "single"
+                ? translate("Generate Single Clip")
+                : translate("Analyze Video")}
           </button>
         </div>
 
@@ -1864,6 +2209,111 @@ export default function Home() {
                               </div>
                             </td>
                             <td className="whitespace-nowrap px-6 py-4 text-xs text-slate-500">{formatTimeDistance(item.started_at)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          )}
+
+          {activeTab === "insight" && (
+            <>
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                {insightError ? (
+                  <p className="text-xs text-rose-500 dark:text-rose-300">{translate(insightError)}</p>
+                ) : (
+                  <p className="text-xs text-slate-500">
+                    {translate("Describe using Azure Content Understanding")}
+                  </p>
+                )}
+                <button
+                  type="button"
+                  onClick={handleDeleteInsightJobs}
+                  disabled={!selectedInsightJobs.size}
+                  className="inline-flex items-center gap-1 rounded border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30 px-3 py-1.5 text-xs font-semibold text-rose-400 transition disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <TrashIcon className="h-4 w-4" />
+                  {translate("Delete Selected")}
+                </button>
+              </div>
+              {insightJobs.length === 0 ? (
+                <p className="text-sm text-slate-500 p-4">
+                  {translate("Upload a video to see analysis jobs here.")}
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800 text-sm">
+                    <thead className="bg-slate-50 dark:bg-slate-800/50 text-[11px] uppercase tracking-wide text-slate-500">
+                      <tr>
+                        <th scope="col" className="px-6 py-3 text-left">
+                          <span className="sr-only">{translate("Select workflows")}</span>
+                        </th>
+                        <th scope="col" className="px-6 py-3 text-left">{translate("Job ID")}</th>
+                        <th scope="col" className="px-6 py-3 text-left">{translate("Status")}</th>
+                        <th scope="col" className="px-6 py-3 text-left">{translate("Uploaded video")}</th>
+                        <th scope="col" className="px-6 py-3 text-left">{translate("Progress")}</th>
+                        <th scope="col" className="px-6 py-3 text-left">{translate("Started")}</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 dark:divide-slate-800 bg-white dark:bg-slate-900">
+                      {insightJobs.map((item) => {
+                        const token = getStatusToken(item.status, language);
+                        const isSelected = selectedInsightJobs.has(item.job_id);
+                        const progressPercent = Math.min(
+                          100,
+                          Math.max(0, Math.round((item.progress ?? 0) * 100)),
+                        );
+                        return (
+                          <tr
+                            key={item.job_id}
+                            onClick={() => {
+                              setActiveInsightJobId(item.job_id);
+                              setInsightJob(item);
+                              setIsJobDetailModalOpen(true);
+                            }}
+                            className="cursor-pointer transition hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                          >
+                            <td className="px-6 py-4">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => toggleInsightSelection(item.job_id)}
+                                onClick={(event) => event.stopPropagation()}
+                                className="h-4 w-4 rounded border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700 text-indigo-500 focus:ring-indigo-500"
+                              />
+                            </td>
+                            <td className="whitespace-nowrap px-6 py-4 font-mono text-xs text-slate-500 dark:text-slate-400">
+                              {item.job_id.slice(0, 12)}
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="flex flex-col gap-1">
+                                <span className={`text-xs font-semibold uppercase tracking-wide ${token.className}`}>
+                                  {token.label}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 text-xs text-slate-500 dark:text-slate-400">
+                              {item.filename}
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="flex items-center gap-2">
+                                <div className="h-2 w-24 rounded-full bg-slate-100 dark:bg-slate-800">
+                                  <div
+                                    className="h-full rounded-full bg-slate-400 transition-all"
+                                    style={{ width: `${progressPercent}%` }}
+                                  />
+                                </div>
+                                <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                                  {progressPercent}%
+                                </span>
+                              </div>
+                            </td>
+                            <td className="whitespace-nowrap px-6 py-4 text-xs text-slate-500">
+                              {formatTimeDistance(item.started_at)}
+                            </td>
                           </tr>
                         );
                       })}
@@ -2301,6 +2751,75 @@ export default function Home() {
               </button>
               <p className="text-xs text-slate-500">
                 {translate("API target:")} <span className="font-mono text-[11px] text-slate-500">{apiBase}/api/single-videos</span>
+              </p>
+            </div>
+          </form>
+        </Modal>
+
+        <Modal
+          isOpen={isCreateInsightModalOpen}
+          onClose={() => {
+            setIsCreateInsightModalOpen(false);
+            setInsightFormError(null);
+          }}
+          title={translate("Analyze Video")}
+        >
+          {insightFormError && (
+            <div className="mb-4 flex items-start gap-3 rounded border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30 px-4 py-3 text-sm text-rose-400 shadow-md shadow-rose-900/20">
+              <ExclamationTriangleIcon className="h-5 w-5 flex-none text-rose-500" />
+              <span>{translate(insightFormError)}</span>
+            </div>
+          )}
+          <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
+            {translate("Azure Content Understanding extracts key frames and segments.")}
+          </p>
+          <form className="space-y-5" onSubmit={handleInsightSubmit}>
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-slate-500 dark:text-slate-400">
+                {translate("Upload video for analysis")}
+              </label>
+              <input
+                type="file"
+                accept="video/mp4,video/webm,video/quicktime,video/x-matroska"
+                onChange={handleInsightFileChange}
+                className="max-w-xs text-xs text-slate-500"
+              />
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {insightFile ? insightFile.name : translate("Uploaded video")}
+              </p>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-slate-500 dark:text-slate-400">
+                {translate("Notes (optional)")}
+              </label>
+              <textarea
+                className="min-h-[120px] w-full rounded border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-4 py-3 text-sm text-slate-900 dark:text-slate-100 shadow-inner placeholder:text-slate-500 transition focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-800"
+                placeholder={translate("Describe any context for this clip")}
+                value={insightNotes}
+                onChange={(event) => setInsightNotes(event.target.value)}
+              />
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <button
+                type="submit"
+                disabled={isSubmittingInsight}
+                className="inline-flex items-center justify-center gap-2 rounded-md bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white dark:bg-slate-100 dark:text-slate-900 shadow-sm shadow-slate-900/50 transition hover:bg-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isSubmittingInsight ? (
+                  <>
+                    <ArrowPathIcon className="h-5 w-5 animate-spin" />
+                    {translate("Analyze Video")}
+                  </>
+                ) : (
+                  <>
+                    <PaperAirplaneIcon className="h-5 w-5" />
+                    {translate("Analyze Video")}
+                  </>
+                )}
+              </button>
+              <p className="text-xs text-slate-500">
+                {translate("API target:")} {" "}
+                <span className="font-mono text-[11px] text-slate-500">{apiBase}/api/video-insights</span>
               </p>
             </div>
           </form>
@@ -2871,6 +3390,282 @@ export default function Home() {
                   </h2>
                   <ol className="mt-4 space-y-2 max-h-60 overflow-y-auto pr-2">
                     {singleJob.messages.map((message, index) => {
+                      const Icon = stageIcons[message.stage] ?? ArrowPathIcon;
+                      return (
+                        <li
+                          key={`${message.timestamp}-${index}`}
+                          className="relative flex gap-3 rounded border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/50 p-2 shadow-inner shadow-black/20"
+                        >
+                          <div className="relative mt-0.5 flex h-7 w-7 items-center justify-center rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800">
+                            <Icon className="h-4 w-4 text-slate-500 dark:text-slate-400" />
+                          </div>
+                          <div>
+                            <p className="text-sm text-slate-600 dark:text-slate-300">{message.text}</p>
+                            <p className="text-xs text-slate-500">
+                              {formatTimestamp(message.timestamp)} · {stageLabel(message.stage, language)}
+                            </p>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                </div>
+              ) : null}
+            </div>
+          )}
+
+          {activeTab === "insight" && insightJob && (
+            <div className="space-y-8">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
+                    <FilmIcon className="h-5 w-5 text-slate-500 dark:text-slate-400" />
+                    {translate("Video insight")}
+                  </h2>
+                  <p className="text-xs uppercase tracking-wide text-slate-500">
+                    {translate("Uploaded video")}: {insightJob.filename}
+                  </p>
+                  {insightJob.notes ? (
+                    <p className="text-xs text-slate-500 dark:text-slate-400">{insightJob.notes}</p>
+                  ) : null}
+                </div>
+                <span className={`text-xs font-semibold uppercase tracking-wide ${insightStatusToken.className}`}>
+                  {insightStatusToken.label}
+                </span>
+              </div>
+
+              <div className="mt-6 space-y-3">
+                <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+                  <span>{translate("Progress")}</span>
+                  <span>{insightProgressPercent}%</span>
+                </div>
+                <div className="h-2.5 overflow-hidden rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800">
+                  <div
+                    className="h-full rounded-full bg-slate-500 dark:bg-slate-200 transition-[width] duration-500 ease-out"
+                    style={{ width: `${insightProgressPercent}%` }}
+                  />
+                </div>
+                {insightJob.error && (
+                  <div className="flex items-center gap-2 rounded-md border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 text-xs text-rose-400">
+                    <ExclamationTriangleIcon className="h-4 w-4" />
+                    {insightJob.error}
+                  </div>
+                )}
+              </div>
+
+              <dl className="mt-6 grid gap-4 text-sm text-slate-500 dark:text-slate-400 sm:grid-cols-3">
+                <div>
+                  <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Started")}</dt>
+                  <dd className="mt-1 text-slate-600 dark:text-slate-300">{formatTimeDistance(insightJob.started_at)}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Completed")}</dt>
+                  <dd className="mt-1 text-slate-600 dark:text-slate-300">
+                    {insightJob.completed_at ? formatTimeDistance(insightJob.completed_at) : "—"}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Content type")}</dt>
+                  <dd className="mt-1 text-slate-600 dark:text-slate-300">{insightJob.content_type ?? translate("Unavailable")}</dd>
+                </div>
+              </dl>
+
+              <div className="mt-8 space-y-3">
+                <h3 className="text-sm font-semibold text-slate-600 dark:text-slate-300">
+                  {translate("Result files")}
+                </h3>
+                {insightVideoUrl ? (
+                  <>
+                    <video
+                      controls
+                      className="max-h-[320px] w-full rounded border border-slate-200 dark:border-slate-800 bg-black/60"
+                      src={insightVideoUrl}
+                    >
+                      {translate("Your browser does not support HTML5 video.")}
+                    </video>
+                    <a
+                      href={insightVideoUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-2 text-sm font-medium text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-slate-100"
+                    >
+                      <PlayCircleIcon className="h-4 w-4" />
+                      {translate("Open analyzed video")}
+                    </a>
+                  </>
+                ) : (
+                  <div className="flex h-32 items-center justify-center rounded border border-dashed border-slate-300 dark:border-slate-700 bg-slate-100/50 dark:bg-slate-800/30 text-xs text-slate-500">
+                    {translate("Video pending...")}
+                  </div>
+                )}
+                {insightResultUrl ? (
+                  <a
+                    href={insightResultUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-300 hover:text-slate-900 dark:hover:text-slate-100"
+                  >
+                    <DocumentTextIcon className="h-4 w-4" />
+                    {translate("Download JSON result")}
+                  </a>
+                ) : (
+                  <p className="text-xs text-slate-500">{translate("JSON result unavailable.")}</p>
+                )}
+              </div>
+
+              <div className="mt-8 flex flex-wrap items-center justify-between gap-3 rounded-md border border-slate-200 bg-white/60 px-4 py-3 text-sm dark:border-slate-800 dark:bg-slate-900/40">
+                <div>
+                  <p className="font-semibold text-slate-700 dark:text-slate-200">{translate("Export insights JSON")}</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {translate("Download processed insight data as JSON.")}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleExportInsight}
+                  className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-slate-100/70 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-slate-400 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-300 dark:hover:text-white"
+                >
+                  <ArrowDownTrayIcon className="h-4 w-4" />
+                  {translate("Export insights JSON")}
+                </button>
+              </div>
+
+              <div className="mt-8 space-y-3">
+                <h3 className="text-sm font-semibold text-slate-600 dark:text-slate-300">
+                  {translate("Key frames")}
+                </h3>
+                {insightJob.key_frames?.length ? (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800 text-sm">
+                      <thead className="bg-slate-50 dark:bg-slate-800/50 text-[11px] uppercase tracking-wide text-slate-500">
+                        <tr>
+                          <th className="px-4 py-2 text-left">{translate("Timestamp")}</th>
+                          <th className="px-4 py-2 text-left">{translate("Summary")}</th>
+                          <th className="px-4 py-2 text-left">{translate("Confidence")}</th>
+                          <th className="px-4 py-2 text-left">{translate("Tags")}</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200 dark:divide-slate-800 bg-white dark:bg-slate-900/40">
+                        {insightJob.key_frames.map((frame) => (
+                          <tr key={frame.frame_id ?? `${frame.timestamp}-${frame.description}`}>
+                            <td className="px-4 py-2 text-xs text-slate-500 dark:text-slate-400">{frame.timestamp ?? "—"}</td>
+                            <td className="px-4 py-2 text-xs text-slate-500 dark:text-slate-400">
+                              {frame.description ?? "—"}
+                            </td>
+                            <td className="px-4 py-2 text-xs text-slate-500 dark:text-slate-400">
+                              {frame.confidence != null ? `${Math.round(frame.confidence * 100)}%` : "—"}
+                            </td>
+                            <td className="px-4 py-2 text-xs text-slate-500 dark:text-slate-400">
+                              {frame.tags?.length ? frame.tags.join(", ") : "—"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-500">{translate("No insights yet.")}</p>
+                )}
+              </div>
+
+              <div className="mt-8 space-y-3">
+                <h3 className="text-sm font-semibold text-slate-600 dark:text-slate-300">
+                  {translate("Video segments")}
+                </h3>
+                {insightJob.segments?.length ? (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800 text-sm">
+                      <thead className="bg-slate-50 dark:bg-slate-800/50 text-[11px] uppercase tracking-wide text-slate-500">
+                        <tr>
+                          <th className="px-4 py-2 text-left">{translate("Start")}</th>
+                          <th className="px-4 py-2 text-left">{translate("Start frame")}</th>
+                          <th className="px-4 py-2 text-left">{translate("End")}</th>
+                          <th className="px-4 py-2 text-left">{translate("End frame")}</th>
+                          <th className="px-4 py-2 text-left">{translate("Summary")}</th>
+                          <th className="px-4 py-2 text-left">{translate("Tags")}</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200 dark:divide-slate-800 bg-white dark:bg-slate-900/40">
+                        {insightJob.segments.map((segment) => {
+                          const startFrameUrl = buildAssetUrl(apiBase, segment.start_frame_url);
+                          const endFrameUrl = buildAssetUrl(apiBase, segment.end_frame_url);
+                          return (
+                            <tr key={segment.segment_id ?? `${segment.start}-${segment.end}`}>
+                              <td className="px-4 py-2 text-xs text-slate-500 dark:text-slate-400">
+                                {formatSegmentTimestampDisplay(segment.start_seconds, segment.start)}
+                              </td>
+                              <td className="px-4 py-2">
+                                {startFrameUrl ? (
+                                  <a
+                                    href={startFrameUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex rounded border border-slate-200 dark:border-slate-700 shadow-sm"
+                                    title={translate("View full image")}
+                                  >
+                                    <Image
+                                      src={startFrameUrl}
+                                      alt={`${translate("Start frame")} ${segment.segment_id ?? ""}`}
+                                      width={120}
+                                      height={68}
+                                      className="h-16 w-24 object-cover"
+                                      unoptimized
+                                    />
+                                  </a>
+                                ) : (
+                                  <span className="text-xs text-slate-400">—</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-2 text-xs text-slate-500 dark:text-slate-400">
+                                {formatSegmentTimestampDisplay(segment.end_seconds, segment.end)}
+                              </td>
+                              <td className="px-4 py-2">
+                                {endFrameUrl ? (
+                                  <a
+                                    href={endFrameUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex rounded border border-slate-200 dark:border-slate-700 shadow-sm"
+                                    title={translate("View full image")}
+                                  >
+                                    <Image
+                                      src={endFrameUrl}
+                                      alt={`${translate("End frame")} ${segment.segment_id ?? ""}`}
+                                      width={120}
+                                      height={68}
+                                      className="h-16 w-24 object-cover"
+                                      unoptimized
+                                    />
+                                  </a>
+                                ) : (
+                                  <span className="text-xs text-slate-400">—</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-2 text-xs text-slate-500 dark:text-slate-400">
+                                {segment.summary ?? segment.label ?? "—"}
+                              </td>
+                              <td className="px-4 py-2 text-xs text-slate-500 dark:text-slate-400">
+                                {segment.tags?.length ? segment.tags.join(", ") : "—"}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-500">{translate("No insights yet.")}</p>
+                )}
+              </div>
+
+              {insightJob.messages?.length ? (
+                <div className="mt-8">
+                  <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
+                    <ClockIcon className="h-5 w-5 text-slate-500 dark:text-slate-400" />
+                    {translate("Job Timeline")}
+                  </h2>
+                  <ol className="mt-4 space-y-2 max-h-60 overflow-y-auto pr-2">
+                    {insightJob.messages.map((message, index) => {
                       const Icon = stageIcons[message.stage] ?? ArrowPathIcon;
                       return (
                         <li

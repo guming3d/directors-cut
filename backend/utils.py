@@ -106,6 +106,26 @@ async def extract_last_frame(video_path: Path, dest_path: Path) -> Path:
     return dest_path
 
 
+async def extract_frame_at_timestamp(video_path: Path, timestamp: float, dest_path: Path) -> Path:
+    dest_path.parent.mkdir(parents=True, exist_ok=True)
+    safe_timestamp = max(0.0, float(timestamp))
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-ss",
+        f"{safe_timestamp:.3f}",
+        "-i",
+        str(video_path),
+        "-frames:v",
+        "1",
+        "-q:v",
+        "2",
+        str(dest_path),
+    ]
+    await run_subprocess(cmd)
+    return dest_path
+
+
 def build_static_asset_url(path: Optional[str]) -> Optional[str]:
     if not path:
         return None
@@ -120,6 +140,7 @@ def build_static_asset_url(path: Optional[str]) -> Optional[str]:
 __all__ = [
     "build_static_asset_url",
     "escape_for_concat",
+    "extract_frame_at_timestamp",
     "extract_last_frame",
     "normalize_script_text",
     "read_text",

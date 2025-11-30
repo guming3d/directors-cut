@@ -282,6 +282,50 @@ class SingleVideoJobConfig:
     reference_image_paths: list[Path] = field(default_factory=list)
 
 
+@dataclass
+class VideoInsightKeyFrame:
+    frame_id: Optional[str]
+    timestamp: Optional[str]
+    description: Optional[str] = None
+    confidence: Optional[float] = None
+    tags: list[str] = field(default_factory=list)
+
+
+@dataclass
+class VideoInsightSegment:
+    segment_id: Optional[str]
+    label: Optional[str]
+    start: Optional[str]
+    end: Optional[str]
+    summary: Optional[str] = None
+    tags: list[str] = field(default_factory=list)
+    start_seconds: Optional[float] = None
+    end_seconds: Optional[float] = None
+    start_frame_path: Optional[str] = None
+    end_frame_path: Optional[str] = None
+
+
+@dataclass
+class VideoInsightJobState:
+    job_id: str
+    filename: str
+    status: str = "queued"
+    progress: float = 0.0
+    started_at: datetime = field(default_factory=utc_now)
+    completed_at: Optional[datetime] = None
+    error: Optional[str] = None
+    video_path: Optional[str] = None
+    result_path: Optional[str] = None
+    original_content_type: Optional[str] = None
+    notes: Optional[str] = None
+    messages: list[ProgressMessage] = field(default_factory=list)
+    key_frames: list[VideoInsightKeyFrame] = field(default_factory=list)
+    segments: list[VideoInsightSegment] = field(default_factory=list)
+
+    def add_message(self, stage: str, text: str) -> None:
+        self.messages.append(ProgressMessage(timestamp=utc_now(), stage=stage, text=text))
+
+
 class JobMessageModel(BaseModel):
     timestamp: datetime
     stage: str
@@ -380,6 +424,48 @@ class SingleVideoJobResponse(BaseModel):
     selected_version_id: Optional[str]
     versions: list[SingleVideoVersionModel] = Field(default_factory=list)
     messages: list[JobMessageModel]
+
+
+class VideoInsightKeyFrameModel(BaseModel):
+    frame_id: Optional[str]
+    timestamp: Optional[str]
+    description: Optional[str]
+    confidence: Optional[float]
+    tags: list[str] = Field(default_factory=list)
+
+
+class VideoInsightSegmentModel(BaseModel):
+    segment_id: Optional[str]
+    label: Optional[str]
+    start: Optional[str]
+    end: Optional[str]
+    start_seconds: Optional[float] = None
+    end_seconds: Optional[float] = None
+    summary: Optional[str]
+    tags: list[str] = Field(default_factory=list)
+    start_frame_path: Optional[str] = None
+    start_frame_url: Optional[str] = None
+    end_frame_path: Optional[str] = None
+    end_frame_url: Optional[str] = None
+
+
+class VideoInsightJobResponse(BaseModel):
+    job_id: str
+    status: str
+    progress: float
+    filename: str
+    content_type: Optional[str]
+    started_at: datetime
+    completed_at: Optional[datetime]
+    error: Optional[str]
+    video_path: Optional[str]
+    video_url: Optional[str]
+    result_path: Optional[str]
+    result_url: Optional[str]
+    notes: Optional[str]
+    messages: list[JobMessageModel]
+    key_frames: list[VideoInsightKeyFrameModel] = Field(default_factory=list)
+    segments: list[VideoInsightSegmentModel] = Field(default_factory=list)
 
 
 class StartWorkflowPayload(BaseModel):
@@ -638,6 +724,12 @@ __all__ = [
     "SingleVideoRemixPayload",
     "SingleVideoVersionEntry",
     "SingleVideoVersionModel",
+    "VideoInsightJobResponse",
+    "VideoInsightJobState",
+    "VideoInsightKeyFrame",
+    "VideoInsightKeyFrameModel",
+    "VideoInsightSegment",
+    "VideoInsightSegmentModel",
     "VideoWorkflowRequest",
     "WorkflowJobState",
     "RefineWorkflowPayload",
