@@ -12,6 +12,7 @@ from typing import Any, Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .config import (
+    DEFAULT_IMAGE_GENERATOR,
     DEFAULT_SORA_RESOLUTION,
     DEFAULT_VIDEO_PROVIDER,
     FINAL_VIDEO_PATH,
@@ -355,7 +356,7 @@ class VideoReproduceSegment:
     end_frame_path: Optional[str] = None
     stylized_start_frame_path: Optional[str] = None
     stylized_end_frame_path: Optional[str] = None
-    gpt_image_prompt_path: Optional[str] = None
+    image_prompt_path: Optional[str] = None
     original_video_path: Optional[str] = None
     status: str = "queued"
     versions: list[ReproduceSegmentVersion] = field(default_factory=list)
@@ -389,6 +390,7 @@ class VideoReproduceJobState:
     notes: Optional[str] = None
     thread_count: int = 3
     resolution: str = DEFAULT_SORA_RESOLUTION
+    image_generation_backend: str = DEFAULT_IMAGE_GENERATOR
     messages: list[ProgressMessage] = field(default_factory=list)
     segments: list[VideoReproduceSegment] = field(default_factory=list)
 
@@ -571,8 +573,8 @@ class VideoReproduceSegmentModel(BaseModel):
     stylized_start_frame_url: Optional[str] = None
     stylized_end_frame_path: Optional[str] = None
     stylized_end_frame_url: Optional[str] = None
-    gpt_image_prompt_path: Optional[str] = None
-    gpt_image_prompt_url: Optional[str] = None
+    image_prompt_path: Optional[str] = None
+    image_prompt_url: Optional[str] = None
     original_video_path: Optional[str] = None
     original_video_url: Optional[str] = None
     status: str
@@ -596,6 +598,7 @@ class VideoReproduceJobResponse(BaseModel):
     video_url: Optional[str]
     final_video_path: Optional[str]
     final_video_url: Optional[str]
+    image_generation_backend: str
     messages: list[JobMessageModel]
     segments: list[VideoReproduceSegmentModel] = Field(default_factory=list)
 

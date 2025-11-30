@@ -3,25 +3,22 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import json
 import uuid
 from pathlib import Path
 from typing import Sequence
 
 from .config import (
-    AZURE_IMAGE_DEPLOYMENT,
     DEFAULT_SORA_RESOLUTION,
     KLING_ALLOWED_DURATIONS,
     REPRODUCE_DEFAULT_THREADS,
     VIDEO_REPRODUCE_JOBS_DIR,
-    azure_image_client,
     logger,
 )
 from .content_insights.client import AzureContentUnderstandingClient, ContentUnderstandingError
 from .content_insights.parser import summarize_content_understanding_result
 from .content_insights.service import attach_segment_frames, ensure_content_understanding_ready
-from .image_utils import select_supported_image_size, trim_image_bytes
+from .image_generation import ImageGenerationError, get_image_generator
 from .kling import KlingAPIError, render_kling_clip
 from .models import ReproduceSegmentVersion, VideoInsightSegment, VideoReproduceSegment
 from .stores import VIDEO_REPRODUCE_STORE
@@ -102,7 +99,12 @@ async def run_reproduce_job(job_id: str) -> None:
         await _segment_original_video(job_id, source_video, segment_states, segments_dir)
 
         await VIDEO_REPRODUCE_STORE.update_progress(
-            job_id, 0.35, "Converting key frames to stylized gpt-image-1 references."
+            job_id,
+            0.35,
+            (
+                "Converting key frames to stylized "
+                f"{job_state.image_generation_backend or 'gpt-image-1'} references."
+            ),
         )
         await _stylize_segment_frames(
             job_id,
@@ -110,6 +112,7 @@ async def run_reproduce_job(job_id: str) -> None:
             stylized_dir,
             prompts_dir,
             resolution,
+            job_state.image_generation_backend,
         )
 
         thread_count = max(1, job_state.thread_count or REPRODUCE_DEFAULT_THREADS)
@@ -458,30 +461,33 @@ async def _stylize_segment_frames(
     stylized_dir: Path,
     prompts_dir: Path,
     resolution: str,
+    image_backend: str | None,
 ) -> None:
     stylized_dir.mkdir(parents=True, exist_ok=True)
-    client = azure_image_client()
-    if client is None:
-        logger.warning("Azure image client not configured; skipping gpt-image-1 stylization.")
+    try:
+        generator = get_image_generator(image_backend)
+    except ImageGenerationError as exc:
+        logger.warning("Image generator unavailable (%s): %s", image_backend, exc)
         await VIDEO_REPRODUCE_STORE.add_message(
             job_id,
             "running",
-            "Azure image client unavailable; using original frames for Kling references.",
+            "Image generator unavailable; using original frames for Kling references.",
         )
+        generator = None
     normalized_resolution = resolution or DEFAULT_SORA_RESOLUTION
     for segment in segments:
         prompt_path, prompt_text = _ensure_stylize_prompt(prompts_dir, segment)
         stylized_start_path = stylized_dir / f"segment_{segment.order:03d}_start_stylized.png"
         stylized_end_path = stylized_dir / f"segment_{segment.order:03d}_end_stylized.png"
         start_result = await _stylize_single_frame(
-            client,
+            generator,
             segment.start_frame_path,
             prompt_text,
             stylized_start_path,
             normalized_resolution,
         )
         end_result = await _stylize_single_frame(
-            client,
+            generator,
             segment.end_frame_path,
             prompt_text,
             stylized_end_path,
@@ -489,13 +495,13 @@ async def _stylize_segment_frames(
         )
         segment.stylized_start_frame_path = start_result
         segment.stylized_end_frame_path = end_result
-        segment.gpt_image_prompt_path = str(prompt_path)
+        segment.image_prompt_path = str(prompt_path)
         await VIDEO_REPRODUCE_STORE.update_segment_attributes(
             job_id,
             segment.order,
             stylized_start_frame_path=start_result,
             stylized_end_frame_path=end_result,
-            gpt_image_prompt_path=str(prompt_path),
+            image_prompt_path=str(prompt_path),
         )
 
 
@@ -519,7 +525,7 @@ def _default_stylize_prompt(segment: VideoReproduceSegment) -> str:
 
 
 async def _stylize_single_frame(
-    client,
+    generator,
     source_path: str | None,
     prompt_text: str,
     destination: Path,
@@ -534,39 +540,22 @@ async def _stylize_single_frame(
     destination.parent.mkdir(parents=True, exist_ok=True)
     if destination.is_file() and destination.stat().st_size > 0:
         return str(destination)
-    if client is None:
+    if generator is None:
         return None
     try:
-        stylized_bytes = await _run_gpt_image_edit(client, src, prompt_text, resolution)
-    except Exception as exc:  # pragma: no cover - network/service failures
-        logger.warning("gpt-image-1 edit failed for %s: %s", source_path, exc)
+        stylized_bytes = await generator.generate(
+            prompt=prompt_text,
+            resolution=resolution,
+            image_path=src,
+        )
+    except ImageGenerationError as exc:
+        logger.warning("Image generator failed for %s: %s", source_path, exc)
+        return None
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("Unexpected image generation failure for %s: %s", source_path, exc)
         return None
     destination.write_bytes(stylized_bytes)
     return str(destination)
-
-
-async def _run_gpt_image_edit(client, image_path: Path, prompt_text: str, resolution: str) -> bytes:
-    azure_size = select_supported_image_size(resolution or DEFAULT_SORA_RESOLUTION)
-
-    def _call() -> bytes:
-        with image_path.open("rb") as fh:
-            response = client.images.edit(
-                model=AZURE_IMAGE_DEPLOYMENT,
-                prompt=prompt_text,
-                image=fh,
-                size=azure_size,
-                input_fidelity="high",
-                background="auto",
-            )
-        if not response.data:
-            raise RuntimeError("Image edit returned no data payload.")
-        payload = response.data[0].b64_json
-        if not payload:
-            raise RuntimeError("Image edit response missing base64 payload.")
-        return base64.b64decode(payload)
-
-    raw_bytes = await asyncio.to_thread(_call)
-    return trim_image_bytes(raw_bytes, resolution or DEFAULT_SORA_RESOLUTION)
 
 
 def _default_segment_prompt(segment: VideoReproduceSegment) -> str:

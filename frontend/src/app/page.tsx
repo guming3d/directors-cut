@@ -196,8 +196,8 @@ type VideoReproduceSegment = {
   stylized_start_frame_url: string | null;
   stylized_end_frame_path: string | null;
   stylized_end_frame_url: string | null;
-  gpt_image_prompt_path: string | null;
-  gpt_image_prompt_url: string | null;
+  image_prompt_path: string | null;
+  image_prompt_url: string | null;
   original_video_path: string | null;
   original_video_url: string | null;
   status: string;
@@ -213,6 +213,7 @@ type VideoReproduceJob = {
   progress: number;
   thread_count: number;
   resolution: string;
+  image_generation_backend: string;
   started_at: string;
   completed_at: string | null;
   error: string | null;
@@ -290,6 +291,16 @@ const getDurationOptions = (provider: string | null): readonly DurationOption[] 
   provider === "kling" ? KLING_DURATION_OPTIONS : SORA_DURATION_OPTIONS;
 const resolutionOptions = ["720x1280", "1280x720", "1920x1080"] as const;
 const VIDEO_PROVIDER_OPTIONS = ["sora2", "kling"] as const;
+const IMAGE_GENERATOR_OPTIONS = [
+  { value: "gpt-image-1", label: "Azure gpt-image-1" },
+  { value: "kling", label: "Kling image generation" },
+] as const;
+type ImageGeneratorOption = (typeof IMAGE_GENERATOR_OPTIONS)[number]["value"];
+
+const getImageGeneratorLabel = (value: string): string => {
+  const option = IMAGE_GENERATOR_OPTIONS.find((item) => item.value === value);
+  return option ? option.label : value;
+};
 
 const AUTH_USERNAME = "user";
 const AUTH_PASSWORD = "sora2isgreat";
@@ -506,6 +517,11 @@ const zhTranslations: Record<string, string> = {
   "Investigate and reproduce uploaded videos.": "使用内容理解与 Kling 复刻上传的视频。",
   "Upload a video to see analysis jobs here.": "上传视频以查看分析任务。",
   "Upload a video to reproduce segments.": "上传视频以拆分并复刻片段。",
+  "Image generator": "图像引擎",
+  "Stylized frame generator": "风格化图像引擎",
+  "Select how key frames get stylized before Kling renders.": "请选择 Kling 渲染前用于风格化关键帧的方式。",
+  "Azure gpt-image-1": "Azure gpt-image-1",
+  "Kling image generation": "Kling 图像生成",
   "Upload video for analysis": "上传用于分析的视频",
   "Upload video for reproduction": "上传待复刻视频",
   "Uploaded video": "已上传视频",
@@ -839,6 +855,9 @@ export default function Home() {
   const [reproduceFile, setReproduceFile] = useState<File | null>(null);
   const [reproduceNotes, setReproduceNotes] = useState("");
   const [reproduceThreads, setReproduceThreads] = useState("3");
+  const [reproduceImageGenerator, setReproduceImageGenerator] = useState<ImageGeneratorOption>(
+    IMAGE_GENERATOR_OPTIONS[0].value,
+  );
   const [reproduceError, setReproduceError] = useState<string | null>(null);
   const [reproduceFormError, setReproduceFormError] = useState<string | null>(null);
   const [isSubmittingReproduce, setIsSubmittingReproduce] = useState(false);
@@ -1956,6 +1975,7 @@ export default function Home() {
         formData.append("notes", reproduceNotes.trim());
       }
       formData.append("threadCount", String(threads));
+      formData.append("imageGenerator", reproduceImageGenerator);
       const response = await fetch(`${apiBase}/api/reproduce`, {
         method: "POST",
         body: formData,
@@ -3141,6 +3161,25 @@ export default function Home() {
                 className="w-32 rounded border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 shadow-inner focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-800"
               />
             </div>
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-slate-500 dark:text-slate-400">
+                {translate("Stylized frame generator")}
+              </label>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {translate("Select how key frames get stylized before Kling renders.")}
+              </p>
+              <select
+                value={reproduceImageGenerator}
+                onChange={(event) => setReproduceImageGenerator(event.target.value as ImageGeneratorOption)}
+                className="w-full rounded border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 shadow-inner focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-800"
+              >
+                {IMAGE_GENERATOR_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {translate(option.label)}
+                  </option>
+                ))}
+              </select>
+            </div>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <button
                 type="submit"
@@ -4307,6 +4346,12 @@ export default function Home() {
                 <div>
                   <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Resolution")}</dt>
                   <dd className="mt-1">{reproduceJob.resolution}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Image generator")}</dt>
+                  <dd className="mt-1">
+                    {translate(getImageGeneratorLabel(reproduceJob.image_generation_backend))}
+                  </dd>
                 </div>
                 <div>
                   <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Parallel Kling renders")}</dt>

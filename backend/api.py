@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import (
     CONTENT_UNDERSTANDING_MAX_UPLOAD_BYTES,
+    DEFAULT_IMAGE_GENERATOR,
     DEFAULT_SORA_RESOLUTION,
     DEFAULT_VIDEO_PROVIDER,
     OUTPUT_DIR,
@@ -21,6 +22,7 @@ from .config import (
     RESOLUTION_PATTERN,
     SINGLE_VIDEO_JOBS_DIR,
     STATIC_URL_PREFIX,
+    SUPPORTED_IMAGE_GENERATORS,
     SUPPORTED_VIDEO_PROVIDERS,
     allowed_origins,
     logger,
@@ -399,6 +401,7 @@ async def create_reproduce_job(
     video_file: UploadFile = File(..., alias="file"),
     notes: str | None = Form(default=None),
     thread_count: int | None = Form(default=None, alias="threadCount"),
+    image_generator: str | None = Form(default=None, alias="imageGenerator"),
 ) -> VideoReproduceJobResponse:
     if video_file.content_type and not video_file.content_type.startswith("video/"):
         raise HTTPException(status_code=400, detail="Upload a valid video file (mp4, mov, webm).")
@@ -414,12 +417,16 @@ async def create_reproduce_job(
     except (TypeError, ValueError):
         threads = REPRODUCE_DEFAULT_THREADS
     threads = max(1, min(threads, 10))
+    requested_generator = (image_generator or DEFAULT_IMAGE_GENERATOR).strip().lower()
+    if requested_generator not in SUPPORTED_IMAGE_GENERATORS:
+        requested_generator = DEFAULT_IMAGE_GENERATOR
     await VIDEO_REPRODUCE_STORE.create_job(
         job_id,
         filename,
         video_file.content_type,
         normalized_notes,
         threads,
+        requested_generator,
     )
     job_dir = reproduce_job_root(job_id)
     destination = job_dir / filename

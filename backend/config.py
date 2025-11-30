@@ -65,6 +65,13 @@ DEFAULT_VIDEO_PROVIDER = _provider_env if _provider_env in SUPPORTED_VIDEO_PROVI
 SORA_ALLOWED_DURATIONS = (4, 8, 12)
 KLING_ALLOWED_DURATIONS = (5, 10)
 
+# Image generation provider defaults
+SUPPORTED_IMAGE_GENERATORS = ("gpt-image-1", "kling")
+_image_generator_env = (os.getenv("REPRODUCE_IMAGE_GENERATOR") or "gpt-image-1").strip().lower()
+DEFAULT_IMAGE_GENERATOR = (
+    _image_generator_env if _image_generator_env in SUPPORTED_IMAGE_GENERATORS else "gpt-image-1"
+)
+
 
 def normalize_video_provider(value: Optional[str]) -> str:
     if not value:
@@ -318,6 +325,7 @@ __all__ = [
     "CONTENT_UNDERSTANDING_POLL_TIMEOUT",
     "DATA_URL_PATTERN",
     "DEFAULT_SORA_RESOLUTION",
+    "DEFAULT_IMAGE_GENERATOR",
     "DEFAULT_VIDEO_PROVIDER",
     "DIRECTOR_REFINEMENT_DEPLOYMENT",
     "FINAL_VIDEO_PATH",
@@ -347,6 +355,7 @@ __all__ = [
     "SCRIPT_PATH",
     "SINGLE_VIDEO_DB_PATH",
     "SUPPORTED_VIDEO_PROVIDERS",
+    "SUPPORTED_IMAGE_GENERATORS",
     "SINGLE_VIDEO_JOBS_DIR",
     "VIDEO_INSIGHT_DB_PATH",
     "VIDEO_INSIGHT_JOBS_DIR",

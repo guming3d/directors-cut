@@ -12,6 +12,7 @@ from typing import Any, Optional
 from tinydb import Query, TinyDB
 
 from .config import (
+    DEFAULT_IMAGE_GENERATOR,
     DEFAULT_SORA_RESOLUTION,
     DEFAULT_VIDEO_PROVIDER,
     OUTPUT_DIR,
@@ -843,7 +844,8 @@ def _reproduce_segment_to_record(segment: VideoReproduceSegment) -> dict[str, An
         "end_frame_path": segment.end_frame_path,
         "stylized_start_frame_path": segment.stylized_start_frame_path,
         "stylized_end_frame_path": segment.stylized_end_frame_path,
-        "gpt_image_prompt_path": segment.gpt_image_prompt_path,
+        "image_prompt_path": segment.image_prompt_path,
+        "gpt_image_prompt_path": segment.image_prompt_path,
         "original_video_path": segment.original_video_path,
         "status": segment.status,
         "selected_version_id": segment.selected_version_id,
@@ -872,7 +874,9 @@ def _reproduce_segment_from_record(payload: dict[str, Any]) -> VideoReproduceSeg
         end_frame_path=payload.get("end_frame_path"),
         stylized_start_frame_path=payload.get("stylized_start_frame_path"),
         stylized_end_frame_path=payload.get("stylized_end_frame_path"),
-        gpt_image_prompt_path=payload.get("gpt_image_prompt_path"),
+        image_prompt_path=(
+            payload.get("image_prompt_path") or payload.get("gpt_image_prompt_path")
+        ),
         original_video_path=payload.get("original_video_path"),
         status=payload.get("status", "queued"),
         versions=versions,
@@ -903,6 +907,7 @@ def _reproduce_job_to_record(job: VideoReproduceJobState) -> dict[str, Any]:
         "notes": job.notes,
         "messages": [_serialize_progress_message(msg) for msg in job.messages],
         "segments": [_reproduce_segment_to_record(segment) for segment in job.segments],
+        "image_generation_backend": job.image_generation_backend,
     }
 
 
@@ -929,6 +934,9 @@ def _reproduce_job_from_record(payload: dict[str, Any]) -> VideoReproduceJobStat
         notes=payload.get("notes"),
         messages=[_deserialize_progress_message(msg) for msg in payload.get("messages", [])],
         segments=segments,
+        image_generation_backend=(
+            payload.get("image_generation_backend") or DEFAULT_IMAGE_GENERATOR
+        ),
     )
 
 
@@ -1423,6 +1431,7 @@ class VideoReproduceJobStore:
         content_type: Optional[str],
         notes: Optional[str],
         thread_count: int,
+        image_generation_backend: str,
     ) -> None:
         async with self._lock:
             state = VideoReproduceJobState(
@@ -1431,6 +1440,7 @@ class VideoReproduceJobStore:
                 content_type=content_type,
                 notes=notes,
                 thread_count=thread_count,
+                image_generation_backend=image_generation_backend,
             )
             state.add_message("queued", "Video reproduce workflow queued.")
             self._jobs[job_id] = state
@@ -1481,6 +1491,7 @@ class VideoReproduceJobStore:
         original_video_path: Optional[str] = None,
         stylized_start_frame_path: Optional[str] = None,
         stylized_end_frame_path: Optional[str] = None,
+        image_prompt_path: Optional[str] = None,
         gpt_image_prompt_path: Optional[str] = None,
     ) -> None:
         async with self._lock:
@@ -1496,8 +1507,9 @@ class VideoReproduceJobStore:
                 segment.stylized_start_frame_path = stylized_start_frame_path
             if stylized_end_frame_path is not None:
                 segment.stylized_end_frame_path = stylized_end_frame_path
-            if gpt_image_prompt_path is not None:
-                segment.gpt_image_prompt_path = gpt_image_prompt_path
+            prompt_path_value = image_prompt_path if image_prompt_path is not None else gpt_image_prompt_path
+            if prompt_path_value is not None:
+                segment.image_prompt_path = prompt_path_value
             self._persist(job)
 
     async def add_segment_version(
@@ -1652,8 +1664,8 @@ class VideoReproduceJobStore:
                     stylized_start_frame_url=build_static_asset_url(segment.stylized_start_frame_path),
                     stylized_end_frame_path=segment.stylized_end_frame_path,
                     stylized_end_frame_url=build_static_asset_url(segment.stylized_end_frame_path),
-                    gpt_image_prompt_path=segment.gpt_image_prompt_path,
-                    gpt_image_prompt_url=build_static_asset_url(segment.gpt_image_prompt_path),
+                    image_prompt_path=segment.image_prompt_path,
+                    image_prompt_url=build_static_asset_url(segment.image_prompt_path),
                     original_video_path=segment.original_video_path,
                     original_video_url=build_static_asset_url(segment.original_video_path),
                     status=segment.status,
@@ -1677,6 +1689,7 @@ class VideoReproduceJobStore:
             video_url=build_static_asset_url(job.video_path),
             final_video_path=job.final_video_path,
             final_video_url=build_static_asset_url(job.final_video_path),
+            image_generation_backend=job.image_generation_backend,
             messages=messages,
             segments=segments,
         )
