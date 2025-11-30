@@ -2514,234 +2514,6 @@ export default function Home() {
                   </table>
                 </div>
               )}
-
-              {reproduceJob ? (
-                <div className="mt-8 space-y-6 rounded border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/40 p-5 shadow-inner shadow-black/10">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">{translate("Video reproduce")}</h3>
-                      <p className="text-xs uppercase tracking-wide text-slate-500">
-                        {translate("Uploaded video")}: {reproduceJob.filename}
-                      </p>
-                      {reproduceJob.notes ? (
-                        <p className="text-xs text-slate-500 dark:text-slate-400">{reproduceJob.notes}</p>
-                      ) : null}
-                    </div>
-                    <span className={`text-xs font-semibold uppercase tracking-wide ${reproduceStatusToken.className}`}>
-                      {reproduceStatusToken.label}
-                    </span>
-                  </div>
-
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-                      <span>{translate("Progress")}</span>
-                      <span>{reproduceProgressPercent}%</span>
-                    </div>
-                    <div className="h-2 overflow-hidden rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800">
-                      <div
-                        className="h-full rounded-full bg-slate-500 dark:bg-slate-200 transition-[width] duration-500 ease-out"
-                        style={{ width: `${reproduceProgressPercent}%` }}
-                      />
-                    </div>
-                  </div>
-
-                  <dl className="grid gap-4 text-sm text-slate-600 dark:text-slate-300 sm:grid-cols-4">
-                    <div>
-                      <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Started")}</dt>
-                      <dd className="mt-1">{formatTimeDistance(reproduceJob.started_at)}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Completed")}</dt>
-                      <dd className="mt-1">{reproduceJob.completed_at ? formatTimeDistance(reproduceJob.completed_at) : "—"}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Resolution")}</dt>
-                      <dd className="mt-1">{reproduceJob.resolution}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Parallel Kling renders")}</dt>
-                      <dd className="mt-1">{reproduceJob.thread_count}</dd>
-                    </div>
-                  </dl>
-
-                  <div className="grid gap-4 lg:grid-cols-2">
-                    <div>
-                      <h4 className="text-sm font-semibold text-slate-600 dark:text-slate-300">{translate("Uploaded video")}</h4>
-                      {reproduceSourceVideoUrl ? (
-                        <video
-                          controls
-                          className="mt-2 max-h-64 w-full rounded border border-slate-200 dark:border-slate-800 bg-black/60"
-                          src={reproduceSourceVideoUrl}
-                        >
-                          {translate("Your browser does not support HTML5 video.")}
-                        </video>
-                      ) : (
-                        <p className="mt-2 text-xs text-slate-500">{translate("Video pending...")}</p>
-                      )}
-                    </div>
-                    <div>
-                      <h4 className="text-sm font-semibold text-slate-600 dark:text-slate-300">{translate("Merged Kling video")}</h4>
-                      {reproduceFinalVideoUrl ? (
-                        <video
-                          controls
-                          className="mt-2 max-h-64 w-full rounded border border-slate-200 dark:border-slate-800 bg-black/60"
-                          src={reproduceFinalVideoUrl}
-                        >
-                          {translate("Your browser does not support HTML5 video.")}
-                        </video>
-                      ) : (
-                        <p className="mt-2 text-xs text-slate-500">{translate("Video pending...")}</p>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="space-y-4">
-                    <h4 className="text-sm font-semibold text-slate-600 dark:text-slate-300">{translate("Video segments")}</h4>
-                    {reproduceJob.segments?.length ? (
-                      reproduceJob.segments.map((segment) => {
-                        const activeVersion =
-                          segment.versions.find((version) => version.version_id === segment.selected_version_id) ??
-                          segment.versions.at(-1);
-                        const originalSegmentUrl = buildAssetUrl(apiBase, segment.original_video_url);
-                        const klingSegmentUrl = buildAssetUrl(apiBase, activeVersion?.video_url);
-                        const startFrameUrl = buildAssetUrl(apiBase, segment.start_frame_url);
-                        const endFrameUrl = buildAssetUrl(apiBase, segment.end_frame_url);
-                        const stylizedStartFrameUrl = buildAssetUrl(apiBase, segment.stylized_start_frame_url);
-                        const stylizedEndFrameUrl = buildAssetUrl(apiBase, segment.stylized_end_frame_url);
-                        const framePreviews = [
-                          { key: "start", label: translate("Start frame"), url: startFrameUrl },
-                          { key: "stylized-start", label: translate("Stylized start frame"), url: stylizedStartFrameUrl },
-                          { key: "end", label: translate("End frame"), url: endFrameUrl },
-                          { key: "stylized-end", label: translate("Stylized end frame"), url: stylizedEndFrameUrl },
-                        ];
-                        const promptValue = segmentPrompts[segment.order] ?? "";
-                        const isBusy = regeneratingSegment === segment.order;
-                        return (
-                          <div
-                            key={segment.order}
-                            className="rounded border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/40 p-4 shadow-inner shadow-black/10"
-                          >
-                            <div className="flex flex-wrap items-start justify-between gap-3">
-                              <div>
-                                <h5 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{segment.label}</h5>
-                                <p className="text-xs text-slate-500 dark:text-slate-400">
-                                  {formatSeconds(segment.start_seconds)} - {formatSeconds(segment.end_seconds)} · {formatSeconds(segment.duration_seconds)}
-                                </p>
-                              </div>
-                              <span className="rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                                {translate("Segment")} {segment.order}
-                              </span>
-                            </div>
-                            <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">{segment.description}</p>
-                            {segment.tags?.length ? (
-                              <p className="text-xs text-slate-500 dark:text-slate-400">{segment.tags.join(", ")}</p>
-                            ) : null}
-                            <div className="mt-3 grid gap-3 md:grid-cols-2">
-                              <div>
-                                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{translate("Original segment")}</p>
-                                {originalSegmentUrl ? (
-                                  <video
-                                    controls
-                                    className="mt-1 max-h-48 w-full rounded border border-slate-200 dark:border-slate-800 bg-black/60"
-                                    src={originalSegmentUrl}
-                                  >
-                                    {translate("Version video unavailable.")}
-                                  </video>
-                                ) : (
-                                  <p className="mt-1 text-xs text-slate-500">{translate("Video pending...")}</p>
-                                )}
-                              </div>
-                              <div>
-                                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{translate("Reproduced clip")}</p>
-                                {klingSegmentUrl ? (
-                                  <video
-                                    controls
-                                    className="mt-1 max-h-48 w-full rounded border border-slate-200 dark:border-slate-800 bg-black/60"
-                                    src={klingSegmentUrl}
-                                  >
-                                    {translate("Version video unavailable.")}
-                                  </video>
-                                ) : (
-                                  <p className="mt-1 text-xs text-slate-500">{translate("Video pending...")}</p>
-                                )}
-                              </div>
-                            </div>
-                            <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                              {framePreviews.map((frame) => (
-                                <div key={`${segment.order}-${frame.key}`}>
-                                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{frame.label}</p>
-                                  {frame.url ? (
-                                    <Image
-                                      src={frame.url}
-                                      alt={`${segment.label} ${frame.label}`}
-                                      width={320}
-                                      height={180}
-                                      unoptimized
-                                      className="mt-1 h-28 w-full rounded object-cover"
-                                    />
-                                  ) : (
-                                    <p className="mt-1 text-xs text-slate-500">{translate("Image pending...")}</p>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-                            <div className="mt-4 space-y-2">
-                              <textarea
-                                className="w-full rounded-md border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-xs text-slate-900 dark:text-slate-100 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-800"
-                                value={promptValue}
-                                onChange={(event) => handleSegmentPromptChange(segment.order, event.target.value)}
-                              />
-                              <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500 dark:text-slate-400">
-                                <span>
-                                  {translate("Status")}: {translate(segment.status)}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => handleSegmentRegenerate(segment.order)}
-                                  disabled={isBusy}
-                                  className="inline-flex items-center gap-1 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
-                                >
-                                  {isBusy ? <ArrowPathIcon className="h-3.5 w-3.5 animate-spin" /> : <ArrowPathIcon className="h-3.5 w-3.5" />}
-                                  {translate("Regenerate segment")}
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })
-                    ) : (
-                      <p className="text-xs text-slate-500">{translate("No insights yet.")}</p>
-                    )}
-                  </div>
-
-                  {reproduceJob.messages?.length ? (
-                    <div className="space-y-2">
-                      <h4 className="text-sm font-semibold text-slate-600 dark:text-slate-300">{translate("Workflow Timeline")}</h4>
-                      <ol className="space-y-2 max-h-60 overflow-y-auto pr-2">
-                        {reproduceJob.messages.map((message, index) => {
-                          const Icon = stageIcons[message.stage] ?? ArrowPathIcon;
-                          return (
-                            <li
-                              key={`${message.timestamp}-${index}`}
-                              className="relative flex gap-3 rounded border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/40 p-2 shadow-inner shadow-black/10"
-                            >
-                              <div className="relative mt-0.5 flex h-6 w-6 items-center justify-center rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800">
-                                <Icon className="h-3.5 w-3.5 text-slate-500 dark:text-slate-400" />
-                              </div>
-                              <div>
-                                <p className="text-xs text-slate-600 dark:text-slate-300">{message.text}</p>
-                                <p className="text-[11px] text-slate-500">
-                                  {formatTimestamp(message.timestamp)} · {stageLabel(message.stage, language)}
-                                </p>
-                              </div>
-                            </li>
-                          );
-                        })}
-                      </ol>
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
             </>
           )}
 
@@ -2993,6 +2765,7 @@ export default function Home() {
                             onClick={() => {
                               setActiveReproduceJobId(item.job_id);
                               setReproduceJob(item);
+                              setIsJobDetailModalOpen(true);
                             }}
                             className="cursor-pointer transition hover:bg-slate-50 dark:hover:bg-slate-800/50"
                           >
@@ -3035,6 +2808,7 @@ export default function Home() {
                   </table>
                 </div>
               )}
+
             </>
           )}
         </div>
@@ -4473,6 +4247,240 @@ export default function Home() {
                           <div>
                             <p className="text-sm text-slate-600 dark:text-slate-300">{message.text}</p>
                             <p className="text-xs text-slate-500">
+                              {formatTimestamp(message.timestamp)} · {stageLabel(message.stage, language)}
+                            </p>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                </div>
+              ) : null}
+            </div>
+          )}
+
+          {activeTab === "reproduce" && reproduceJob && (
+            <div className="space-y-8">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">{translate("Video reproduce")}</h3>
+                  <p className="text-xs uppercase tracking-wide text-slate-500">
+                    {translate("Uploaded video")}: {reproduceJob.filename}
+                  </p>
+                  {reproduceJob.notes ? (
+                    <p className="text-xs text-slate-500 dark:text-slate-400">{reproduceJob.notes}</p>
+                  ) : null}
+                </div>
+                <span className={`text-xs font-semibold uppercase tracking-wide ${reproduceStatusToken.className}`}>
+                  {reproduceStatusToken.label}
+                </span>
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+                  <span>{translate("Progress")}</span>
+                  <span>{reproduceProgressPercent}%</span>
+                </div>
+                <div className="h-2.5 overflow-hidden rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800">
+                  <div
+                    className="h-full rounded-full bg-slate-500 dark:bg-slate-200 transition-[width] duration-500 ease-out"
+                    style={{ width: `${reproduceProgressPercent}%` }}
+                  />
+                </div>
+                {reproduceJob.error ? (
+                  <div className="flex items-center gap-2 rounded-md border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 text-xs text-rose-400">
+                    <ExclamationTriangleIcon className="h-4 w-4" />
+                    {reproduceJob.error}
+                  </div>
+                ) : null}
+              </div>
+
+              <dl className="grid gap-4 text-sm text-slate-600 dark:text-slate-300 sm:grid-cols-4">
+                <div>
+                  <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Started")}</dt>
+                  <dd className="mt-1">{formatTimeDistance(reproduceJob.started_at)}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Completed")}</dt>
+                  <dd className="mt-1">{reproduceJob.completed_at ? formatTimeDistance(reproduceJob.completed_at) : "—"}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Resolution")}</dt>
+                  <dd className="mt-1">{reproduceJob.resolution}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Parallel Kling renders")}</dt>
+                  <dd className="mt-1">{reproduceJob.thread_count}</dd>
+                </div>
+              </dl>
+
+              <div className="grid gap-4 lg:grid-cols-2">
+                <div>
+                  <h4 className="text-sm font-semibold text-slate-600 dark:text-slate-300">{translate("Uploaded video")}</h4>
+                  {reproduceSourceVideoUrl ? (
+                    <video
+                      controls
+                      className="mt-2 max-h-64 w-full rounded border border-slate-200 dark:border-slate-800 bg-black/60"
+                      src={reproduceSourceVideoUrl}
+                    >
+                      {translate("Your browser does not support HTML5 video.")}
+                    </video>
+                  ) : (
+                    <p className="mt-2 text-xs text-slate-500">{translate("Video pending...")}</p>
+                  )}
+                </div>
+                <div>
+                  <h4 className="text-sm font-semibold text-slate-600 dark:text-slate-300">{translate("Merged Kling video")}</h4>
+                  {reproduceFinalVideoUrl ? (
+                    <video
+                      controls
+                      className="mt-2 max-h-64 w-full rounded border border-slate-200 dark:border-slate-800 bg-black/60"
+                      src={reproduceFinalVideoUrl}
+                    >
+                      {translate("Your browser does not support HTML5 video.")}
+                    </video>
+                  ) : (
+                    <p className="mt-2 text-xs text-slate-500">{translate("Video pending...")}</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <h4 className="text-sm font-semibold text-slate-600 dark:text-slate-300">{translate("Video segments")}</h4>
+                {reproduceJob.segments?.length ? (
+                  reproduceJob.segments.map((segment) => {
+                    const activeVersion =
+                      segment.versions.find((version) => version.version_id === segment.selected_version_id) ??
+                      segment.versions.at(-1);
+                    const originalSegmentUrl = buildAssetUrl(apiBase, segment.original_video_url);
+                    const klingSegmentUrl = buildAssetUrl(apiBase, activeVersion?.video_url);
+                    const startFrameUrl = buildAssetUrl(apiBase, segment.start_frame_url);
+                    const endFrameUrl = buildAssetUrl(apiBase, segment.end_frame_url);
+                    const stylizedStartFrameUrl = buildAssetUrl(apiBase, segment.stylized_start_frame_url);
+                    const stylizedEndFrameUrl = buildAssetUrl(apiBase, segment.stylized_end_frame_url);
+                    const framePreviews = [
+                      { key: "start", label: translate("Start frame"), url: startFrameUrl },
+                      { key: "stylized-start", label: translate("Stylized start frame"), url: stylizedStartFrameUrl },
+                      { key: "end", label: translate("End frame"), url: endFrameUrl },
+                      { key: "stylized-end", label: translate("Stylized end frame"), url: stylizedEndFrameUrl },
+                    ];
+                    const promptValue = segmentPrompts[segment.order] ?? "";
+                    const isBusy = regeneratingSegment === segment.order;
+                    return (
+                      <div
+                        key={segment.order}
+                        className="rounded border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/40 p-4 shadow-inner shadow-black/10"
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <h5 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{segment.label}</h5>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                              {formatSeconds(segment.start_seconds)} - {formatSeconds(segment.end_seconds)} · {formatSeconds(segment.duration_seconds)}
+                            </p>
+                          </div>
+                          <span className="rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                            {translate("Segment")} {segment.order}
+                          </span>
+                        </div>
+                        <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">{segment.description}</p>
+                        {segment.tags?.length ? (
+                          <p className="text-xs text-slate-500 dark:text-slate-400">{segment.tags.join(", ")}</p>
+                        ) : null}
+                        <div className="mt-3 grid gap-3 md:grid-cols-2">
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{translate("Original segment")}</p>
+                            {originalSegmentUrl ? (
+                              <video
+                                controls
+                                className="mt-1 max-h-48 w-full rounded border border-slate-200 dark:border-slate-800 bg-black/60"
+                                src={originalSegmentUrl}
+                              >
+                                {translate("Version video unavailable.")}
+                              </video>
+                            ) : (
+                              <p className="mt-1 text-xs text-slate-500">{translate("Video pending...")}</p>
+                            )}
+                          </div>
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{translate("Reproduced clip")}</p>
+                            {klingSegmentUrl ? (
+                              <video
+                                controls
+                                className="mt-1 max-h-48 w-full rounded border border-slate-200 dark:border-slate-800 bg-black/60"
+                                src={klingSegmentUrl}
+                              >
+                                {translate("Version video unavailable.")}
+                              </video>
+                            ) : (
+                              <p className="mt-1 text-xs text-slate-500">{translate("Video pending...")}</p>
+                            )}
+                          </div>
+                        </div>
+                        <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                          {framePreviews.map((frame) => (
+                            <div key={`${segment.order}-${frame.key}`}>
+                              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{frame.label}</p>
+                              {frame.url ? (
+                                <Image
+                                  src={frame.url}
+                                  alt={`${segment.label} ${frame.label}`}
+                                  width={320}
+                                  height={180}
+                                  unoptimized
+                                  className="mt-1 h-28 w-full rounded object-cover"
+                                />
+                              ) : (
+                                <p className="mt-1 text-xs text-slate-500">{translate("Image pending...")}</p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                        <div className="mt-4 space-y-2">
+                          <textarea
+                            className="w-full rounded-md border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-xs text-slate-900 dark:text-slate-100 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-800"
+                            value={promptValue}
+                            onChange={(event) => handleSegmentPromptChange(segment.order, event.target.value)}
+                          />
+                          <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500 dark:text-slate-400">
+                            <span>
+                              {translate("Status")}: {translate(segment.status)}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleSegmentRegenerate(segment.order)}
+                              disabled={isBusy}
+                              className="inline-flex items-center gap-1 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {isBusy ? <ArrowPathIcon className="h-3.5 w-3.5 animate-spin" /> : <ArrowPathIcon className="h-3.5 w-3.5" />}
+                              {translate("Regenerate segment")}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <p className="text-xs text-slate-500">{translate("No insights yet.")}</p>
+                )}
+              </div>
+
+              {reproduceJob.messages?.length ? (
+                <div className="space-y-2">
+                  <h4 className="text-sm font-semibold text-slate-600 dark:text-slate-300">{translate("Workflow Timeline")}</h4>
+                  <ol className="space-y-2 max-h-60 overflow-y-auto pr-2">
+                    {reproduceJob.messages.map((message, index) => {
+                      const Icon = stageIcons[message.stage] ?? ArrowPathIcon;
+                      return (
+                        <li
+                          key={`${message.timestamp}-${index}`}
+                          className="relative flex gap-3 rounded border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/40 p-2 shadow-inner shadow-black/10"
+                        >
+                          <div className="relative mt-0.5 flex h-6 w-6 items-center justify-center rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800">
+                            <Icon className="h-3.5 w-3.5 text-slate-500 dark:text-slate-400" />
+                          </div>
+                          <div>
+                            <p className="text-xs text-slate-600 dark:text-slate-300">{message.text}</p>
+                            <p className="text-[11px] text-slate-500">
                               {formatTimestamp(message.timestamp)} · {stageLabel(message.stage, language)}
                             </p>
                           </div>
