@@ -1,0 +1,6 @@
+Scene label: $scene_label
+Target resolution: $resolution
+Sora2 prompt:
+$prompt_text
+
+Return one gpt-image-1 prompt suitable for the first frame.

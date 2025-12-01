@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import textwrap
-from io import BytesIO
 from pathlib import Path
 
 from .config import (
@@ -18,14 +16,13 @@ from .config import (
 )
 from .image_utils import select_supported_image_size, trim_image_bytes
 from .models import ScenePlan, VideoWorkflowRequest
-from .utils import resolution_to_size
+from .prompts import render_prompt_template
 
 def _fallback_image_prompt(plan: ScenePlan, resolution: str) -> str:
-    return (
-        "Create a single still frame that opens the scene below. "
-        f"Match the {resolution} resolution, keep characters consistent, and avoid motion blur. "
-        "Lean into strong lighting and framing that sets the tone for the first second of the clip.\n\n"
-        f"{plan.prompt_text}"
+    return render_prompt_template(
+        "first_frame_fallback",
+        resolution=resolution,
+        prompt_text=plan.prompt_text,
     )
 
 
@@ -39,19 +36,12 @@ async def build_first_frame_prompt(plan: ScenePlan, resolution: str) -> str:
     if client is None:
         return _fallback_image_prompt(plan, resolution)
 
-    system_prompt = textwrap.dedent(
-        """
-        You turn Azure Sora2 video prompts into a single gpt-image-1 prompt that captures the very first frame of the scene.
-        Preserve the subjects, environment, and mood; make the composition stable for the opening second before motion begins.
-        Keep the output concise (one paragraph) and avoid quoting or adding meta instructions.
-        """
-    ).strip()
-    user_prompt = (
-        f"Scene label: {plan.label}\n"
-        f"Target resolution: {resolution}\n"
-        "Sora2 prompt:\n"
-        f"{plan.prompt_text}\n\n"
-        "Return one gpt-image-1 prompt suitable for the first frame."
+    system_prompt = render_prompt_template("first_frame_system")
+    user_prompt = render_prompt_template(
+        "first_frame_user",
+        scene_label=plan.label,
+        resolution=resolution,
+        prompt_text=plan.prompt_text,
     )
 
     def _call() -> str:

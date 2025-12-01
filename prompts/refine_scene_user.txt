@@ -1,0 +1,6 @@
+Scene title: $title
+Clip length: $duration seconds.
+Original storyboard notes:
+$description
+
+Rewrite the notes into 4-6 focused bullet points optimized for Sora2 at $duration seconds.

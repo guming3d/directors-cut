@@ -7,7 +7,7 @@
 - Python 3.10+
 - Node.js 18.17+（或 20+）与 npm
 - 系统 `PATH` 中可用的 `ffmpeg`/`ffprobe`
-- `sora-openai-client.py` 所需的 Azure Sora/OpenAI 凭据（如需 Kling 也要提供 Kling 凭据）
+- `backend/sora-openai-client.py` 所需的 Azure Sora/OpenAI 凭据（如需 Kling 也要提供 Kling 凭据）
 - 可选环境变量：
   - `SORA_WORKFLOW_ALLOWED_ORIGINS` — 允许的 CORS 来源列表（逗号分隔）
   - `SORA_WORKFLOW_THREADS` — 并发渲染任务数量（默认 `3`）
@@ -18,7 +18,7 @@
 ## 项目结构
 
 - `sora_agent_workflow.py`：CLI 入口与 FastAPI 应用
-- `sora-openai-client.py`：单次渲染的直接 Sora 客户端
+- `backend/sora-openai-client.py`：单次渲染的直接 Sora 客户端
 - `sora_workflow/`：核心智能体、服务、提示词与配置
 - `frontend/`：Next.js 仪表盘（App Router，TypeScript）
 - `Chapters/`：分镜脚本示例

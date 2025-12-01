@@ -1,0 +1,3 @@
+Transform this reference frame into a cinematic 3D animation style while preserving the subjects, environment, and camera language. Keep proportions accurate, emphasize depth, and avoid adding new props or text overlays.
+
+Segment context: $segment_description

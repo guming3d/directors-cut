@@ -7,7 +7,7 @@ Full-stack toolkit for running the Azure Sora2/Kling multi-agent video workflow 
 - Python 3.10+
 - Node.js 18.17+ (or 20+) and npm
 - `ffmpeg`/`ffprobe` available on your system `PATH`
-- Azure Sora/OpenAI credentials (and optional Kling credentials) expected by `sora-openai-client.py`
+- Azure Sora/OpenAI credentials (and optional Kling credentials) expected by `backend/sora-openai-client.py`
 - Optional environment variables:
   - `SORA_WORKFLOW_ALLOWED_ORIGINS` — comma-separated list of origins permitted by CORS
   - `SORA_WORKFLOW_THREADS` — concurrent render jobs (default: `3`)

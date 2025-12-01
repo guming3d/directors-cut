@@ -21,6 +21,7 @@ from .content_insights.service import attach_segment_frames, ensure_content_unde
 from .image_generation import ImageGenerationError, get_image_generator
 from .kling import KlingAPIError, render_kling_clip
 from .models import ReproduceSegmentVersion, VideoInsightSegment, VideoReproduceSegment
+from .prompts import render_prompt_template
 from .stores import VIDEO_REPRODUCE_STORE
 from .utils import escape_for_concat, run_subprocess, utc_now
 
@@ -517,10 +518,9 @@ def _ensure_stylize_prompt(prompts_dir: Path, segment: VideoReproduceSegment) ->
 
 
 def _default_stylize_prompt(segment: VideoReproduceSegment) -> str:
-    return (
-        "Transform this reference frame into a cinematic 3D animation style while preserving the subjects, environment, "
-        "and camera language. Keep proportions accurate, emphasize depth, and avoid adding new props or text overlays.\n\n"
-        f"Segment context: {segment.description}"
+    return render_prompt_template(
+        "reproduce_stylize",
+        segment_description=segment.description or "",
     )
 
 
@@ -559,9 +559,9 @@ async def _stylize_single_frame(
 
 
 def _default_segment_prompt(segment: VideoReproduceSegment) -> str:
-    return (
-        f"Recreate the shot described as: {segment.description}. Focus on continuity from the provided start and end frames, "
-        "matching camera motion, lighting, and subject placement. Maintain natural motion and cinematic quality."
+    return render_prompt_template(
+        "reproduce_segment",
+        segment_description=segment.description or "",
     )
 
 

@@ -1,0 +1,1 @@
+Recreate the shot described as: $segment_description. Focus on continuity from the provided start and end frames, matching camera motion, lighting, and subject placement. Maintain natural motion and cinematic quality.

@@ -182,7 +182,7 @@ def build_agents() -> dict[str, ChatAgent]:
             f"""
             For each scene you receive, you must:
             1. Resize the reference image to {TARGET_RESOLUTION} using Pillow, using aspect fill (center crop) to occupy the whole screen (save under `output/references/scene_<scene_id>.png`).
-            2. Call the Azure Sora client by invoking `python sora-openai-client.py --prompt-file <prompt_path> --input-image <resized_image> --resolution {TARGET_RESOLUTION} --duration <seconds>` so duration matches the plan.
+            2. Call the Azure Sora client by invoking `python backend/sora-openai-client.py --prompt-file <prompt_path> --input-image <resized_image> --resolution {TARGET_RESOLUTION} --duration <seconds>` so duration matches the plan.
             3. Move/rename the downloaded MP4 to `output/scenes/scene_<scene_id>.mp4`.
             4. Log metadata (prompt, image, job_id) into `output/scenes/scene_<scene_id>.json`.
             Use the HostedCodeInterpreterTool for Python + shell (ffmpeg, Pillow). Ensure environment variables `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_RESPONSES_DEPLOYMENT_NAME`, `ENDPOINT_URL`, `DEPLOYMENT_NAME` are set before running the client.

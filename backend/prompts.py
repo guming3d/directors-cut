@@ -5,7 +5,9 @@ from __future__ import annotations
 import asyncio
 import os
 import re
+from pathlib import Path
 from functools import lru_cache
+from string import Template
 from typing import Literal
 
 from .config import (
@@ -98,6 +100,44 @@ WORKFLOW_TEMPLATE_FILES = {
     "kling": PROMPT_TEMPLATE_DIR / "kling_prompt_generation.txt",
 }
 
+STATIC_PROMPT_FILES = {
+    "refine_scene_system": PROMPT_TEMPLATE_DIR / "refine_scene_system.txt",
+    "refine_scene_user": PROMPT_TEMPLATE_DIR / "refine_scene_user.txt",
+    "refine_single_system": PROMPT_TEMPLATE_DIR / "refine_single_system.txt",
+    "refine_single_user": PROMPT_TEMPLATE_DIR / "refine_single_user.txt",
+    "first_frame_system": PROMPT_TEMPLATE_DIR / "first_frame_system.txt",
+    "first_frame_user": PROMPT_TEMPLATE_DIR / "first_frame_user.txt",
+    "first_frame_fallback": PROMPT_TEMPLATE_DIR / "first_frame_fallback.txt",
+    "reproduce_segment": PROMPT_TEMPLATE_DIR / "reproduce_segment_prompt.txt",
+    "reproduce_stylize": PROMPT_TEMPLATE_DIR / "reproduce_stylize_prompt.txt",
+}
+
+
+@lru_cache(maxsize=None)
+def _read_prompt_file(path_str: str) -> str:
+    path = Path(path_str)
+    try:
+        template = path.read_text(encoding="utf-8").strip()
+    except OSError as exc:  # pragma: no cover - filesystem failures are rare
+        raise RuntimeError(f"Prompt template missing: {path}") from exc
+    if not template:
+        raise RuntimeError(f"Prompt template is empty: {path}")
+    return template
+
+
+@lru_cache(maxsize=None)
+def _prompt_template(name: str) -> Template:
+    path = STATIC_PROMPT_FILES.get(name)
+    if path is None:
+        raise RuntimeError(f"Unknown prompt template key: {name}")
+    return Template(_read_prompt_file(str(path)))
+
+
+def render_prompt_template(name: str, **values: object) -> str:
+    template = _prompt_template(name)
+    serialized = {key: str(value) for key, value in values.items()}
+    return template.safe_substitute(**serialized)
+
 
 @lru_cache(maxsize=None)
 def _workflow_template_for_provider(provider: str | None) -> str:
@@ -110,16 +150,7 @@ def _workflow_template_for_provider(provider: str | None) -> str:
         raise RuntimeError(
             "Workflow refinement template files are not configured for any provider."
         )
-    try:
-        template = path.read_text(encoding="utf-8").strip()
-    except OSError as exc:  # pragma: no cover - filesystem failures are rare
-        raise RuntimeError(
-            f"Workflow refinement template missing for provider {normalized}: {path}"
-        ) from exc
-    if not template:
-        raise RuntimeError(
-            f"Workflow refinement template is empty for provider {normalized}: {path}"
-        )
+    template = _read_prompt_file(str(path))
     return template
 
 
@@ -150,17 +181,16 @@ async def refine_scene_description(title: str, description: str, duration: int) 
     if client is None:
         return description
 
-    system_prompt = (
-        "You are an expert cinematic prompt engineer for Azure OpenAI Sora2. "
-        f"Incorporate the best practices from {SORA_PROMPT_GUIDE_URL} to polish scene descriptions. "
-        f"Produce concise bullet-point guidance that covers camera direction, subject detail, motion, and audio cues suitable for a {duration}-second clip."
+    system_prompt = render_prompt_template(
+        "refine_scene_system",
+        guide_url=SORA_PROMPT_GUIDE_URL,
+        duration=duration,
     )
-    user_prompt = (
-        f"Scene title: {title}\n"
-        f"Clip length: {duration} seconds.\n"
-        "Original storyboard notes:\n"
-        f"{normalized}\n\n"
-        f"Rewrite the notes into 4-6 focused bullet points optimized for Sora2 at {duration} seconds."
+    user_prompt = render_prompt_template(
+        "refine_scene_user",
+        title=title,
+        duration=duration,
+        description=normalized,
     )
 
     max_tokens_str = os.getenv("DIRECTOR_REFINEMENT_MAX_TOKENS", "900")
@@ -249,11 +279,8 @@ async def refine_text_with_gpt5(
         user_prompt = normalized
         max_tokens = 8000
     else:
-        system_prompt = "You are GPT-5 optimizing single-scene prompts for Azure OpenAI Sora2 video generation."
-        user_prompt = (
-            "Refine the following prompt into one paragraph that clearly describes subject, motion, camera, and mood.\n\n---\n"
-            f"{normalized}\n---"
-        )
+        system_prompt = render_prompt_template("refine_single_system")
+        user_prompt = render_prompt_template("refine_single_user", prompt=normalized)
         max_tokens = 2000
 
     question = f"{system_prompt}\n\n---\n{user_prompt}\n---"
@@ -291,4 +318,5 @@ __all__ = [
     "ensure_scene_headers",
     "refine_text_with_gpt5",
     "slugify",
+    "render_prompt_template",
 ]
