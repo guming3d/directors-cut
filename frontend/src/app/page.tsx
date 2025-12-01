@@ -394,8 +394,6 @@ const zhTranslations: Record<string, string> = {
   "Scene images enabled": "已启用场景参考图",
   "Scene reference": "场景参考图",
   "Scene references": "场景参考图",
-  "Original segment": "原始片段",
-  "Reproduced clip": "复刻片段",
   "Segment": "片段",
   "Scene duration": "场景时长",
   "Scene Renders": "场景渲染",
