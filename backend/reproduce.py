@@ -3,16 +3,22 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import uuid
 from pathlib import Path
 from typing import Sequence
 
 from .config import (
+    DEFAULT_REPRODUCE_SEGMENTATION,
     DEFAULT_SORA_RESOLUTION,
+    GPT5_REFINEMENT_DEPLOYMENT,
     KLING_ALLOWED_DURATIONS,
     REPRODUCE_DEFAULT_THREADS,
+    REPRODUCE_SEGMENT_FRAME_SAMPLES,
     VIDEO_REPRODUCE_JOBS_DIR,
+    azure_text_client,
+    extract_response_text,
     logger,
 )
 from .content_insights.client import AzureContentUnderstandingClient, ContentUnderstandingError
@@ -23,10 +29,24 @@ from .kling import KlingAPIError, render_kling_clip
 from .models import ReproduceSegmentVersion, VideoInsightSegment, VideoReproduceSegment
 from .prompts import render_prompt_template
 from .stores import VIDEO_REPRODUCE_STORE
-from .utils import escape_for_concat, run_subprocess, utc_now
+from .utils import escape_for_concat, extract_frame_at_timestamp, run_subprocess, utc_now
 
 
 FINAL_VIDEO_NAME = "kling_reproduce_compilation.mp4"
+MAX_SCENE_DURATION_SECONDS = 10.0
+SEGMENT_DESCRIPTION_SYSTEM_PROMPT = (
+    "You are a meticulous video analyst. Given evenly spaced frames from a short clip, "
+    "write 2-3 sentences that describe the subjects, environment, motion, and mood across the shot. "
+    "Reference only what can be inferred from the frames."
+)
+
+try:  # Optional import; errors handled at runtime if unavailable.
+    from scenedetect import SceneManager, open_video
+    from scenedetect.detectors import ContentDetector
+except ImportError:  # pragma: no cover - fallback when dependency missing
+    SceneManager = None  # type: ignore[assignment]
+    open_video = None  # type: ignore[assignment]
+    ContentDetector = None  # type: ignore[assignment]
 
 
 class _AsyncNoopLock:
@@ -46,13 +66,15 @@ def reproduce_job_root(job_id: str, *, ensure_exists: bool = True) -> Path:
 
 async def run_reproduce_job(job_id: str) -> None:
     try:
-        ensure_content_understanding_ready()
         job_state = await VIDEO_REPRODUCE_STORE.get_job_state(job_id)
         if not job_state.video_path:
             raise RuntimeError("Uploaded video is missing from workspace.")
         source_video = Path(job_state.video_path)
         if not source_video.is_file():
             raise FileNotFoundError(f"Source video {source_video} not found.")
+        segmentation_backend = (
+            job_state.segmentation_backend or DEFAULT_REPRODUCE_SEGMENTATION
+        ).strip().lower()
 
         await VIDEO_REPRODUCE_STORE.mark_running(job_id)
         job_dir = reproduce_job_root(job_id)
@@ -65,14 +87,36 @@ async def run_reproduce_job(job_id: str) -> None:
         for folder in (frames_dir, prompts_dir, segments_dir, kling_dir, stylized_dir, tmp_dir):
             folder.mkdir(parents=True, exist_ok=True)
 
-        await VIDEO_REPRODUCE_STORE.update_progress(
-            job_id, 0.1, "Submitting video to Azure Content Understanding."
-        )
-        client = AzureContentUnderstandingClient(user_agent="sora2-workflow/reproduce")
-        insight_payload = await client.analyze_video(source_video)
-        _, insight_segments = summarize_content_understanding_result(insight_payload)
-        if not insight_segments:
-            raise RuntimeError("Content Understanding did not return any segments to reproduce.")
+        try:
+            duration_seconds, resolution = await _probe_video_metadata(source_video)
+        except Exception:
+            logger.warning("Unable to derive metadata for %s; using defaults.", source_video)
+            duration_seconds, resolution = 0.0, DEFAULT_SORA_RESOLUTION
+        await VIDEO_REPRODUCE_STORE.set_resolution(job_id, resolution)
+
+        if segmentation_backend == "content_understanding":
+            ensure_content_understanding_ready()
+            await VIDEO_REPRODUCE_STORE.update_progress(
+                job_id, 0.1, "Submitting video to Azure Content Understanding."
+            )
+            client = AzureContentUnderstandingClient(user_agent="sora2-workflow/reproduce")
+            insight_payload = await client.analyze_video(source_video)
+            _, insight_segments = summarize_content_understanding_result(insight_payload)
+            if not insight_segments:
+                raise RuntimeError("Content Understanding did not return any segments to reproduce.")
+            segment_source = "Azure Content Understanding"
+        else:
+            await VIDEO_REPRODUCE_STORE.update_progress(
+                job_id, 0.1, "Detecting video segments via PySceneDetect."
+            )
+            insight_segments = await _detect_segments_with_pyscenedetect(
+                job_id,
+                source_video,
+                duration_seconds,
+            )
+            if not insight_segments:
+                raise RuntimeError("PySceneDetect did not detect any segments to reproduce.")
+            segment_source = "OpenCV segmentation"
 
         await VIDEO_REPRODUCE_STORE.update_progress(
             job_id, 0.2, "Extracting start/end frames for each segment."
@@ -84,20 +128,35 @@ async def run_reproduce_job(job_id: str) -> None:
             frames_dir=frames_dir,
         )
 
-        try:
-            duration_seconds, resolution = await _probe_video_metadata(source_video)
-        except Exception:
-            logger.warning("Unable to derive metadata for %s; using defaults.", source_video)
-            duration_seconds, resolution = 0.0, DEFAULT_SORA_RESOLUTION
-        await VIDEO_REPRODUCE_STORE.set_resolution(job_id, resolution)
-
-        segment_states = _build_segment_states(insight_segments, duration_seconds)
-        await VIDEO_REPRODUCE_STORE.set_segments(job_id, segment_states)
+        fixed_kling_duration = 5 if segmentation_backend == "opencv" else None
+        segment_states = _build_segment_states(
+            insight_segments,
+            duration_seconds,
+            fixed_kling_duration=fixed_kling_duration,
+        )
+        await VIDEO_REPRODUCE_STORE.set_segments(
+            job_id,
+            segment_states,
+            source=segment_source,
+        )
 
         await VIDEO_REPRODUCE_STORE.update_progress(
             job_id, 0.3, "Splitting original video into segment clips."
         )
         await _segment_original_video(job_id, source_video, segment_states, segments_dir)
+
+        if segmentation_backend == "opencv" and REPRODUCE_SEGMENT_FRAME_SAMPLES > 0:
+            await VIDEO_REPRODUCE_STORE.update_progress(
+                job_id,
+                0.32,
+                "Generating GPT-5 descriptions for OpenCV segments.",
+            )
+            await _describe_segments_with_frames(
+                job_id,
+                segment_states,
+                job_dir / "frame-samples",
+                REPRODUCE_SEGMENT_FRAME_SAMPLES,
+            )
 
         await VIDEO_REPRODUCE_STORE.update_progress(
             job_id,
@@ -196,6 +255,8 @@ async def regenerate_segment(job_id: str, order: int, prompt: str) -> None:
 def _build_segment_states(
     segments: Sequence[VideoInsightSegment],
     video_duration: float,
+    *,
+    fixed_kling_duration: int | None = None,
 ) -> list[VideoReproduceSegment]:
     total = max(1, len(segments))
     fallback = max(1.0, video_duration / total if video_duration > 0 else 5.0)
@@ -220,7 +281,7 @@ def _build_segment_states(
         if end <= start:
             end = start + fallback
         duration = max(1.0, end - start)
-        kling_duration = _normalize_kling_duration(duration)
+        kling_duration = fixed_kling_duration or _normalize_kling_duration(duration)
         description = _compose_segment_description(segment, start, end)
         cleaned.append(
             VideoReproduceSegment(
@@ -250,6 +311,92 @@ def _compose_segment_description(segment: VideoInsightSegment, start: float, end
         parts.append("Key visual elements: " + ", ".join(segment.tags))
     parts.append(f"Timestamp range: {start:.2f}s to {end:.2f}s.")
     return " ".join(part for part in parts if part).strip()
+
+
+async def _detect_segments_with_pyscenedetect(
+    job_id: str,
+    video_path: Path,
+    video_duration: float,
+) -> list[VideoInsightSegment]:
+    if SceneManager is None or ContentDetector is None or open_video is None:
+        raise RuntimeError(
+            "PySceneDetect is unavailable. Install pyscenedetect to enable OpenCV segmentation."
+        )
+
+    def _run_detection() -> list[tuple[float, float]]:
+        video = open_video(str(video_path))
+        manager = SceneManager()
+        manager.add_detector(ContentDetector(threshold=20.0, min_scene_len=12))
+        try:
+            manager.detect_scenes(video)
+        finally:
+            closer = getattr(video, "close", None)
+            if callable(closer):
+                closer()
+        ranges: list[tuple[float, float]] = []
+        for start_tc, end_tc in manager.get_scene_list():
+            start_seconds = max(0.0, start_tc.get_seconds())
+            end_seconds = max(start_seconds, end_tc.get_seconds())
+            ranges.append((start_seconds, end_seconds))
+        return ranges
+
+    try:
+        raw_ranges = await asyncio.to_thread(_run_detection)
+    except Exception as exc:
+        logger.exception("PySceneDetect failed for reproduce job %s: %s", job_id, exc)
+        raise RuntimeError("PySceneDetect failed to analyze the uploaded video.") from exc
+
+    normalized = _split_ranges_to_max_duration(
+        raw_ranges,
+        video_duration,
+        MAX_SCENE_DURATION_SECONDS,
+    )
+    if not normalized:
+        fallback_duration = max(video_duration, 5.0)
+        normalized = [(0.0, fallback_duration)]
+    segments: list[VideoInsightSegment] = []
+    for index, (start_seconds, end_seconds) in enumerate(normalized, start=1):
+        segments.append(
+            VideoInsightSegment(
+                segment_id=f"opencv-{index:03d}",
+                label=f"Segment {index}",
+                start=f"{start_seconds:.3f}s",
+                end=f"{end_seconds:.3f}s",
+                summary=None,
+                tags=["opencv"],
+                start_seconds=start_seconds,
+                end_seconds=end_seconds,
+            )
+        )
+    return segments
+
+
+def _split_ranges_to_max_duration(
+    ranges: Sequence[tuple[float, float]],
+    video_duration: float,
+    max_duration: float,
+) -> list[tuple[float, float]]:
+    if not ranges and video_duration > 0:
+        return [(0.0, video_duration)]
+    cleaned: list[tuple[float, float]] = []
+    upper_bound = video_duration if video_duration > 0 else None
+    for start, end in ranges:
+        start_seconds = max(0.0, float(start))
+        end_seconds = max(start_seconds, float(end))
+        if upper_bound is not None:
+            start_seconds = min(start_seconds, upper_bound)
+            end_seconds = min(end_seconds, upper_bound)
+        if end_seconds - start_seconds <= 0.1:
+            continue
+        current = start_seconds
+        while current + 0.05 < end_seconds:
+            next_end = min(end_seconds, current + max_duration)
+            if next_end - current >= 0.1:
+                cleaned.append((current, next_end))
+            current = next_end
+    if not cleaned and upper_bound:
+        cleaned.append((0.0, upper_bound))
+    return cleaned
 
 
 def _normalize_kling_duration(duration: float) -> int:
@@ -287,11 +434,132 @@ async def _segment_original_video(
             str(output),
         ]
         await run_subprocess(cmd)
+        segment.original_video_path = str(output)
         await VIDEO_REPRODUCE_STORE.update_segment_attributes(
             job_id,
             segment.order,
             original_video_path=str(output),
         )
+
+
+async def _describe_segments_with_frames(
+    job_id: str,
+    segments: Sequence[VideoReproduceSegment],
+    frame_dir: Path,
+    sample_count: int,
+) -> None:
+    if sample_count <= 0:
+        return
+    if not GPT5_REFINEMENT_DEPLOYMENT:
+        logger.info("Skipping GPT-5 segment descriptions; deployment not configured.")
+        return
+    client = azure_text_client()
+    if client is None:
+        logger.info("Skipping GPT-5 segment descriptions; Azure OpenAI client unavailable.")
+        return
+    frame_dir.mkdir(parents=True, exist_ok=True)
+    for segment in segments:
+        if not segment.original_video_path:
+            continue
+        frame_paths = await _sample_segment_preview_frames(segment, frame_dir, sample_count)
+        if not frame_paths:
+            continue
+        summary = await _summarize_segment_frames(segment, frame_paths, client, GPT5_REFINEMENT_DEPLOYMENT)
+        if not summary:
+            continue
+        cleaned = summary.strip()
+        if not cleaned:
+            continue
+        segment.description = cleaned
+        await VIDEO_REPRODUCE_STORE.update_segment_attributes(
+            job_id,
+            segment.order,
+            description=cleaned,
+        )
+
+
+async def _sample_segment_preview_frames(
+    segment: VideoReproduceSegment,
+    frame_dir: Path,
+    sample_count: int,
+) -> list[Path]:
+    clip_path = Path(segment.original_video_path or "")
+    if not clip_path.is_file():
+        return []
+    duration = max(0.5, float(segment.duration_seconds or 0.0))
+    spacing = duration / (sample_count + 1)
+    captured: list[Path] = []
+    for index in range(sample_count):
+        timestamp = max(0.0, spacing * (index + 1))
+        frame_path = frame_dir / f"segment_{segment.order:03d}_sample_{index + 1}.jpg"
+        if frame_path.is_file() and frame_path.stat().st_size > 0:
+            captured.append(frame_path)
+            continue
+        try:
+            await extract_frame_at_timestamp(clip_path, timestamp, frame_path)
+        except Exception as exc:
+            logger.warning(
+                "Failed to capture preview frame %s for segment %s at %.2fs: %s",
+                frame_path.name,
+                segment.order,
+                timestamp,
+                exc,
+            )
+            frame_path.unlink(missing_ok=True)
+            continue
+        if frame_path.is_file() and frame_path.stat().st_size > 0:
+            captured.append(frame_path)
+    return captured
+
+
+async def _summarize_segment_frames(
+    segment: VideoReproduceSegment,
+    frame_paths: Sequence[Path],
+    client,
+    deployment: str,
+) -> str | None:
+    image_payloads = []
+    for path in frame_paths:
+        try:
+            image_payloads.append(_encode_image_as_data_url(path))
+        except Exception as exc:
+            logger.warning("Failed to encode preview frame %s for segment %s: %s", path, segment.order, exc)
+    if not image_payloads:
+        return None
+    user_text = (
+        f"You are seeing {len(image_payloads)} evenly spaced frames from Segment {segment.order} "
+        f"lasting approximately {segment.duration_seconds:.2f} seconds. "
+        "Describe the visual content, motion, and mood across the entire clip in 2-3 sentences."
+    )
+    user_content = [{"type": "input_text", "text": user_text}]
+    user_content.extend({"type": "input_image", "image_url": url} for url in image_payloads)
+
+    def _call() -> str:
+        response = client.responses.create(
+            model=deployment,
+            input=[
+                {"role": "system", "content": [{"type": "input_text", "text": SEGMENT_DESCRIPTION_SYSTEM_PROMPT}]},
+                {"role": "user", "content": user_content},
+            ],
+            max_output_tokens=800,
+        )
+        return extract_response_text(response)
+
+    try:
+        summary = await asyncio.to_thread(_call)
+    except Exception as exc:
+        logger.warning("GPT-5 failed to describe reproduce segment %s: %s", segment.order, exc)
+        return None
+    cleaned = summary.strip()
+    return cleaned or None
+
+
+def _encode_image_as_data_url(path: Path) -> str:
+    data = path.read_bytes()
+    b64 = base64.b64encode(data).decode("ascii")
+    suffix = path.suffix.lower()
+    mime = "image/png" if suffix == ".png" else "image/jpeg"
+    return f"data:{mime};base64,{b64}"
 
 
 async def _render_segments_with_kling(
@@ -434,7 +702,12 @@ async def _render_final_video(job_id: str, job_dir: Path) -> Path:
         version = segment.get_version(segment.selected_version_id)
         if not version.video_path:
             raise RuntimeError(f"Segment {segment.order} is missing a Kling video.")
-        scene_paths.append(Path(version.video_path))
+        adjusted_path = await _ensure_segment_duration(
+            job_dir,
+            segment,
+            Path(version.video_path),
+        )
+        scene_paths.append(adjusted_path)
     with concat_file.open("w", encoding="utf-8") as fh:
         for path in scene_paths:
             fh.write(escape_for_concat(path) + "\n")
@@ -453,7 +726,136 @@ async def _render_final_video(job_id: str, job_dir: Path) -> Path:
         str(final_video),
     ]
     await run_subprocess(cmd)
+
+    audio_source = Path(state.video_path) if state.video_path else None
+    if audio_source and audio_source.is_file():
+        audio_path = await _maybe_extract_original_audio(audio_source, job_dir)
+        if audio_path is not None:
+            await _merge_video_with_audio(final_video, audio_path)
+            audio_path.unlink(missing_ok=True)
+
     return final_video
+
+
+async def _ensure_segment_duration(
+    job_dir: Path,
+    segment: VideoReproduceSegment,
+    video_path: Path,
+) -> Path:
+    if not video_path.is_file():
+        return video_path
+    target_duration = max(0.1, float(segment.duration_seconds or 0.0))
+    actual_duration = await _probe_clip_duration(video_path)
+    if actual_duration <= 0.0 or abs(actual_duration - target_duration) <= 0.05:
+        return video_path
+    speed_factor = target_duration / actual_duration
+    destination_dir = job_dir / "retimed"
+    destination_dir.mkdir(parents=True, exist_ok=True)
+    destination = destination_dir / f"{video_path.stem}_retimed.mp4"
+    filter_expr = f"setpts={speed_factor:.6f}*PTS"
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(video_path),
+        "-vf",
+        filter_expr,
+        "-an",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "fast",
+        "-crf",
+        "18",
+        str(destination),
+    ]
+    try:
+        await run_subprocess(cmd)
+    except RuntimeError:
+        logger.warning(
+            "Unable to retime reproduce segment %s to %.2fs; using original clip.",
+            segment.order,
+            target_duration,
+        )
+        destination.unlink(missing_ok=True)
+        return video_path
+    return destination
+
+
+async def _probe_clip_duration(video_path: Path) -> float:
+    cmd = [
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        str(video_path),
+    ]
+    try:
+        stdout, _ = await run_subprocess(cmd)
+    except RuntimeError:
+        logger.warning("Unable to measure duration for %s", video_path)
+        return 0.0
+    try:
+        return max(0.0, float(stdout.strip()))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+async def _maybe_extract_original_audio(source_video: Path, job_dir: Path) -> Path | None:
+    audio_path = job_dir / "tmp" / f"source_audio_{uuid.uuid4().hex}.aac"
+    audio_path.parent.mkdir(parents=True, exist_ok=True)
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(source_video),
+        "-vn",
+        "-acodec",
+        "copy",
+        str(audio_path),
+    ]
+    try:
+        await run_subprocess(cmd)
+    except RuntimeError:
+        logger.warning("Unable to extract audio from %s", source_video)
+        audio_path.unlink(missing_ok=True)
+        return None
+    if not audio_path.is_file() or audio_path.stat().st_size == 0:
+        audio_path.unlink(missing_ok=True)
+        return None
+    return audio_path
+
+
+async def _merge_video_with_audio(video_path: Path, audio_path: Path) -> None:
+    merged_path = video_path.with_suffix(".with-audio.tmp.mp4")
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(video_path),
+        "-i",
+        str(audio_path),
+        "-c:v",
+        "copy",
+        "-c:a",
+        "copy",
+        "-map",
+        "0:v:0",
+        "-map",
+        "1:a:0",
+        "-shortest",
+        str(merged_path),
+    ]
+    try:
+        await run_subprocess(cmd)
+    except RuntimeError:
+        logger.warning("Unable to merge source audio into final reproduce video.")
+        merged_path.unlink(missing_ok=True)
+        return
+    merged_path.replace(video_path)
 
 
 async def _stylize_segment_frames(

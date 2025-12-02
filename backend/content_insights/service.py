@@ -100,14 +100,26 @@ async def _maybe_extract_frame(
     dest_path: Path,
     frame_label: str,
 ) -> Optional[str]:
-    try:
-        await extract_frame_at_timestamp(video_path, timestamp, dest_path)
-        return str(dest_path)
-    except Exception:
-        logger.exception(
-            "Failed to extract %s frame for insight job %s at %ss",
-            frame_label,
-            job_id,
-            timestamp,
-        )
-        return None
+    offsets = [0.0]
+    if frame_label == "end":
+        offsets.extend([-0.01, -0.05, -0.1])
+    errors: list[str] = []
+    for offset in offsets:
+        candidate_ts = max(0.0, timestamp + offset)
+        dest_path.unlink(missing_ok=True)
+        try:
+            await extract_frame_at_timestamp(video_path, candidate_ts, dest_path)
+        except Exception as exc:
+            errors.append(f"{candidate_ts:.3f}s -> {exc}")
+            continue
+        if dest_path.is_file() and dest_path.stat().st_size > 0:
+            return str(dest_path)
+        errors.append(f"{candidate_ts:.3f}s -> ffmpeg produced no frame")
+    logger.error(
+        "Failed to extract %s frame for insight job %s at %ss (attempts: %s)",
+        frame_label,
+        job_id,
+        timestamp,
+        "; ".join(errors) or "no attempts",
+    )
+    return None

@@ -58,6 +58,12 @@ except ValueError:
     _reproduce_threads = 3
 REPRODUCE_DEFAULT_THREADS = max(1, _reproduce_threads)
 
+try:
+    _segment_frame_samples = int(os.getenv("REPRODUCE_SEGMENT_FRAME_SAMPLES", "5"))
+except ValueError:
+    _segment_frame_samples = 5
+REPRODUCE_SEGMENT_FRAME_SAMPLES = max(0, _segment_frame_samples)
+
 # Video provider defaults
 SUPPORTED_VIDEO_PROVIDERS = ("sora2", "kling")
 _provider_env = (os.getenv("VIDEO_PROVIDER") or "sora2").strip().lower()
@@ -70,6 +76,13 @@ SUPPORTED_IMAGE_GENERATORS = ("gpt-image-1", "kling")
 _image_generator_env = (os.getenv("REPRODUCE_IMAGE_GENERATOR") or "gpt-image-1").strip().lower()
 DEFAULT_IMAGE_GENERATOR = (
     _image_generator_env if _image_generator_env in SUPPORTED_IMAGE_GENERATORS else "gpt-image-1"
+)
+
+# Video reproduce segmentation defaults
+SUPPORTED_REPRODUCE_SEGMENTERS = ("content_understanding", "opencv")
+_segmentation_env = (os.getenv("REPRODUCE_SEGMENTATION_BACKEND") or "content_understanding").strip().lower()
+DEFAULT_REPRODUCE_SEGMENTATION = (
+    _segmentation_env if _segmentation_env in SUPPORTED_REPRODUCE_SEGMENTERS else "content_understanding"
 )
 
 
@@ -326,6 +339,7 @@ __all__ = [
     "DATA_URL_PATTERN",
     "DEFAULT_SORA_RESOLUTION",
     "DEFAULT_IMAGE_GENERATOR",
+    "DEFAULT_REPRODUCE_SEGMENTATION",
     "DEFAULT_VIDEO_PROVIDER",
     "DIRECTOR_REFINEMENT_DEPLOYMENT",
     "FINAL_VIDEO_PATH",
@@ -346,6 +360,8 @@ __all__ = [
     "PROMPTS_DIR",
     "RESOLUTION_PATTERN",
     "ROOT",
+    "REPRODUCE_DEFAULT_THREADS",
+    "REPRODUCE_SEGMENT_FRAME_SAMPLES",
     "SCENE_IMAGE_DIR",
     "SCENE_IMAGE_PATTERN",
     "SCENE_IMAGE_RESAMPLE",
@@ -356,6 +372,7 @@ __all__ = [
     "SINGLE_VIDEO_DB_PATH",
     "SUPPORTED_VIDEO_PROVIDERS",
     "SUPPORTED_IMAGE_GENERATORS",
+    "SUPPORTED_REPRODUCE_SEGMENTERS",
     "SINGLE_VIDEO_JOBS_DIR",
     "VIDEO_INSIGHT_DB_PATH",
     "VIDEO_INSIGHT_JOBS_DIR",

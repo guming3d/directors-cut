@@ -13,6 +13,7 @@ from tinydb import Query, TinyDB
 
 from .config import (
     DEFAULT_IMAGE_GENERATOR,
+    DEFAULT_REPRODUCE_SEGMENTATION,
     DEFAULT_SORA_RESOLUTION,
     DEFAULT_VIDEO_PROVIDER,
     OUTPUT_DIR,
@@ -908,6 +909,7 @@ def _reproduce_job_to_record(job: VideoReproduceJobState) -> dict[str, Any]:
         "messages": [_serialize_progress_message(msg) for msg in job.messages],
         "segments": [_reproduce_segment_to_record(segment) for segment in job.segments],
         "image_generation_backend": job.image_generation_backend,
+        "segmentation_backend": job.segmentation_backend,
     }
 
 
@@ -936,6 +938,9 @@ def _reproduce_job_from_record(payload: dict[str, Any]) -> VideoReproduceJobStat
         segments=segments,
         image_generation_backend=(
             payload.get("image_generation_backend") or DEFAULT_IMAGE_GENERATOR
+        ),
+        segmentation_backend=(
+            payload.get("segmentation_backend") or DEFAULT_REPRODUCE_SEGMENTATION
         ),
     )
 
@@ -1432,6 +1437,7 @@ class VideoReproduceJobStore:
         notes: Optional[str],
         thread_count: int,
         image_generation_backend: str,
+        segmentation_backend: str,
     ) -> None:
         async with self._lock:
             state = VideoReproduceJobState(
@@ -1441,6 +1447,7 @@ class VideoReproduceJobStore:
                 notes=notes,
                 thread_count=thread_count,
                 image_generation_backend=image_generation_backend,
+                segmentation_backend=segmentation_backend,
             )
             state.add_message("queued", "Video reproduce workflow queued.")
             self._jobs[job_id] = state
@@ -1469,11 +1476,20 @@ class VideoReproduceJobStore:
                 job.add_message("running", message)
             self._persist(job)
 
-    async def set_segments(self, job_id: str, segments: list[VideoReproduceSegment]) -> None:
+    async def set_segments(
+        self,
+        job_id: str,
+        segments: list[VideoReproduceSegment],
+        *,
+        source: str = "insight analysis",
+    ) -> None:
         async with self._lock:
             job = self._require(job_id)
             job.segments = segments
-            job.add_message("running", f"Detected {len(segments)} segment(s) from insight analysis.")
+            job.add_message(
+                "running",
+                f"Detected {len(segments)} segment(s) from {source}.",
+            )
             self._persist(job)
 
     async def set_resolution(self, job_id: str, resolution: str) -> None:
@@ -1488,6 +1504,7 @@ class VideoReproduceJobStore:
         order: int,
         *,
         status: Optional[str] = None,
+        description: Optional[str] = None,
         original_video_path: Optional[str] = None,
         stylized_start_frame_path: Optional[str] = None,
         stylized_end_frame_path: Optional[str] = None,
@@ -1501,6 +1518,8 @@ class VideoReproduceJobStore:
                 raise KeyError(f"segment-{order}")
             if status:
                 segment.status = status
+            if description is not None:
+                segment.description = description
             if original_video_path is not None:
                 segment.original_video_path = original_video_path
             if stylized_start_frame_path is not None:
@@ -1690,6 +1709,7 @@ class VideoReproduceJobStore:
             final_video_path=job.final_video_path,
             final_video_url=build_static_asset_url(job.final_video_path),
             image_generation_backend=job.image_generation_backend,
+            segmentation_backend=job.segmentation_backend,
             messages=messages,
             segments=segments,
         )

@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from .config import (
     CONTENT_UNDERSTANDING_MAX_UPLOAD_BYTES,
     DEFAULT_IMAGE_GENERATOR,
+    DEFAULT_REPRODUCE_SEGMENTATION,
     DEFAULT_SORA_RESOLUTION,
     DEFAULT_VIDEO_PROVIDER,
     OUTPUT_DIR,
@@ -23,6 +24,7 @@ from .config import (
     SINGLE_VIDEO_JOBS_DIR,
     STATIC_URL_PREFIX,
     SUPPORTED_IMAGE_GENERATORS,
+    SUPPORTED_REPRODUCE_SEGMENTERS,
     SUPPORTED_VIDEO_PROVIDERS,
     allowed_origins,
     logger,
@@ -402,13 +404,10 @@ async def create_reproduce_job(
     notes: str | None = Form(default=None),
     thread_count: int | None = Form(default=None, alias="threadCount"),
     image_generator: str | None = Form(default=None, alias="imageGenerator"),
+    segmentation_backend: str | None = Form(default=None, alias="segmentationBackend"),
 ) -> VideoReproduceJobResponse:
     if video_file.content_type and not video_file.content_type.startswith("video/"):
         raise HTTPException(status_code=400, detail="Upload a valid video file (mp4, mov, webm).")
-    try:
-        ensure_content_understanding_ready()
-    except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
     job_id = uuid.uuid4().hex
     filename = _normalize_insight_filename(video_file.filename)
     normalized_notes = (notes or "").strip() or None
@@ -420,6 +419,16 @@ async def create_reproduce_job(
     requested_generator = (image_generator or DEFAULT_IMAGE_GENERATOR).strip().lower()
     if requested_generator not in SUPPORTED_IMAGE_GENERATORS:
         requested_generator = DEFAULT_IMAGE_GENERATOR
+    requested_segmentation = (
+        (segmentation_backend or DEFAULT_REPRODUCE_SEGMENTATION).strip().lower()
+    )
+    if requested_segmentation not in SUPPORTED_REPRODUCE_SEGMENTERS:
+        requested_segmentation = DEFAULT_REPRODUCE_SEGMENTATION
+    if requested_segmentation == "content_understanding":
+        try:
+            ensure_content_understanding_ready()
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
     await VIDEO_REPRODUCE_STORE.create_job(
         job_id,
         filename,
@@ -427,6 +436,7 @@ async def create_reproduce_job(
         normalized_notes,
         threads,
         requested_generator,
+        requested_segmentation,
     )
     job_dir = reproduce_job_root(job_id)
     destination = job_dir / filename

@@ -222,6 +222,7 @@ type VideoReproduceJob = {
   video_url: string | null;
   final_video_path: string | null;
   final_video_url: string | null;
+  segmentation_backend: ReproduceSegmentationOption;
   messages: JobMessage[];
   segments: VideoReproduceSegment[];
 };
@@ -297,8 +298,19 @@ const IMAGE_GENERATOR_OPTIONS = [
 ] as const;
 type ImageGeneratorOption = (typeof IMAGE_GENERATOR_OPTIONS)[number]["value"];
 
+const SEGMENTATION_OPTIONS = [
+  { value: "content_understanding", label: "Azure Content Understanding" },
+  { value: "opencv", label: "OpenCV (PySceneDetect)" },
+] as const;
+type ReproduceSegmentationOption = (typeof SEGMENTATION_OPTIONS)[number]["value"];
+
 const getImageGeneratorLabel = (value: string): string => {
   const option = IMAGE_GENERATOR_OPTIONS.find((item) => item.value === value);
+  return option ? option.label : value;
+};
+
+const getSegmentationLabel = (value: string): string => {
+  const option = SEGMENTATION_OPTIONS.find((item) => item.value === value);
   return option ? option.label : value;
 };
 
@@ -517,6 +529,10 @@ const zhTranslations: Record<string, string> = {
   "Upload a video to reproduce segments.": "上传视频以拆分并复刻片段。",
   "Image generator": "图像引擎",
   "Stylized frame generator": "风格化图像引擎",
+  "Segmentation backend": "分割方式",
+  "Select how video segments are detected.": "选择视频片段的检测方式。",
+  "Azure Content Understanding": "Azure 内容理解",
+  "OpenCV (PySceneDetect)": "OpenCV（PySceneDetect）",
   "Select how key frames get stylized before Kling renders.": "请选择 Kling 渲染前用于风格化关键帧的方式。",
   "Azure gpt-image-1": "Azure gpt-image-1",
   "Kling image generation": "Kling 图像生成",
@@ -856,6 +872,8 @@ export default function Home() {
   const [reproduceImageGenerator, setReproduceImageGenerator] = useState<ImageGeneratorOption>(
     IMAGE_GENERATOR_OPTIONS[0].value,
   );
+  const [reproduceSegmentation, setReproduceSegmentation] =
+    useState<ReproduceSegmentationOption>(SEGMENTATION_OPTIONS[0].value);
   const [reproduceError, setReproduceError] = useState<string | null>(null);
   const [reproduceFormError, setReproduceFormError] = useState<string | null>(null);
   const [isSubmittingReproduce, setIsSubmittingReproduce] = useState(false);
@@ -1974,6 +1992,7 @@ export default function Home() {
       }
       formData.append("threadCount", String(threads));
       formData.append("imageGenerator", reproduceImageGenerator);
+      formData.append("segmentationBackend", reproduceSegmentation);
       const response = await fetch(`${apiBase}/api/reproduce`, {
         method: "POST",
         body: formData,
@@ -3178,6 +3197,25 @@ export default function Home() {
                 ))}
               </select>
             </div>
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-slate-500 dark:text-slate-400">
+                {translate("Segmentation backend")}
+              </label>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {translate("Select how video segments are detected.")}
+              </p>
+              <select
+                value={reproduceSegmentation}
+                onChange={(event) => setReproduceSegmentation(event.target.value as ReproduceSegmentationOption)}
+                className="w-full rounded border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 shadow-inner focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-800"
+              >
+                {SEGMENTATION_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {translate(option.label)}
+                  </option>
+                ))}
+              </select>
+            </div>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <button
                 type="submit"
@@ -4349,6 +4387,12 @@ export default function Home() {
                   <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Image generator")}</dt>
                   <dd className="mt-1">
                     {translate(getImageGeneratorLabel(reproduceJob.image_generation_backend))}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Segmentation backend")}</dt>
+                  <dd className="mt-1">
+                    {translate(getSegmentationLabel(reproduceJob.segmentation_backend))}
                   </dd>
                 </div>
                 <div>
