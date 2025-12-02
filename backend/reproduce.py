@@ -94,54 +94,72 @@ async def run_reproduce_job(job_id: str) -> None:
             duration_seconds, resolution = 0.0, DEFAULT_SORA_RESOLUTION
         await VIDEO_REPRODUCE_STORE.set_resolution(job_id, resolution)
 
-        if segmentation_backend == "content_understanding":
-            ensure_content_understanding_ready()
-            await VIDEO_REPRODUCE_STORE.update_progress(
-                job_id, 0.1, "Submitting video to Azure Content Understanding."
+        existing_segments = list(job_state.segments)
+        if existing_segments:
+            segment_states = existing_segments
+            await VIDEO_REPRODUCE_STORE.add_message(
+                job_id,
+                "running",
+                f"Reusing {len(existing_segments)} cached segment(s) from previous attempt.",
             )
-            client = AzureContentUnderstandingClient(user_agent="sora2-workflow/reproduce")
-            insight_payload = await client.analyze_video(source_video)
-            _, insight_segments = summarize_content_understanding_result(insight_payload)
-            if not insight_segments:
-                raise RuntimeError("Content Understanding did not return any segments to reproduce.")
-            segment_source = "Azure Content Understanding"
         else:
+            if segmentation_backend == "content_understanding":
+                ensure_content_understanding_ready()
+                await VIDEO_REPRODUCE_STORE.update_progress(
+                    job_id, 0.1, "Submitting video to Azure Content Understanding."
+                )
+                client = AzureContentUnderstandingClient(user_agent="sora2-workflow/reproduce")
+                insight_payload = await client.analyze_video(source_video)
+                _, insight_segments = summarize_content_understanding_result(insight_payload)
+                if not insight_segments:
+                    raise RuntimeError("Content Understanding did not return any segments to reproduce.")
+                segment_source = "Azure Content Understanding"
+            else:
+                await VIDEO_REPRODUCE_STORE.update_progress(
+                    job_id, 0.1, "Detecting video segments via PySceneDetect."
+                )
+                insight_segments = await _detect_segments_with_pyscenedetect(
+                    job_id,
+                    source_video,
+                    duration_seconds,
+                )
+                if not insight_segments:
+                    raise RuntimeError("PySceneDetect did not detect any segments to reproduce.")
+                segment_source = "OpenCV segmentation"
+
             await VIDEO_REPRODUCE_STORE.update_progress(
-                job_id, 0.1, "Detecting video segments via PySceneDetect."
+                job_id, 0.2, "Extracting start/end frames for each segment."
             )
-            insight_segments = await _detect_segments_with_pyscenedetect(
+            insight_segments = await attach_segment_frames(
                 job_id,
                 source_video,
-                duration_seconds,
+                insight_segments,
+                frames_dir=frames_dir,
             )
-            if not insight_segments:
-                raise RuntimeError("PySceneDetect did not detect any segments to reproduce.")
-            segment_source = "OpenCV segmentation"
 
-        await VIDEO_REPRODUCE_STORE.update_progress(
-            job_id, 0.2, "Extracting start/end frames for each segment."
-        )
-        insight_segments = await attach_segment_frames(
+            fixed_kling_duration = 5 if segmentation_backend == "opencv" else None
+            segment_states = _build_segment_states(
+                insight_segments,
+                duration_seconds,
+                fixed_kling_duration=fixed_kling_duration,
+            )
+            await VIDEO_REPRODUCE_STORE.set_segments(
+                job_id,
+                segment_states,
+                source=segment_source,
+            )
+
+        await _ensure_cached_segment_frames(
             job_id,
             source_video,
-            insight_segments,
-            frames_dir=frames_dir,
-        )
-
-        fixed_kling_duration = 5 if segmentation_backend == "opencv" else None
-        segment_states = _build_segment_states(
-            insight_segments,
-            duration_seconds,
-            fixed_kling_duration=fixed_kling_duration,
-        )
-        await VIDEO_REPRODUCE_STORE.set_segments(
-            job_id,
             segment_states,
-            source=segment_source,
+            frames_dir,
         )
 
         await VIDEO_REPRODUCE_STORE.update_progress(
-            job_id, 0.3, "Splitting original video into segment clips."
+            job_id,
+            0.3,
+            "Splitting original video into segment clips.",
         )
         await _segment_original_video(job_id, source_video, segment_states, segments_dir)
 
@@ -156,6 +174,7 @@ async def run_reproduce_job(job_id: str) -> None:
                 segment_states,
                 job_dir / "frame-samples",
                 REPRODUCE_SEGMENT_FRAME_SAMPLES,
+                prompts_dir,
             )
 
         await VIDEO_REPRODUCE_STORE.update_progress(
@@ -313,6 +332,79 @@ def _compose_segment_description(segment: VideoInsightSegment, start: float, end
     return " ".join(part for part in parts if part).strip()
 
 
+async def _ensure_cached_segment_frames(
+    job_id: str,
+    source_video: Path,
+    segments: Sequence[VideoReproduceSegment],
+    frames_dir: Path,
+) -> None:
+    frames_dir.mkdir(parents=True, exist_ok=True)
+    for segment in segments:
+        updates: dict[str, str | None] = {}
+        start_dest = frames_dir / f"segment_{segment.order:03d}_start.jpg"
+        start_path = await _ensure_segment_frame(
+            source_video,
+            segment.start_seconds,
+            start_dest,
+            "start",
+            segment.start_frame_path,
+        )
+        if start_path and start_path != segment.start_frame_path:
+            segment.start_frame_path = start_path
+            updates["start_frame_path"] = start_path
+        end_dest = frames_dir / f"segment_{segment.order:03d}_end.jpg"
+        end_path = await _ensure_segment_frame(
+            source_video,
+            segment.end_seconds,
+            end_dest,
+            "end",
+            segment.end_frame_path,
+        )
+        if end_path and end_path != segment.end_frame_path:
+            segment.end_frame_path = end_path
+            updates["end_frame_path"] = end_path
+        if updates:
+            await VIDEO_REPRODUCE_STORE.update_segment_attributes(
+                job_id,
+                segment.order,
+                **updates,
+            )
+
+
+async def _ensure_segment_frame(
+    source_video: Path,
+    timestamp: float | None,
+    destination: Path,
+    frame_label: str,
+    current_path: str | None,
+) -> str | None:
+    if _artifact_exists(current_path):
+        return current_path
+    if destination.is_file() and destination.stat().st_size > 0:
+        return str(destination)
+    if timestamp is None:
+        return current_path
+    offsets = [0.0]
+    if frame_label == "end":
+        offsets.extend([-0.01, -0.05, -0.1])
+    for offset in offsets:
+        candidate_ts = max(0.0, timestamp + offset)
+        destination.unlink(missing_ok=True)
+        try:
+            await extract_frame_at_timestamp(source_video, candidate_ts, destination)
+        except Exception as exc:
+            logger.warning(
+                "Failed to extract %s frame for reproduce segment at %.3fs: %s",
+                frame_label,
+                candidate_ts,
+                exc,
+            )
+            continue
+        if destination.is_file() and destination.stat().st_size > 0:
+            return str(destination)
+    return current_path
+
+
 async def _detect_segments_with_pyscenedetect(
     job_id: str,
     video_path: Path,
@@ -416,10 +508,22 @@ async def _segment_original_video(
     segments: Sequence[VideoReproduceSegment],
     dest_dir: Path,
 ) -> None:
+    dest_dir.mkdir(parents=True, exist_ok=True)
     for segment in segments:
+        existing_path = Path(segment.original_video_path or "")
+        if existing_path.is_file():
+            continue
         start = max(0.0, segment.start_seconds)
         duration = max(0.5, segment.end_seconds - segment.start_seconds)
         output = dest_dir / f"segment_{segment.order:03d}.mp4"
+        if output.is_file() and output.stat().st_size > 0:
+            segment.original_video_path = str(output)
+            await VIDEO_REPRODUCE_STORE.update_segment_attributes(
+                job_id,
+                segment.order,
+                original_video_path=str(output),
+            )
+            continue
         cmd = [
             "ffmpeg",
             "-y",
@@ -447,6 +551,7 @@ async def _describe_segments_with_frames(
     segments: Sequence[VideoReproduceSegment],
     frame_dir: Path,
     sample_count: int,
+    prompts_dir: Path,
 ) -> None:
     if sample_count <= 0:
         return
@@ -458,8 +563,21 @@ async def _describe_segments_with_frames(
         logger.info("Skipping GPT-5 segment descriptions; Azure OpenAI client unavailable.")
         return
     frame_dir.mkdir(parents=True, exist_ok=True)
+    description_dir = prompts_dir / "descriptions"
+    description_dir.mkdir(parents=True, exist_ok=True)
     for segment in segments:
         if not segment.original_video_path:
+            continue
+        description_path = description_dir / f"segment_{segment.order:03d}.txt"
+        cached_description = _read_cached_text(description_path)
+        if cached_description:
+            if cached_description != segment.description:
+                segment.description = cached_description
+                await VIDEO_REPRODUCE_STORE.update_segment_attributes(
+                    job_id,
+                    segment.order,
+                    description=cached_description,
+                )
             continue
         frame_paths = await _sample_segment_preview_frames(segment, frame_dir, sample_count)
         if not frame_paths:
@@ -470,6 +588,7 @@ async def _describe_segments_with_frames(
         cleaned = summary.strip()
         if not cleaned:
             continue
+        description_path.write_text(cleaned, encoding="utf-8")
         segment.description = cleaned
         await VIDEO_REPRODUCE_STORE.update_segment_attributes(
             job_id,
@@ -572,7 +691,16 @@ async def _render_segments_with_kling(
 ) -> None:
     semaphore = asyncio.Semaphore(max(1, thread_count))
     tasks: list[asyncio.Task[tuple[int, bool, str | None]]] = []
+    reused = 0
     for segment in segments:
+        if await _reuse_completed_segment(job_id, segment):
+            reused += 1
+            await VIDEO_REPRODUCE_STORE.add_message(
+                job_id,
+                "running",
+                f"Segment {segment.order} already rendered; using cached clip.",
+            )
+            continue
         prompt_text = _default_segment_prompt(segment)
         version_id = uuid.uuid4().hex
         prompt_path = prompts_dir / f"segment_{segment.order:03d}_{version_id}.txt"
@@ -613,6 +741,12 @@ async def _render_segments_with_kling(
         await VIDEO_REPRODUCE_STORE.update_progress(job_id, progress, message)
         if not success and error:
             failures.append(f"Segment {order}: {error}")
+    if not tasks and reused:
+        await VIDEO_REPRODUCE_STORE.update_progress(
+            job_id,
+            0.85,
+            f"Reused {reused} cached Kling segment(s); no new renders required.",
+        )
     if failures:
         raise RuntimeError("; ".join(failures))
 
@@ -689,6 +823,56 @@ async def _run_kling_version(
         )
         await VIDEO_REPRODUCE_STORE.update_segment_attributes(job_id, segment.order, status="completed")
         return segment.order, True, None
+
+
+async def _reuse_completed_segment(job_id: str, segment: VideoReproduceSegment) -> bool:
+    version = _pick_cached_version(segment)
+    if version is None:
+        return False
+    segment.select_version(version)
+    segment.status = "completed"
+    version.status = "completed"
+    version.error = None
+    await VIDEO_REPRODUCE_STORE.select_segment_version(job_id, segment.order, version.version_id)
+    await VIDEO_REPRODUCE_STORE.update_segment_attributes(
+        job_id,
+        segment.order,
+        status="completed",
+    )
+    await VIDEO_REPRODUCE_STORE.update_segment_version(
+        job_id,
+        segment.order,
+        version.version_id,
+        status="completed",
+        error=None,
+    )
+    return True
+
+
+def _pick_cached_version(segment: VideoReproduceSegment) -> ReproduceSegmentVersion | None:
+    completed_versions = [
+        version
+        for version in segment.versions
+        if _artifact_exists(version.video_path) and version.status in ("completed", "running")
+    ]
+    if not completed_versions:
+        return None
+    if segment.selected_version_id:
+        try:
+            selected = segment.get_version(segment.selected_version_id)
+        except KeyError:
+            selected = None
+        else:
+            if selected.status == "completed" and _artifact_exists(selected.video_path):
+                return selected
+    return completed_versions[-1]
+
+
+def _artifact_exists(path: str | None) -> bool:
+    if not path:
+        return False
+    candidate = Path(path)
+    return candidate.is_file() and candidate.stat().st_size > 0
 
 
 async def _render_final_video(job_id: str, job_dir: Path) -> Path:
@@ -856,6 +1040,17 @@ async def _merge_video_with_audio(video_path: Path, audio_path: Path) -> None:
         merged_path.unlink(missing_ok=True)
         return
     merged_path.replace(video_path)
+
+
+def _read_cached_text(path: Path) -> str | None:
+    try:
+        contents = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None
+    except OSError:
+        return None
+    cleaned = contents.strip()
+    return cleaned or None
 
 
 async def _stylize_segment_frames(

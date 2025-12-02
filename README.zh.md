@@ -53,6 +53,12 @@
 - `POST /api/workflows/{job_id}/scenes/{scene_order}/select` — 选择某个场景版本用于最终剪辑
 - `POST /api/workflows/{job_id}/recompose` — 按当前选择的版本重新生成最终视频
 - `GET /api/providers/active` — 返回默认配置的后端（`sora2` 或 `kling`）
+- `POST /api/reproduce` — 上传参考视频并启动 Kling reproduce 工作流
+- `GET /api/reproduce` — 列出 reproduce 任务及其分段、提示与输出
+- `GET /api/reproduce/{job_id}` — 查看指定 reproduce 任务的分段、风格化帧与 Kling 版本
+- `POST /api/reproduce/{job_id}/segments/{segment_order}/regenerate` — 为某个分段提供自定义提示并重新渲染
+- `POST /api/reproduce/{job_id}/rerun` — 在失败后复用本地缓存（GPT-5、gpt-image-1、Kling）的产物继续执行
+- `DELETE /api/reproduce/{job_id}` — 删除 reproduce 任务及其工作区文件
 - `GET /static/...` — 提供生成资产（最终视频、片段、日志）的静态访问
 
 ## 前端安装与使用

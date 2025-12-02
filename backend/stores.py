@@ -1460,6 +1460,27 @@ class VideoReproduceJobStore:
             job.add_message("queued", "Video uploaded to workspace.")
             self._persist(job)
 
+    async def queue_rerun(self, job_id: str) -> None:
+        async with self._lock:
+            job = self._require(job_id)
+            if job.status == "running":
+                raise ValueError("Cannot rerun a reproduce job while it is running.")
+            job.status = "queued"
+            job.progress = min(job.progress, 0.4)
+            job.error = None
+            job.completed_at = None
+            job.final_video_path = None
+            job.add_message("queued", "Rerun requested; cached artifacts will be reused when possible.")
+            for segment in job.segments:
+                if segment.status not in ("completed",):
+                    segment.status = "queued"
+                for version in segment.versions:
+                    if version.status == "running":
+                        version.status = "failed"
+                        if not version.error:
+                            version.error = "Render interrupted before completion."
+            self._persist(job)
+
     async def mark_running(self, job_id: str) -> None:
         async with self._lock:
             job = self._require(job_id)

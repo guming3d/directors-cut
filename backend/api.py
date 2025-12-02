@@ -481,6 +481,18 @@ async def delete_reproduce_job(job_id: str) -> dict[str, str]:
     return {"status": "deleted"}
 
 
+@fastapi_app.post("/api/reproduce/{job_id}/rerun", response_model=VideoReproduceJobResponse)
+async def rerun_reproduce_job(job_id: str) -> VideoReproduceJobResponse:
+    try:
+        await VIDEO_REPRODUCE_STORE.queue_rerun(job_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Unknown job: {job_id}") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    asyncio.create_task(run_reproduce_job(job_id))
+    return await VIDEO_REPRODUCE_STORE.snapshot(job_id)
+
+
 @fastapi_app.post(
     "/api/reproduce/{job_id}/segments/{segment_order}/regenerate",
     response_model=VideoReproduceJobResponse,

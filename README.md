@@ -46,6 +46,12 @@ uvicorn video_agent_workflow:fastapi_app --host 0.0.0.0 --port 8000
 - `GET /api/video-insights` — list recent insight jobs with progress snapshots
 - `GET /api/video-insights/{job_id}` — poll the key-frame/segment results and download links for a specific job
 - `DELETE /api/video-insights/{job_id}` — remove a completed/failed insight job and its workspace artifacts
+- `POST /api/reproduce` — upload a reference video and start the Kling reproduce workflow
+- `GET /api/reproduce` — list reproduce jobs with cached segments, prompts, and output links
+- `GET /api/reproduce/{job_id}` — inspect a specific reproduce job (segments, stylized frames, Kling versions, and merged output)
+- `POST /api/reproduce/{job_id}/segments/{segment_order}/regenerate` — supply a custom prompt to rerender a single segment
+- `POST /api/reproduce/{job_id}/rerun` — resume a failed reproduce job without re-calling GPT-5, gpt-image-1, or Kling for cached artifacts
+- `DELETE /api/reproduce/{job_id}` — remove a reproduce job and its workspace assets
 - `GET /static/...` — static hosting of generated assets (final video, scene clips, logs)
 
 ## Frontend setup and usage
