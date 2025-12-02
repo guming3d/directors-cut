@@ -47,6 +47,21 @@ try:
 except AttributeError:  # pragma: no cover - Pillow < 10 fallback
     SCENE_IMAGE_RESAMPLE = Image.LANCZOS
 
+UVICORN_LOGGER_NAMES = (
+    "uvicorn",
+    "uvicorn.error",
+    "uvicorn.access",
+    "uvicorn.asgi",
+)
+
+
+def _quiet_uvicorn_logs() -> None:
+    """Force uvicorn loggers to WARNING to suppress noisy INFO output."""
+
+    for name in UVICORN_LOGGER_NAMES:
+        uvicorn_logger = logging.getLogger(name)
+        uvicorn_logger.setLevel(logging.WARNING)
+
 try:
     SORA_BLOCK_RETRIES = max(1, int(os.getenv("SORA_BLOCK_RETRIES", "3")))
 except ValueError:  # pragma: no cover - defensive fallback
@@ -201,6 +216,7 @@ def _configure_logging() -> logging.Logger:
     logger.addHandler(stream_handler)
 
     logger.propagate = False
+    _quiet_uvicorn_logs()
     logger.debug("Logging configured at %s", level_name)
     return logger
 
