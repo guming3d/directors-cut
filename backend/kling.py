@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import random
 import time
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Lock
@@ -21,6 +24,10 @@ from .config import (
     KLING_ACCESS_KEY,
     KLING_API_BASE_URL,
     KLING_API_KEY,
+    KLING_CREATE_MAX_RETRIES,
+    KLING_CREATE_RETRY_BASE_DELAY_SECONDS,
+    KLING_CREATE_RETRY_JITTER_SECONDS,
+    KLING_CREATE_RETRY_MAX_DELAY_SECONDS,
     KLING_DEFAULT_MODE,
     KLING_DEFAULT_MODEL_NAME,
     KLING_DOWNLOAD_CHUNK_SIZE,
@@ -164,6 +171,81 @@ def _summarize_payload(request_payload: dict[str, Any]) -> dict[str, Any]:
     return sanitized
 
 
+def _parse_retry_after_seconds(value: str | None) -> float | None:
+    if not value:
+        return None
+    try:
+        return max(0.0, float(value))
+    except (TypeError, ValueError):
+        try:
+            parsed = parsedate_to_datetime(value)
+        except (TypeError, ValueError, IndexError):
+            return None
+        if parsed is None:
+            return None
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        delta = (parsed - datetime.now(timezone.utc)).total_seconds()
+        return max(0.0, delta)
+
+
+def _calculate_retry_delay_seconds(attempt: int, retry_after_header: str | None) -> float:
+    attempt_index = max(1, attempt)
+    exponential = KLING_CREATE_RETRY_BASE_DELAY_SECONDS * (2 ** (attempt_index - 1))
+    delay = min(exponential, KLING_CREATE_RETRY_MAX_DELAY_SECONDS)
+    retry_after_seconds = _parse_retry_after_seconds(retry_after_header)
+    if retry_after_seconds is not None:
+        delay = max(delay, min(retry_after_seconds, KLING_CREATE_RETRY_MAX_DELAY_SECONDS))
+    if KLING_CREATE_RETRY_JITTER_SECONDS > 0:
+        delay = min(
+            KLING_CREATE_RETRY_MAX_DELAY_SECONDS,
+            delay + random.uniform(0.0, KLING_CREATE_RETRY_JITTER_SECONDS),
+        )
+    return delay
+
+
+async def _create_kling_task_with_retry(
+    client: httpx.AsyncClient,
+    *,
+    endpoint: str,
+    request_payload: dict[str, Any],
+) -> httpx.Response:
+    create_path = f"/v1/videos/{endpoint}"
+    for attempt in range(1, KLING_CREATE_MAX_RETRIES + 1):
+        try:
+            response = await client.post(create_path, json=request_payload)
+            response.raise_for_status()
+            return response
+        except httpx.HTTPStatusError as exc:
+            status_code = getattr(exc.response, "status_code", "unknown")
+            body = exc.response.text if exc.response is not None else ""
+            if status_code == 429 and attempt < KLING_CREATE_MAX_RETRIES:
+                retry_after = exc.response.headers.get("Retry-After") if exc.response else None
+                delay = _calculate_retry_delay_seconds(attempt, retry_after)
+                logger.warning(
+                    "Kling create request rate limited (attempt %s/%s, retrying in %.1fs) endpoint=%s body=%s",
+                    attempt,
+                    KLING_CREATE_MAX_RETRIES,
+                    delay,
+                    endpoint,
+                    body,
+                )
+                await asyncio.sleep(delay)
+                continue
+            logger.error(
+                "Kling create request failed status=%s endpoint=%s body=%s",
+                status_code,
+                endpoint,
+                body,
+            )
+            raise
+        except httpx.RequestError as exc:
+            logger.error("Kling create request encountered network error: %s", exc)
+            raise
+
+    raise KlingAPIError("Kling create request exhausted retries without success.")
+
+
 async def render_kling_clip(
     *,
     prompt_text: str,
@@ -225,24 +307,11 @@ async def render_kling_clip(
         headers=headers,
         timeout=timeout,
     ) as client:
-        create_path = f"/v1/videos/{endpoint}"
-        try:
-            response = await client.post(create_path, json=request_payload)
-            response.raise_for_status()
-        except httpx.HTTPStatusError as exc:
-            body = ""
-            if exc.response is not None:
-                body = exc.response.text
-            logger.error(
-                "Kling create request failed status=%s endpoint=%s body=%s",
-                getattr(exc.response, "status_code", "unknown"),
-                endpoint,
-                body,
-            )
-            raise
-        except httpx.RequestError as exc:
-            logger.error("Kling create request encountered network error: %s", exc)
-            raise
+        response = await _create_kling_task_with_retry(
+            client,
+            endpoint=endpoint,
+            request_payload=request_payload,
+        )
 
         payload = response.json()
         if payload.get("code") != 0:
