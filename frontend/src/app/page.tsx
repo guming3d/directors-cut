@@ -2,6 +2,7 @@
 
 import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState, useRef } from "react";
 import Modal from "@/components/Modal";
+import WorkflowProgress from "@/components/WorkflowProgress";
 import {
   ArrowDownTrayIcon,
   ArrowPathIcon,
@@ -1364,11 +1365,6 @@ export default function Home() {
     };
   }, [activeReproduceJobId, isAuthenticated, apiBase]);
 
-  const combinedProgressPercent = useMemo(() => {
-    if (!job) return 0;
-    const value = Number.isFinite(job.progress) ? job.progress : 0;
-    return Math.max(0, Math.min(100, Math.round(value * 100)));
-  }, [job]);
 
   const singleProgressPercent = useMemo(() => {
     if (!singleJob) return 0;
@@ -3506,23 +3502,8 @@ export default function Home() {
                 </div>
               </div>
 
-              <div className="mt-6 space-y-3">
-                <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-                  <span>{translate("Progress")}</span>
-                  <span>{combinedProgressPercent}%</span>
-                </div>
-                <div className="h-2.5 overflow-hidden rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800">
-                  <div
-                    className="h-full rounded-full bg-slate-500 dark:bg-slate-200 transition-[width] duration-500 ease-out"
-                    style={{ width: `${combinedProgressPercent}%` }}
-                  />
-                </div>
-                {job.error && (
-                  <div className="flex items-center gap-2 rounded-md border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 text-xs text-rose-400">
-                    <ExclamationTriangleIcon className="h-4 w-4" />
-                    {job.error}
-                  </div>
-                )}
+              <div className="mt-6">
+                <WorkflowProgress job={job} language={language} />
               </div>
 
               <dl className="mt-6 grid gap-4 text-sm text-slate-500 dark:text-slate-400 sm:grid-cols-3">
@@ -3799,11 +3780,15 @@ export default function Home() {
               ) : null}
 
               {job.messages?.length ? (
-                <div className="mt-8">
-                  <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
+                <details className="group mt-8">
+                  <summary className="flex cursor-pointer items-center gap-2 text-lg font-semibold text-slate-900 dark:text-slate-100 list-none">
                     <ClockIcon className="h-5 w-5 text-slate-500 dark:text-slate-400" />
                     {translate("Workflow Timeline")}
-                  </h2>
+                    <div className="ml-auto text-xs font-normal text-slate-500">
+                      <span className="group-open:hidden">Show</span>
+                      <span className="hidden group-open:inline">Hide</span>
+                    </div>
+                  </summary>
                   <ol className="mt-4 space-y-2 max-h-60 overflow-y-auto pr-2">
                     {job.messages.map((message, index) => {
                       const Icon = stageIcons[message.stage] ?? ArrowPathIcon;
@@ -3825,7 +3810,7 @@ export default function Home() {
                       );
                     })}
                   </ol>
-                </div>
+                </details>
               ) : null}
             </div>
           )}
@@ -4027,11 +4012,15 @@ export default function Home() {
               ) : null}
 
               {singleJob.messages?.length ? (
-                <div className="mt-8">
-                  <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
+                <details className="group mt-8">
+                  <summary className="flex cursor-pointer items-center gap-2 text-lg font-semibold text-slate-900 dark:text-slate-100 list-none">
                     <ClockIcon className="h-5 w-5 text-slate-500 dark:text-slate-400" />
                     {translate("Job Timeline")}
-                  </h2>
+                    <div className="ml-auto text-xs font-normal text-slate-500">
+                      <span className="group-open:hidden">Show</span>
+                      <span className="hidden group-open:inline">Hide</span>
+                    </div>
+                  </summary>
                   <ol className="mt-4 space-y-2 max-h-60 overflow-y-auto pr-2">
                     {singleJob.messages.map((message, index) => {
                       const Icon = stageIcons[message.stage] ?? ArrowPathIcon;
@@ -4053,7 +4042,7 @@ export default function Home() {
                       );
                     })}
                   </ol>
-                </div>
+                </details>
               ) : null}
             </div>
           )}
@@ -4303,11 +4292,15 @@ export default function Home() {
               </div>
 
               {insightJob.messages?.length ? (
-                <div className="mt-8">
-                  <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
+                <details className="group mt-8">
+                  <summary className="flex cursor-pointer items-center gap-2 text-lg font-semibold text-slate-900 dark:text-slate-100 list-none">
                     <ClockIcon className="h-5 w-5 text-slate-500 dark:text-slate-400" />
                     {translate("Job Timeline")}
-                  </h2>
+                    <div className="ml-auto text-xs font-normal text-slate-500">
+                      <span className="group-open:hidden">Show</span>
+                      <span className="hidden group-open:inline">Hide</span>
+                    </div>
+                  </summary>
                   <ol className="mt-4 space-y-2 max-h-60 overflow-y-auto pr-2">
                     {insightJob.messages.map((message, index) => {
                       const Icon = stageIcons[message.stage] ?? ArrowPathIcon;
@@ -4329,7 +4322,7 @@ export default function Home() {
                       );
                     })}
                   </ol>
-                </div>
+                </details>
               ) : null}
             </div>
           )}
@@ -4552,8 +4545,14 @@ export default function Home() {
               </div>
 
               {reproduceJob.messages?.length ? (
-                <div className="space-y-2">
-                  <h4 className="text-sm font-semibold text-slate-600 dark:text-slate-300">{translate("Workflow Timeline")}</h4>
+                <details className="group space-y-2">
+                  <summary className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-slate-600 dark:text-slate-300 list-none">
+                    {translate("Workflow Timeline")}
+                    <div className="ml-auto text-xs font-normal text-slate-500">
+                      <span className="group-open:hidden">Show</span>
+                      <span className="hidden group-open:inline">Hide</span>
+                    </div>
+                  </summary>
                   <ol className="space-y-2 max-h-60 overflow-y-auto pr-2">
                     {reproduceJob.messages.map((message, index) => {
                       const Icon = stageIcons[message.stage] ?? ArrowPathIcon;
@@ -4575,7 +4574,7 @@ export default function Home() {
                       );
                     })}
                   </ol>
-                </div>
+                </details>
               ) : null}
             </div>
           )}

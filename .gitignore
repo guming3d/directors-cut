@@ -5,4 +5,7 @@ __pycache__/
 Chapters/
 images_references/
 content-understanding/
+node-modules/
+package.json
+
 
