@@ -33,7 +33,8 @@ from .utils import escape_for_concat, extract_frame_at_timestamp, run_subprocess
 
 
 FINAL_VIDEO_NAME = "kling_reproduce_compilation.mp4"
-MAX_SCENE_DURATION_SECONDS = 10.0
+MAX_KLING_SEGMENT_SECONDS = 5.0
+MAX_SCENE_DURATION_SECONDS = MAX_KLING_SEGMENT_SECONDS
 SEGMENT_DESCRIPTION_SYSTEM_PROMPT = (
     "You are a meticulous video analyst. Given evenly spaced frames from a short clip, "
     "write 2-3 sentences that describe the subjects, environment, motion, and mood across the shot. "
@@ -281,6 +282,7 @@ def _build_segment_states(
     fallback = max(1.0, video_duration / total if video_duration > 0 else 5.0)
     cleaned: list[VideoReproduceSegment] = []
     ordered_segments = list(segments)
+    order_counter = 1
     for index, segment in enumerate(ordered_segments):
         start = segment.start_seconds if segment.start_seconds is not None else None
         end = segment.end_seconds if segment.end_seconds is not None else None
@@ -299,25 +301,59 @@ def _build_segment_states(
             end = min(end, video_duration)
         if end <= start:
             end = start + fallback
-        duration = max(1.0, end - start)
-        kling_duration = fixed_kling_duration or _normalize_kling_duration(duration)
-        description = _compose_segment_description(segment, start, end)
-        cleaned.append(
-            VideoReproduceSegment(
-                order=index + 1,
-                label=segment.label or f"Segment {index + 1}",
-                description=description,
-                start_seconds=start,
-                end_seconds=end,
-                duration_seconds=duration,
-                kling_duration_seconds=kling_duration,
-                segment_id=segment.segment_id,
-                tags=list(segment.tags),
-                start_frame_path=segment.start_frame_path,
-                end_frame_path=segment.end_frame_path,
+        chunk_ranges = _chunk_segment_range(start, end, MAX_KLING_SEGMENT_SECONDS)
+        chunk_count = len(chunk_ranges)
+        base_label = segment.label or f"Segment {index + 1}"
+        base_segment_id = segment.segment_id or f"segment-{index + 1:03d}"
+        for part_index, (chunk_start, chunk_end) in enumerate(chunk_ranges, start=1):
+            duration = max(0.1, chunk_end - chunk_start)
+            kling_duration = fixed_kling_duration or _normalize_kling_duration(duration)
+            description = _compose_segment_description(segment, chunk_start, chunk_end)
+            label = base_label if chunk_count == 1 else f"{base_label} (Part {part_index})"
+            if chunk_count == 1:
+                chunk_segment_id = segment.segment_id
+            else:
+                chunk_segment_id = f"{base_segment_id}-part{part_index}"
+            start_frame_path = segment.start_frame_path if part_index == 1 else None
+            end_frame_path = segment.end_frame_path if part_index == chunk_count else None
+            cleaned.append(
+                VideoReproduceSegment(
+                    order=order_counter,
+                    label=label,
+                    description=description,
+                    start_seconds=chunk_start,
+                    end_seconds=chunk_end,
+                    duration_seconds=duration,
+                    kling_duration_seconds=kling_duration,
+                    segment_id=chunk_segment_id,
+                    tags=list(segment.tags),
+                    start_frame_path=start_frame_path,
+                    end_frame_path=end_frame_path,
+                )
             )
-        )
+            order_counter += 1
     return cleaned
+
+
+def _chunk_segment_range(start: float, end: float, max_duration: float) -> list[tuple[float, float]]:
+    safe_start = max(0.0, float(start))
+    safe_end = max(safe_start, float(end))
+    if max_duration <= 0:
+        return [(safe_start, safe_end)]
+    epsilon = 1e-6
+    if safe_end - safe_start <= max_duration + epsilon:
+        return [(safe_start, safe_end)]
+    chunks: list[tuple[float, float]] = []
+    current = safe_start
+    while current < safe_end - epsilon:
+        next_end = min(safe_end, current + max_duration)
+        if next_end - current <= epsilon:
+            break
+        chunks.append((current, next_end))
+        current = next_end
+    if not chunks:
+        return [(safe_start, safe_end)]
+    return chunks
 
 
 def _compose_segment_description(segment: VideoInsightSegment, start: float, end: float) -> str:
@@ -930,8 +966,35 @@ async def _ensure_segment_duration(
         return video_path
     target_duration = max(0.1, float(segment.duration_seconds or 0.0))
     actual_duration = await _probe_clip_duration(video_path)
-    if actual_duration <= 0.0 or abs(actual_duration - target_duration) <= 0.05:
+    tolerance = 0.05
+    if actual_duration <= 0.0 or abs(actual_duration - target_duration) <= tolerance:
         return video_path
+    if actual_duration > target_duration + tolerance:
+        destination_dir = job_dir / "trimmed"
+        destination_dir.mkdir(parents=True, exist_ok=True)
+        destination = destination_dir / f"{video_path.stem}_trimmed.mp4"
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(video_path),
+            "-t",
+            f"{target_duration:.3f}",
+            "-c",
+            "copy",
+            str(destination),
+        ]
+        try:
+            await run_subprocess(cmd)
+        except RuntimeError:
+            logger.warning(
+                "Unable to trim reproduce segment %s to %.2fs; using original clip.",
+                segment.order,
+                target_duration,
+            )
+            destination.unlink(missing_ok=True)
+            return video_path
+        return destination
     speed_factor = target_duration / actual_duration
     destination_dir = job_dir / "retimed"
     destination_dir.mkdir(parents=True, exist_ok=True)
