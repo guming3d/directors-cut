@@ -238,6 +238,7 @@ type RefinementReview = {
   mode: "workflow" | "single";
   originalText: string;
   refinedText: string;
+  videoProvider?: string;
 };
 
 const STATUS_TOKENS: Record<string, { label: string; className: string }> = {
@@ -506,6 +507,15 @@ const zhTranslations: Record<string, string> = {
   "View system prompt": "查看系统提示词",
   "View input prompt": "查看输入提示词",
   "Workflow prompt": "工作流提示词",
+  "GPT-5 prompt template": "GPT-5 提示词模板",
+  "Edit or replace the GPT-5 prompt file before refining scenes.": "在优化场景前，可在此编辑或替换 GPT-5 提示词模板。",
+  "Reload prompt file": "重新载入模板",
+  "Reset changes": "重置更改",
+  "Save template & re-run": "保存模板并重新优化",
+  "Loading prompt template...": "正在加载提示词模板…",
+  "Unable to load prompt template. Confirm the backend exposes /api/prompts/workflow.": "无法加载提示词模板，请确认后端已开放 /api/prompts/workflow。",
+  "Unable to update prompt template. Confirm the backend accepts template edits.": "无法更新提示词模板，请确认后端允许模板编辑。",
+  "Template updated but GPT-5 rerun failed. Try refining again.": "模板已保存，但 GPT-5 重新优化失败，请重试。",
   "Review refined prompt": "审阅优化后的提示词",
   "GPT-5 refined your storyboard. Edit it below or proceed.": "GPT-5 已优化分镜，你可在继续前进一步编辑。",
   "GPT-5 refined your prompt. Edit it below or proceed.": "GPT-5 已优化提示词，你可在继续前进一步编辑。",
@@ -547,6 +557,9 @@ const zhTranslations: Record<string, string> = {
   "Open analyzed video": "打开已分析视频",
   "Download JSON result": "下载 JSON 结果",
   "JSON result unavailable.": "JSON 结果不可用。",
+  "Download scene assets": "下载场景素材",
+  "Preparing ZIP...": "正在打包 ZIP…",
+  "Unable to download workflow assets. Confirm the backend can bundle files.": "无法下载工作流素材，请确认后端支持打包文件。",
   "Key frames": "关键帧",
   "Video segments": "视频段落",
   "Start frame": "起始帧",
@@ -847,9 +860,54 @@ export default function Home() {
   const [promptPreview, setPromptPreview] = useState<PromptPreview | null>(null);
   const [refinementReview, setRefinementReview] = useState<RefinementReview | null>(null);
   const [refinementDraft, setRefinementDraft] = useState("");
+  const [workflowTemplateDraft, setWorkflowTemplateDraft] = useState("");
+  const [workflowTemplateOriginal, setWorkflowTemplateOriginal] = useState("");
+  const [workflowTemplateProvider, setWorkflowTemplateProvider] = useState<string | null>(null);
+  const [workflowTemplateLoading, setWorkflowTemplateLoading] = useState(false);
+  const [workflowTemplateSaving, setWorkflowTemplateSaving] = useState(false);
+  const [workflowTemplateError, setWorkflowTemplateError] = useState<string | null>(null);
+  const [assetDownloadError, setAssetDownloadError] = useState<string | null>(null);
+  const [isDownloadingAssets, setIsDownloadingAssets] = useState(false);
   const [copyNotice, setCopyNotice] = useState<string | null>(null);
   const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reproduceJobIdRef = useRef<string | null>(null);
+
+  const resetWorkflowTemplateState = useCallback(() => {
+    setWorkflowTemplateDraft("");
+    setWorkflowTemplateOriginal("");
+    setWorkflowTemplateProvider(null);
+    setWorkflowTemplateError(null);
+    setWorkflowTemplateLoading(false);
+    setWorkflowTemplateSaving(false);
+  }, []);
+
+  const loadWorkflowTemplate = useCallback(
+    async (provider: string) => {
+      setWorkflowTemplateLoading(true);
+      setWorkflowTemplateError(null);
+      try {
+        const response = await fetch(
+          `${apiBase}/api/prompts/workflow?videoProvider=${encodeURIComponent(provider)}`,
+        );
+        if (!response.ok) {
+          throw new Error(await response.text());
+        }
+        const data = await response.json();
+        const templateText = (data.template ?? "").toString();
+        setWorkflowTemplateOriginal(templateText);
+        setWorkflowTemplateDraft(templateText);
+        setWorkflowTemplateProvider(provider);
+      } catch (err) {
+        console.error(err);
+        setWorkflowTemplateError(
+          "Unable to load prompt template. Confirm the backend exposes /api/prompts/workflow.",
+        );
+      } finally {
+        setWorkflowTemplateLoading(false);
+      }
+    },
+    [apiBase],
+  );
 
   // Video insight state
   const [insightJobs, setInsightJobs] = useState<VideoInsightJob[]>([]);
@@ -1501,6 +1559,41 @@ export default function Home() {
     }
   }, [singleProviderSelection, singleDuration]);
 
+  useEffect(() => {
+    setAssetDownloadError(null);
+    setIsDownloadingAssets(false);
+  }, [job?.job_id]);
+
+  const activeReviewMode = refinementReview?.mode;
+  const activeReviewProvider = refinementReview?.videoProvider;
+
+  useEffect(() => {
+    if (activeReviewMode !== "workflow") {
+      resetWorkflowTemplateState();
+      return;
+    }
+    const provider = activeReviewProvider ?? workflowProviderSelection;
+    if (!provider) {
+      return;
+    }
+    if (
+      workflowTemplateProvider === provider &&
+      (workflowTemplateOriginal || workflowTemplateLoading)
+    ) {
+      return;
+    }
+    loadWorkflowTemplate(provider);
+  }, [
+    activeReviewMode,
+    activeReviewProvider,
+    workflowProviderSelection,
+    workflowTemplateProvider,
+    workflowTemplateOriginal,
+    workflowTemplateLoading,
+    loadWorkflowTemplate,
+    resetWorkflowTemplateState,
+  ]);
+
 
 
   useEffect(() => {
@@ -1596,13 +1689,14 @@ export default function Home() {
     }
   };
 
-  const requestWorkflowRefinement = async (content: string) => {
+  const requestWorkflowRefinement = async (content: string, providerOverride?: string) => {
+    const provider = providerOverride ?? workflowProviderSelection;
     const response = await fetch(`${apiBase}/api/refine/workflow`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         script: content,
-        videoProvider: workflowProviderSelection,
+        videoProvider: provider,
       }),
     });
     if (!response.ok) {
@@ -1623,6 +1717,72 @@ export default function Home() {
     }
     const data = await response.json();
     return (data.refinedPrompt ?? data.refined_prompt ?? content).trim() || content;
+  };
+
+  const handleWorkflowTemplateReload = () => {
+    const provider =
+      workflowTemplateProvider ?? refinementReview?.videoProvider ?? workflowProviderSelection;
+    if (!provider) {
+      return;
+    }
+    loadWorkflowTemplate(provider);
+  };
+
+  const handleWorkflowTemplateSave = async () => {
+    if (!refinementReview || refinementReview.mode !== "workflow") {
+      return;
+    }
+    const provider =
+      workflowTemplateProvider ?? refinementReview.videoProvider ?? workflowProviderSelection;
+    if (!provider) {
+      return;
+    }
+    if (!workflowTemplateDraft.trim()) {
+      setWorkflowTemplateError(
+        "Unable to update prompt template. Confirm the backend accepts template edits.",
+      );
+      return;
+    }
+    setWorkflowTemplateSaving(true);
+    setWorkflowTemplateError(null);
+    const previousRefinedText = refinementReview.refinedText;
+    let templateUpdated = false;
+    try {
+      const response = await fetch(`${apiBase}/api/prompts/workflow`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ template: workflowTemplateDraft, videoProvider: provider }),
+      });
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      const data = await response.json();
+      const templateText = (data.template ?? "").toString();
+      setWorkflowTemplateOriginal(templateText);
+      setWorkflowTemplateDraft(templateText);
+      templateUpdated = true;
+
+      const refined = await requestWorkflowRefinement(refinementReview.originalText, provider);
+      setRefinementReview((prev) =>
+        prev && prev.mode === "workflow" ? { ...prev, refinedText: refined } : prev,
+      );
+      setRefinementDraft((currentDraft) => {
+        if (!currentDraft || currentDraft === previousRefinedText) {
+          return refined;
+        }
+        return currentDraft;
+      });
+    } catch (err) {
+      console.error(err);
+      setWorkflowTemplateError(
+        templateUpdated
+          ? "Template updated but GPT-5 rerun failed. Try refining again."
+          : "Unable to update prompt template. Confirm the backend accepts template edits.",
+      );
+      return;
+    } finally {
+      setWorkflowTemplateSaving(false);
+    }
   };
 
   const submitWorkflowRequest = async (scriptText: string, shouldRefine: boolean) => {
@@ -1868,6 +2028,7 @@ export default function Home() {
           mode: "workflow",
           originalText: trimmed,
           refinedText: refined,
+          videoProvider: workflowProviderSelection ?? undefined,
         });
         setRefinementDraft(refined || trimmed);
       } catch (err) {
@@ -1882,6 +2043,36 @@ export default function Home() {
     }
 
     await submitWorkflowRequest(trimmed, false);
+  };
+
+  const handleDownloadWorkflowAssets = async () => {
+    if (!job?.job_id) {
+      return;
+    }
+    setAssetDownloadError(null);
+    setIsDownloadingAssets(true);
+    try {
+      const response = await fetch(`${apiBase}/api/workflows/${job.job_id}/assets.zip`);
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `${job.job_id}_assets.zip`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error(err);
+      setAssetDownloadError(
+        "Unable to download workflow assets. Confirm the backend can bundle files.",
+      );
+    } finally {
+      setIsDownloadingAssets(false);
+    }
   };
 
   const handleSingleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -1901,6 +2092,7 @@ export default function Home() {
           mode: "single",
           originalText: trimmed,
           refinedText: refined,
+          videoProvider: singleProviderSelection ?? undefined,
         });
         setRefinementDraft(refined || trimmed);
       } catch (err) {
@@ -2146,12 +2338,14 @@ export default function Home() {
       if (success) {
         setRefinementReview(null);
         setCopyNotice(null);
+        resetWorkflowTemplateState();
       }
     } else {
       const success = await submitSingleRequest(finalText, false);
       if (success) {
         setRefinementReview(null);
         setCopyNotice(null);
+        resetWorkflowTemplateState();
       }
     }
   };
@@ -2160,6 +2354,7 @@ export default function Home() {
     setRefinementReview(null);
     setRefinementDraft("");
     setCopyNotice(null);
+    resetWorkflowTemplateState();
   };
 
   const handleSelectSingleVersion = async (versionId: string) => {
@@ -3481,23 +3676,41 @@ export default function Home() {
                     {translate("Video backend")}: {(job.video_provider ?? translate("Unknown")).toUpperCase()}
                   </p>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className={`text-xs font-semibold uppercase tracking-wide ${currentStatusToken.className}`}>{currentStatusToken.label}</span>
-                  {job.script?.trim() ? (
+                <div className="flex flex-col gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={`text-xs font-semibold uppercase tracking-wide ${currentStatusToken.className}`}>{currentStatusToken.label}</span>
+                    {job.script?.trim() ? (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setPromptPreview({
+                            sceneLabel: translate("Workflow prompt"),
+                            versionLabel: translate("Storyboard Script"),
+                            prompt: job.script ?? "",
+                          })
+                        }
+                        className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1 text-[11px] font-semibold text-slate-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-800 dark:hover:text-slate-100"
+                      >
+                        <DocumentTextIcon className="h-4 w-4" />
+                        {translate("View input prompt")}
+                      </button>
+                    ) : null}
                     <button
                       type="button"
-                      onClick={() =>
-                        setPromptPreview({
-                          sceneLabel: translate("Workflow prompt"),
-                          versionLabel: translate("Storyboard Script"),
-                          prompt: job.script ?? "",
-                        })
-                      }
-                      className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1 text-[11px] font-semibold text-slate-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-800 dark:hover:text-slate-100"
+                      onClick={handleDownloadWorkflowAssets}
+                      disabled={!job?.job_id || isDownloadingAssets}
+                      className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1 text-[11px] font-semibold text-slate-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-800 dark:hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      <DocumentTextIcon className="h-4 w-4" />
-                      {translate("View input prompt")}
+                      {isDownloadingAssets ? (
+                        <ArrowPathIcon className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <ArrowDownTrayIcon className="h-4 w-4" />
+                      )}
+                      {translate(isDownloadingAssets ? "Preparing ZIP..." : "Download scene assets")}
                     </button>
+                  </div>
+                  {assetDownloadError ? (
+                    <p className="text-[11px] text-rose-500">{translate(assetDownloadError)}</p>
                   ) : null}
                 </div>
               </div>
@@ -4605,6 +4818,78 @@ export default function Home() {
                   onChange={(event) => setRefinementDraft(event.target.value)}
                 />
               </div>
+              {refinementReview.mode === "workflow" ? (
+                <div className="space-y-3 rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/40 p-3">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-600 dark:text-slate-200">{translate("GPT-5 prompt template")}</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        {translate("Edit or replace the GPT-5 prompt file before refining scenes.")}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleWorkflowTemplateReload}
+                      disabled={workflowTemplateLoading || workflowTemplateSaving}
+                      className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1 text-[11px] font-semibold text-slate-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-800 dark:hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {workflowTemplateLoading ? (
+                        <ArrowPathIcon className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <ArrowPathIcon className="h-4 w-4" />
+                      )}
+                      {translate("Reload prompt file")}
+                    </button>
+                  </div>
+                  <textarea
+                    className="min-h-[160px] w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-800 disabled:opacity-60"
+                    value={workflowTemplateDraft}
+                    onChange={(event) => setWorkflowTemplateDraft(event.target.value)}
+                    disabled={workflowTemplateLoading || workflowTemplateSaving}
+                    placeholder={translate("Edit or replace the GPT-5 prompt file before refining scenes.")}
+                  />
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    {workflowTemplateError ? (
+                      <p className="text-xs text-rose-500">{translate(workflowTemplateError)}</p>
+                    ) : workflowTemplateLoading ? (
+                      <p className="text-xs text-slate-500">{translate("Loading prompt template...")}</p>
+                    ) : (
+                      <span className="text-xs text-transparent">.</span>
+                    )}
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setWorkflowTemplateDraft(workflowTemplateOriginal)}
+                        disabled={
+                          workflowTemplateDraft === workflowTemplateOriginal ||
+                          workflowTemplateLoading ||
+                          workflowTemplateSaving
+                        }
+                        className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1 text-[11px] font-semibold text-slate-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-800 dark:hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {translate("Reset changes")}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleWorkflowTemplateSave}
+                        disabled={
+                          workflowTemplateDraft === workflowTemplateOriginal ||
+                          workflowTemplateLoading ||
+                          workflowTemplateSaving
+                        }
+                        className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1 text-[11px] font-semibold text-slate-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-800 dark:hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {workflowTemplateSaving ? (
+                          <ArrowPathIcon className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <CheckCircleIcon className="h-4 w-4" />
+                        )}
+                        {translate("Save template & re-run")}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
               <div className="rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 p-3">
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                   {translate("Original input")}

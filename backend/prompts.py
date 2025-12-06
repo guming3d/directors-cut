@@ -154,6 +154,33 @@ def _workflow_template_for_provider(provider: str | None) -> str:
     return template
 
 
+def workflow_template_path(provider: str | None = None) -> Path:
+    normalized = normalize_video_provider(provider)
+    path = WORKFLOW_TEMPLATE_FILES.get(normalized)
+    if path is None:
+        raise RuntimeError(f"No workflow prompt template configured for provider: {normalized}")
+    return path
+
+
+def get_workflow_template_text(provider: str | None = None) -> str:
+    return _workflow_template_for_provider(provider)
+
+
+def update_workflow_template_text(provider: str | None, template: str) -> str:
+    normalized_text = (template or "").strip()
+    if not normalized_text:
+        raise ValueError("Workflow prompt template content cannot be empty.")
+
+    path = workflow_template_path(provider)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    serialized = f"{normalized_text}\n"
+    path.write_text(serialized, encoding="utf-8")
+
+    _read_prompt_file.cache_clear()
+    _workflow_template_for_provider.cache_clear()
+    return normalized_text
+
+
 def build_prompt_text(
     title: str, description: str, duration: int, resolution: str
 ) -> str:
@@ -317,6 +344,9 @@ __all__ = [
     "refine_scene_description",
     "ensure_scene_headers",
     "refine_text_with_gpt5",
+    "get_workflow_template_text",
+    "update_workflow_template_text",
+    "workflow_template_path",
     "slugify",
     "render_prompt_template",
 ]

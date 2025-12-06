@@ -5,12 +5,16 @@ from __future__ import annotations
 import asyncio
 import os
 import shutil
+import tempfile
 import uuid
+import zipfile
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.background import BackgroundTask
 
 from .config import (
     CONTENT_UNDERSTANDING_MAX_UPLOAD_BYTES,
@@ -28,6 +32,7 @@ from .config import (
     SUPPORTED_VIDEO_PROVIDERS,
     allowed_origins,
     logger,
+    normalize_video_provider,
 )
 from .models import (
     JobStatusResponse,
@@ -46,8 +51,14 @@ from .models import (
     StartWorkflowPayload,
     VideoInsightJobResponse,
     VideoReproduceJobResponse,
+    WorkflowPromptTemplateResponse,
+    WorkflowPromptTemplateUpdate,
 )
-from .prompts import refine_text_with_gpt5
+from .prompts import (
+    get_workflow_template_text,
+    refine_text_with_gpt5,
+    update_workflow_template_text,
+)
 from .content_insights.service import (
     ensure_content_understanding_ready,
     run_video_insight_job,
@@ -72,7 +83,7 @@ from .stores import (
     VIDEO_REPRODUCE_STORE,
     WORKFLOW_JOB_STORE,
 )
-from .utils import normalize_script_text
+from .utils import normalize_script_text, slugify
 
 
 fastapi_app = FastAPI(
@@ -121,6 +132,78 @@ async def _write_upload_to_file(upload: UploadFile, destination: Path) -> int:
     return total
 
 
+def _existing_file(path_like: str | Path | None) -> Path | None:
+    if not path_like:
+        return None
+    path = Path(path_like)
+    if path.is_file():
+        return path
+    return None
+
+
+def _scene_directory_name(order: int, label: str | None) -> str:
+    slug = slugify(label or f"scene-{order}")
+    if not slug:
+        slug = f"scene-{order}"
+    return f"scene-{order:02d}-{slug}"
+
+
+def _collect_workflow_assets(job: JobStatusResponse) -> list[tuple[Path, str]]:
+    assets: list[tuple[Path, str]] = []
+    base_dir = f"workflow_{job.job_id}"
+    seen: set[tuple[Path, str]] = set()
+
+    def _add(path: Path | None, arcname: str) -> None:
+        if not path:
+            return
+        key = (path, arcname)
+        if key in seen:
+            return
+        assets.append(key)
+        seen.add(key)
+
+    script_path = _existing_file(job.script_path) or _existing_file(job_root(job.job_id) / "script.txt")
+    if script_path:
+        _add(script_path, f"{base_dir}/script/{script_path.name}")
+
+    final_video = _existing_file(job.final_video_path)
+    if final_video:
+        suffix = final_video.suffix or ".mp4"
+        _add(final_video, f"{base_dir}/final-video/final{suffix}")
+
+    for scene in job.scenes or []:
+        scene_dir = _scene_directory_name(scene.order, scene.label)
+        prompt_dir = f"{base_dir}/scene-files/{scene_dir}/prompts"
+        video_dir = f"{base_dir}/scene-files/{scene_dir}/videos"
+
+        scene_prompt = _existing_file(scene.prompt_path)
+        if scene_prompt:
+            suffix = scene_prompt.suffix or ".txt"
+            _add(scene_prompt, f"{prompt_dir}/scene-prompt{suffix}")
+
+        versions = scene.versions or []
+        if not versions:
+            scene_video = _existing_file(scene.video_path)
+            if scene_video:
+                suffix = scene_video.suffix or ".mp4"
+                _add(scene_video, f"{video_dir}/scene-video{suffix}")
+
+        for index, version in enumerate(versions, start=1):
+            version_slug = slugify(version.label or version.version_id) or f"version-{index}"
+
+            version_video = _existing_file(version.video_path)
+            if version_video:
+                suffix = version_video.suffix or ".mp4"
+                _add(version_video, f"{video_dir}/{index:02d}-{version_slug}{suffix}")
+
+            version_prompt = _existing_file(version.prompt_path)
+            if version_prompt:
+                suffix = version_prompt.suffix or ".txt"
+                _add(version_prompt, f"{prompt_dir}/{index:02d}-{version_slug}{suffix}")
+
+    return assets
+
+
 @fastapi_app.get("/api/providers/active")
 async def get_active_provider() -> dict[str, object]:
     return {
@@ -157,6 +240,38 @@ async def refine_single_prompt(payload: RefineSinglePayload) -> RefinedPromptRes
         raise HTTPException(status_code=503, detail=f"Unable to refine prompt: {exc}") from exc
     final_prompt = refined.strip() or prompt
     return RefinedPromptResponse(refined_prompt=final_prompt)
+
+
+@fastapi_app.get(
+    "/api/prompts/workflow",
+    response_model=WorkflowPromptTemplateResponse,
+)
+async def get_workflow_prompt_template(
+    video_provider: str = Query(DEFAULT_VIDEO_PROVIDER, alias="videoProvider"),
+) -> WorkflowPromptTemplateResponse:
+    provider = normalize_video_provider(video_provider)
+    try:
+        template = get_workflow_template_text(provider)
+    except RuntimeError as exc:  # pragma: no cover - filesystem failure
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return WorkflowPromptTemplateResponse(video_provider=provider, template=template)
+
+
+@fastapi_app.put(
+    "/api/prompts/workflow",
+    response_model=WorkflowPromptTemplateResponse,
+)
+async def update_workflow_prompt_template(
+    payload: WorkflowPromptTemplateUpdate,
+) -> WorkflowPromptTemplateResponse:
+    provider = normalize_video_provider(payload.video_provider)
+    try:
+        template = update_workflow_template_text(provider, payload.template)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return WorkflowPromptTemplateResponse(video_provider=provider, template=template)
 
 
 @fastapi_app.post("/api/workflows", response_model=JobStatusResponse)
@@ -224,6 +339,37 @@ async def delete_workflow(job_id: str) -> dict[str, str]:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     shutil.rmtree(job_root(job_id), ignore_errors=True)
     return {"status": "deleted"}
+
+
+@fastapi_app.get("/api/workflows/{job_id}/assets.zip")
+async def download_workflow_assets(job_id: str):
+    try:
+        job = await WORKFLOW_JOB_STORE.get_status(job_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Unknown job: {job_id}") from exc
+
+    assets = _collect_workflow_assets(job)
+    if not assets:
+        raise HTTPException(status_code=404, detail="No scene assets are available for this workflow.")
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as tmp:
+        zip_path = Path(tmp.name)
+
+    try:
+        with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
+            for source_path, arcname in assets:
+                try:
+                    bundle.write(str(source_path), arcname)
+                except OSError:
+                    logger.warning("Unable to add asset %s to archive for job %s", source_path, job_id)
+                    continue
+    except Exception:
+        zip_path.unlink(missing_ok=True)
+        raise
+
+    background = BackgroundTask(lambda: zip_path.unlink(missing_ok=True))
+    filename = f"{job_id}_assets.zip"
+    return FileResponse(zip_path, media_type="application/zip", filename=filename, background=background)
 
 
 @fastapi_app.post("/api/single-videos", response_model=SingleVideoJobResponse)

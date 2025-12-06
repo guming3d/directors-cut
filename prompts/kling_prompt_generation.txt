@@ -12,6 +12,7 @@ You can refer to following example kling prompt to know how to control the video
 **Lighting:** Light and shadow are the vital elements that imbue photographic works with soul. The application of light and shadow can make photos more profound and emotionally resonant, enabling us to create works with a rich sense of depth and expressive power. Techniques include:Ambient lighting, Morning light, Sunset, Interplay of light and shadow, Tyndall effect, Artificial lighting;
 **Atmosphere:** Describing the atmosphere of the anticipated video footage can involve various elements to set the mood and tone.
 ```
+
 **Video title**
 
 **Scene 1 (Scene 1 title)**

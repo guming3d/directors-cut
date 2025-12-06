@@ -775,6 +775,26 @@ class RefineSinglePayload(BaseModel):
     prompt: str
 
 
+class WorkflowPromptTemplateResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    video_provider: Literal["sora2", "kling"] = Field(
+        default=DEFAULT_VIDEO_PROVIDER,
+        alias="videoProvider",
+    )
+    template: str
+
+
+class WorkflowPromptTemplateUpdate(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    template: str
+    video_provider: Literal["sora2", "kling"] = Field(
+        default=DEFAULT_VIDEO_PROVIDER,
+        alias="videoProvider",
+    )
+
+
 class RefinedScriptResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
     refined_script: str = Field(..., alias="refinedScript")
@@ -886,5 +906,7 @@ __all__ = [
     "RefineSinglePayload",
     "RefinedPromptResponse",
     "RefinedScriptResponse",
+    "WorkflowPromptTemplateResponse",
+    "WorkflowPromptTemplateUpdate",
     "get_active_single_version",
 ]
