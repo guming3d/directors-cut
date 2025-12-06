@@ -23,7 +23,7 @@ export default function Modal({ isOpen, onClose, title, children, maxWidth = 'ma
           leaveFrom="opacity-100"
           leaveTo="opacity-0"
         >
-          <div className="fixed inset-0 bg-black/25 backdrop-blur-sm" />
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-md" />
         </Transition.Child>
 
         <div className="fixed inset-0 overflow-y-auto">
@@ -37,7 +37,7 @@ export default function Modal({ isOpen, onClose, title, children, maxWidth = 'ma
               leaveFrom="opacity-100 scale-100"
               leaveTo="opacity-0 scale-95"
             >
-              <Dialog.Panel className={`w-full ${maxWidth} transform overflow-hidden rounded-2xl bg-white dark:bg-slate-900 p-6 text-left align-middle shadow-xl transition-all border border-slate-200 dark:border-slate-800`}>
+              <Dialog.Panel className={`w-full ${maxWidth} transform overflow-hidden rounded-xl bg-white dark:bg-zinc-900 p-6 text-left align-middle shadow-2xl transition-all border border-slate-200 dark:border-zinc-800`}>
                 <div className="flex items-center justify-between mb-4">
                   {title && (
                     <Dialog.Title

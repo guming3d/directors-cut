@@ -244,11 +244,11 @@ type RefinementReview = {
 const STATUS_TOKENS: Record<string, { label: string; className: string }> = {
   queued: {
     label: "Queued",
-    className: "text-slate-600 dark:text-slate-300",
+    className: "text-zinc-600 dark:text-slate-300",
   },
   running: {
     label: "In Progress",
-    className: "text-slate-600 dark:text-slate-300",
+    className: "text-zinc-600 dark:text-slate-300",
   },
   completed: {
     label: "Completed",
@@ -748,7 +748,7 @@ export default function Home() {
     <button
       type="button"
       onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-      className="rounded-full border border-slate-300 bg-white p-1.5 text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+      className="rounded-full border border-slate-300 bg-white p-1.5 text-zinc-600 transition hover:bg-slate-100 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200"
       title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
     >
       {theme === "dark" ? <SunIcon className="h-4 w-4" /> : <MoonIcon className="h-4 w-4" />}
@@ -1552,7 +1552,7 @@ export default function Home() {
 
 
   const panelCardClass =
-    "rounded-md border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/50 p-6 shadow-2xl backdrop-blur-xl";
+    "rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/80 dark:bg-zinc-900/50 p-6 shadow-2xl backdrop-blur-xl";
   const pillButtonClass =
     "rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100/50 dark:bg-slate-100 dark:bg-slate-800/50 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400";
   const displayApiBase = apiBase.replace(/^https?:\/\//, "");
@@ -2616,7 +2616,7 @@ export default function Home() {
           </div>
           <form className="mt-6 space-y-4" onSubmit={handleLogin}>
             <div>
-              <label htmlFor="username" className="text-sm font-medium text-slate-600 dark:text-slate-300">
+              <label htmlFor="username" className="text-sm font-medium text-zinc-600 dark:text-slate-300">
                 {translate("Username")}
               </label>
               <input
@@ -2630,7 +2630,7 @@ export default function Home() {
               />
             </div>
             <div>
-              <label htmlFor="password" className="text-sm font-medium text-slate-600 dark:text-slate-300">
+              <label htmlFor="password" className="text-sm font-medium text-zinc-600 dark:text-slate-300">
                 {translate("Password")}
               </label>
               <input
@@ -2657,27 +2657,17 @@ export default function Home() {
   }
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100">
+    <div className="relative min-h-screen overflow-hidden bg-zinc-50 dark:bg-zinc-950 text-slate-900 dark:text-slate-100">
       <div className="pointer-events-none absolute inset-0">
-        <div className="absolute inset-0 bg-gradient-to-b from-white dark:from-slate-900 via-transparent to-slate-100 dark:to-slate-950" />
+        <div className="absolute inset-0 bg-gradient-to-b from-white dark:from-zinc-900 via-transparent to-zinc-100 dark:to-zinc-950" />
         <div className="absolute left-[-18%] top-[10%] h-[420px] w-[420px] rounded-full bg-gradient-to-br from-indigo-500/10 via-purple-500/5 to-transparent blur-3xl" />
         <div className="absolute right-[-12%] top-[40%] h-[380px] w-[380px] rounded-full bg-gradient-to-tr from-blue-500/10 via-cyan-500/5 to-transparent blur-[140px]" />
       </div>
 
-      <header className="sticky top-0 z-20 flex items-center justify-between border-b border-slate-300 bg-slate-200/90 px-6 py-3 backdrop-blur-xl dark:border-slate-700 dark:bg-slate-800/90">
+      <header className="sticky top-0 z-20 flex items-center justify-between border-b border-zinc-200 bg-white/80 px-6 py-3 backdrop-blur-xl dark:border-zinc-800 dark:bg-zinc-900/80">
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-3">
-            <Image
-              src={theme === "dark" ? "/streams_logo_dark_background.png" : "/streams_logo_white_background.png"}
-              alt={translate("Streams Agent Workflow logo")}
-              width={40}
-              height={40}
-              className="h-10 w-10 rounded border border-slate-300 object-cover shadow-sm shadow-black/50 dark:border-slate-700"
-              priority
-            />
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-500">{translate("Streams Studio")}</p>
-            </div>
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-500">{translate("Streams Studio")}</p>
           </div>
           <div className="h-6 w-px bg-slate-400 dark:bg-slate-600" />
           <div className="flex items-center gap-1 rounded-lg bg-white p-1 dark:bg-slate-900">
@@ -2706,15 +2696,7 @@ export default function Home() {
 
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-3"><ThemeToggle /><LanguageToggle /></div>
-          <span className={`${pillButtonClass} whitespace-nowrap`}>
-            {translate("Video backend")}:{" "}
-            <span className="font-mono text-[11px] text-slate-500">
-              {(activeVideoProvider ?? translate("Unknown")).toUpperCase()}
-            </span>
-          </span>
-          <span className={`${pillButtonClass} whitespace-nowrap`}>
-            {translate("API ·")} <span className="font-mono text-[11px] text-slate-500">{displayApiBase || apiBase}</span>
-          </span>
+
           <button
             type="button"
             onClick={handleLogout}
@@ -2769,7 +2751,7 @@ export default function Home() {
               ) : (
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800 text-sm">
-                    <thead className="bg-slate-50 dark:bg-slate-800/50 text-[11px] uppercase tracking-wide text-slate-500">
+                    <thead className="bg-zinc-100 dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                       <tr>
                         <th scope="col" className="px-6 py-3 text-left">
                           <span className="sr-only">{translate("Select workflows")}</span>
@@ -2796,7 +2778,7 @@ export default function Home() {
                               setJob(item);
                               setIsJobDetailModalOpen(true);
                             }}
-                            className="cursor-pointer transition hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                            className="cursor-pointer transition hover:bg-slate-50 dark:hover:bg-zinc-800/50 border-b border-slate-100 dark:border-zinc-800/50"
                           >
                             <td className="px-6 py-4">
                               <input
@@ -2861,7 +2843,7 @@ export default function Home() {
               ) : (
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800 text-sm">
-                    <thead className="bg-slate-50 dark:bg-slate-800/50 text-[11px] uppercase tracking-wide text-slate-500">
+                    <thead className="bg-zinc-100 dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                       <tr>
                         <th scope="col" className="px-6 py-3 text-left">
                           <span className="sr-only">{translate("Select workflows")}</span>
@@ -2888,7 +2870,7 @@ export default function Home() {
                               setSingleJob(item);
                               setIsJobDetailModalOpen(true);
                             }}
-                            className="cursor-pointer transition hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                            className="cursor-pointer transition hover:bg-slate-50 dark:hover:bg-zinc-800/50 border-b border-slate-100 dark:border-zinc-800/50"
                           >
                             <td className="px-6 py-4">
                               <input
@@ -2963,7 +2945,7 @@ export default function Home() {
               ) : (
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800 text-sm">
-                    <thead className="bg-slate-50 dark:bg-slate-800/50 text-[11px] uppercase tracking-wide text-slate-500">
+                    <thead className="bg-zinc-100 dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                       <tr>
                         <th scope="col" className="px-6 py-3 text-left">
                           <span className="sr-only">{translate("Select workflows")}</span>
@@ -2991,7 +2973,7 @@ export default function Home() {
                               setInsightJob(item);
                               setIsJobDetailModalOpen(true);
                             }}
-                            className="cursor-pointer transition hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                            className="cursor-pointer transition hover:bg-slate-50 dark:hover:bg-zinc-800/50 border-b border-slate-100 dark:border-zinc-800/50"
                           >
                             <td className="px-6 py-4">
                               <input
@@ -3068,7 +3050,7 @@ export default function Home() {
               ) : (
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800 text-sm">
-                    <thead className="bg-slate-50 dark:bg-slate-800/50 text-[11px] uppercase tracking-wide text-slate-500">
+                    <thead className="bg-zinc-100 dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                       <tr>
                         <th scope="col" className="px-6 py-3 text-left">
                           <span className="sr-only">{translate("Select workflows")}</span>
@@ -3093,7 +3075,7 @@ export default function Home() {
                               setReproduceJob(item);
                               setIsJobDetailModalOpen(true);
                             }}
-                            className="cursor-pointer transition hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                            className="cursor-pointer transition hover:bg-slate-50 dark:hover:bg-zinc-800/50 border-b border-slate-100 dark:border-zinc-800/50"
                           >
                             <td className="px-6 py-4">
                               <input
@@ -3307,7 +3289,7 @@ export default function Home() {
                       }`}
                     >
                       <span className="font-semibold">{mode.label}</span>
-                      <span className={`text-xs ${isActive ? "text-slate-600 dark:text-slate-300" : "text-slate-500"}`}>
+                      <span className={`text-xs ${isActive ? "text-zinc-600 dark:text-slate-300" : "text-slate-500"}`}>
                         {mode.description}
                       </span>
                     </button>
@@ -3322,7 +3304,7 @@ export default function Home() {
             <div className="rounded border border-slate-300 dark:border-slate-700 bg-slate-100/50 dark:bg-slate-100 dark:bg-slate-800/50 px-4 py-3">
               <div className="flex items-center justify-between gap-4">
                 <div>
-                  <p className="text-sm font-semibold text-slate-600 dark:text-slate-300">{translate("Refine script with GPT-5")}</p>
+                  <p className="text-sm font-semibold text-zinc-600 dark:text-slate-300">{translate("Refine script with GPT-5")}</p>
                   <p className="text-xs text-slate-500">
                     {translate("Use GPT-5 to polish the storyboard before planning scenes.")}
                   </p>
@@ -3612,7 +3594,7 @@ export default function Home() {
             <div className="rounded border border-slate-300 dark:border-slate-700 bg-slate-100/50 dark:bg-slate-100 dark:bg-slate-800/50 px-4 py-3">
               <div className="flex items-center justify-between gap-4">
                 <div>
-                  <p className="text-sm font-semibold text-slate-600 dark:text-slate-300">{translate("Refine prompt with GPT-5")}</p>
+                  <p className="text-sm font-semibold text-zinc-600 dark:text-slate-300">{translate("Refine prompt with GPT-5")}</p>
                   <p className="text-xs text-slate-500">
                     {translate("Let GPT-5 tighten the single-scene prompt before submitting.")}
                   </p>
@@ -3758,7 +3740,7 @@ export default function Home() {
           </form>
         </Modal>
 
-        <Modal isOpen={isJobDetailModalOpen} onClose={() => setIsJobDetailModalOpen(false)} title={translate("Job Details")} maxWidth="max-w-6xl">
+        <Modal isOpen={isJobDetailModalOpen} onClose={() => setIsJobDetailModalOpen(false)} title={translate("Job Details")} maxWidth="max-w-[95vw]">
           {activeTab === "combined" && job && (
             <div className="space-y-8">
               <div className="flex flex-wrap items-start justify-between gap-4">
@@ -3787,7 +3769,7 @@ export default function Home() {
                             prompt: job.script ?? "",
                           })
                         }
-                        className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1 text-[11px] font-semibold text-slate-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-800 dark:hover:text-slate-100"
+                        className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1 text-[11px] font-semibold text-zinc-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-800 dark:hover:text-slate-100"
                       >
                         <DocumentTextIcon className="h-4 w-4" />
                         {translate("View input prompt")}
@@ -3797,7 +3779,7 @@ export default function Home() {
                       type="button"
                       onClick={handleDownloadWorkflowAssets}
                       disabled={!job?.job_id || isDownloadingAssets}
-                      className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1 text-[11px] font-semibold text-slate-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-800 dark:hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                      className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1 text-[11px] font-semibold text-zinc-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-800 dark:hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {isDownloadingAssets ? (
                         <ArrowPathIcon className="h-4 w-4 animate-spin" />
@@ -3820,27 +3802,27 @@ export default function Home() {
               <dl className="mt-6 grid gap-4 text-sm text-slate-500 dark:text-slate-400 sm:grid-cols-3">
                 <div>
                   <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Started")}</dt>
-                  <dd className="mt-1 text-slate-600 dark:text-slate-300">{formatTimeDistance(job.started_at)}</dd>
+                  <dd className="mt-1 text-zinc-600 dark:text-slate-300">{formatTimeDistance(job.started_at)}</dd>
                 </div>
                 <div>
                   <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Completed")}</dt>
-                  <dd className="mt-1 text-slate-600 dark:text-slate-300">{job.completed_at ? formatTimeDistance(job.completed_at) : "—"}</dd>
+                  <dd className="mt-1 text-zinc-600 dark:text-slate-300">{job.completed_at ? formatTimeDistance(job.completed_at) : "—"}</dd>
                 </div>
                 <div>
                   <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Resolution")}</dt>
-                  <dd className="mt-1 text-slate-600 dark:text-slate-300">{job.resolution}</dd>
+                  <dd className="mt-1 text-zinc-600 dark:text-slate-300">{job.resolution}</dd>
                 </div>
               </dl>
 
               {hasScenes && (
                 <div className="mt-8 space-y-3">
                   <div className="flex items-center justify-between gap-3">
-                    <h3 className="text-sm font-semibold text-slate-600 dark:text-slate-300">{translate("Final Video")}</h3>
+                    <h3 className="text-sm font-semibold text-zinc-600 dark:text-slate-300">{translate("Final Video")}</h3>
                     <button
                       type="button"
                       onClick={handleRecompose}
                       disabled={!canRecompose || isRecomposing}
-                      className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 disabled:cursor-not-allowed disabled:opacity-60"
+                      className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs font-semibold text-zinc-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {isRecomposing ? <ArrowPathIcon className="h-4 w-4 animate-spin" /> : <ArrowPathIcon className="h-4 w-4" />}
                       {translate(finalVideoUrl ? "Regenerate Final Video" : "Compose Available Scenes")}
@@ -3898,8 +3880,8 @@ export default function Home() {
                       </span>
                     </div>
                   </div>
-                  <div className="mt-5 grid gap-4 lg:grid-cols-[320px,1fr]">
-                    <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/50 p-3 shadow-inner shadow-black/20">
+                  <div className="mt-5 grid gap-6 lg:grid-cols-[380px_1fr]">
+                    <div className="max-h-[75vh] overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 p-3 shadow-inner shadow-black/5 dark:shadow-black/20">
                       <div className="flex items-center justify-between gap-2">
                         <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                           {translate("Scenes this workflow")}
@@ -3928,61 +3910,65 @@ export default function Home() {
                               key={scene.order}
                               type="button"
                               onClick={() => setActiveSceneOrder(scene.order)}
-                              className={`group relative flex w-full items-center gap-3 rounded-md border px-3 py-2 text-left transition ${
+                              className={`group relative flex w-full flex-col gap-2 rounded-lg border p-3 text-left transition-all ${
                                 isActive
-                                  ? "border-slate-400 dark:border-slate-600 bg-white dark:bg-slate-900 shadow-sm shadow-black/20"
-                                  : "border-slate-200 dark:border-slate-800 bg-white/60 dark:bg-slate-900/40 hover:border-slate-400/80 dark:hover:border-slate-700"
+                                  ? "border-blue-500/50 bg-white dark:bg-slate-800/80 shadow-lg shadow-blue-900/5 dark:shadow-blue-900/20 ring-1 ring-blue-500/20"
+                                  : "border-slate-200 dark:border-slate-700/50 bg-white dark:bg-slate-900/40 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800/60"
                               }`}
                             >
-                              {isRegenerating ? (
-                                <span className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-full bg-slate-900 px-2 py-0.5 text-[10px] font-semibold text-white shadow-sm shadow-black/20 dark:bg-slate-100 dark:text-slate-900">
-                                  <ArrowPathIcon className="h-3 w-3 animate-spin" />
-                                  {translate("Regenerating...")}
-                                </span>
-                              ) : null}
-                              <div className="relative">
-                                <span className="block rounded-md border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400">
+                              <div className="flex items-center justify-between w-full border-b border-slate-700/50 pb-2 mb-1">
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 group-hover:text-slate-700 dark:text-slate-400 dark:group-hover:text-slate-300">
                                   {translate("Scene")} {scene.order}
                                 </span>
+                                {isRegenerating && (
+                                  <ArrowPathIcon className="h-3 w-3 animate-spin text-blue-400" />
+                                )}
                               </div>
-                              {previewUrl ? (
-                                <div className="relative h-14 w-20 overflow-hidden rounded-md border border-slate-200 dark:border-slate-700 bg-black/40">
-                                  <Image
-                                    src={previewUrl}
-                                    alt={`${scene.label} preview`}
-                                    width={120}
-                                    height={80}
-                                    unoptimized
-                                    className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.02]"
-                                  />
-                                </div>
-                              ) : (
-                                <div className="flex h-14 w-20 items-center justify-center rounded-md border border-dashed border-slate-200 dark:border-slate-700 text-[10px] text-slate-400">
-                                  {translate("Video pending...")}
-                                </div>
-                              )}
-                              <div className="flex-1 space-y-1">
-                                <div className="flex items-center justify-between gap-2">
-                                  <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                                    {scene.label}
-                                  </p>
-                                  <span className="rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                                    {scene.duration_seconds} {translate("seconds")}
-                                  </span>
-                                  {isFailed ? (
-                                    <span className="rounded-full border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rose-600 dark:text-rose-300">
-                                      {translate("Failed")}
+                              
+                              <div className="flex gap-3">
+                                {previewUrl ? (
+                                  <div className="relative h-16 w-24 flex-shrink-0 overflow-hidden rounded border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-black/40">
+                                    <Image
+                                      src={previewUrl}
+                                      alt={`${scene.label} preview`}
+                                      width={120}
+                                      height={80}
+                                      unoptimized
+                                      className="h-full w-full object-cover opacity-80 transition group-hover:opacity-100 group-hover:scale-105"
+                                    />
+                                  </div>
+                                ) : (
+                                  <div className="flex h-16 w-24 flex-shrink-0 items-center justify-center rounded border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-[10px] text-slate-400 dark:text-slate-500">
+                                    {translate("Pending")}
+                                  </div>
+                                )}
+                                
+                                <div className="flex min-w-0 flex-1 flex-col justify-between py-0.5">
+                                  <div>
+                                    <p className="truncate text-xs font-medium text-slate-700 dark:text-slate-200 group-hover:text-slate-900 dark:group-hover:text-white">
+                                      {scene.label}
+                                    </p>
+                                    <p className="mt-0.5 truncate text-[10px] text-slate-500">
+                                      {scenePromptEdits[scene.order]?.trim()
+                                        ? scenePromptEdits[scene.order]
+                                        : selectedVersion?.prompt ?? ""}
+                                    </p>
+                                  </div>
+                                  
+                                  <div className="flex items-center gap-2">
+                                    <span className="inline-flex items-center rounded bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 text-[9px] font-medium text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                                      {scene.duration_seconds}s
                                     </span>
-                                  ) : null}
+                                    <span className="inline-flex items-center rounded bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 text-[9px] font-medium text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                                      v{versions.length}
+                                    </span>
+                                    {isFailed && (
+                                      <span className="ml-auto text-[9px] font-bold text-rose-500">
+                                        FAILED
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
-                                <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                                  {(selectedVersion?.label ?? translate("Versions"))} • {versions.length} {translate("Versions")}
-                                </p>
-                                <p className="text-[11px] text-slate-500 dark:text-slate-400 overflow-hidden text-ellipsis">
-                                  {scenePromptEdits[scene.order]?.trim()
-                                    ? scenePromptEdits[scene.order]
-                                    : selectedVersion?.prompt ?? ""}
-                                </p>
                               </div>
                             </button>
                           );
@@ -3990,7 +3976,7 @@ export default function Home() {
                       </div>
                     </div>
 
-                    <div className="space-y-4 rounded-lg border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/50 p-4 shadow-inner shadow-black/20">
+                    <div className="max-h-[75vh] overflow-y-auto space-y-4 rounded-lg border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/50 p-4 shadow-inner shadow-black/20">
                       {activeScene ? (
                         <>
                           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -4025,7 +4011,7 @@ export default function Home() {
                                       prompt: activeSceneSelectedVersion.prompt ?? "",
                                     })
                                   }
-                                  className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-[11px] font-semibold text-slate-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-800 dark:hover:text-slate-100"
+                                  className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-[11px] font-semibold text-zinc-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-800 dark:hover:text-slate-100"
                                 >
                                   <DocumentTextIcon className="h-4 w-4" />
                                   {translate("View system prompt")}
@@ -4040,7 +4026,7 @@ export default function Home() {
                                       "",
                                   )
                                 }
-                                className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-[11px] font-semibold text-slate-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-800 dark:hover:text-slate-100"
+                                className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-[11px] font-semibold text-zinc-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-800 dark:hover:text-slate-100"
                               >
                                 <DocumentTextIcon className="h-4 w-4" />
                                 {translate("Copy prompt")}
@@ -4184,7 +4170,7 @@ export default function Home() {
                                           "",
                                       )
                                     }
-                                    className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-800 dark:hover:text-slate-100"
+                                    className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs font-semibold text-zinc-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-800 dark:hover:text-slate-100"
                                   >
                                     <DocumentTextIcon className="h-4 w-4" />
                                     {translate("Copy prompt")}
@@ -4248,7 +4234,7 @@ export default function Home() {
                                     disabled={
                                       !activeSceneSelectedVersion?.video_id || remixSubmitting[activeScene.order]
                                     }
-                                    className="inline-flex items-center gap-1 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-800 dark:hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                    className="inline-flex items-center gap-1 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs font-semibold text-zinc-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-800 dark:hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
                                   >
                                     {remixSubmitting[activeScene.order] ? (
                                       <ArrowPathIcon className="h-4 w-4 animate-spin" />
@@ -4284,10 +4270,10 @@ export default function Home() {
                                   return (
                                     <div
                                       key={version.version_id}
-                                      className={`w-[260px] flex-shrink-0 rounded-md border p-3 ${
+                                      className={`w-[260px] flex-shrink-0 rounded-lg border p-3 transition-all ${
                                         isActiveVersion
-                                          ? "border-slate-400 dark:border-slate-600 bg-white dark:bg-slate-900"
-                                          : "border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/40"
+                                          ? "border-blue-500/50 bg-slate-800 shadow-lg shadow-blue-900/20 ring-1 ring-blue-500/20"
+                                          : "border-slate-700/50 bg-slate-900/40 hover:border-slate-600 hover:bg-slate-800/60"
                                       }`}
                                     >
                                       <div className="flex items-start justify-between gap-2">
@@ -4357,7 +4343,7 @@ export default function Home() {
                                               prompt: version.prompt ?? "",
                                             })
                                           }
-                                          className="mt-3 inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200"
+                                          className="mt-3 inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-zinc-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200"
                                         >
                                           <DocumentTextIcon className="h-4 w-4" />
                                           {translate("View system prompt")}
@@ -4397,17 +4383,17 @@ export default function Home() {
                   </summary>
                   <ol className="mt-4 space-y-2 max-h-60 overflow-y-auto pr-2">
                     {job.messages.map((message, index) => {
-                      const Icon = stageIcons[message.stage] ?? ArrowPathIcon;
+                      const Icon = stageIcons[message.stage.toLowerCase()] ?? ArrowPathIcon;
                       return (
                         <li
                           key={`${message.timestamp}-${index}`}
                           className="relative flex gap-3 rounded border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/50 p-2 shadow-inner shadow-black/20"
                         >
                           <div className="relative mt-0.5 flex h-7 w-7 items-center justify-center rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800">
-                            <Icon className="h-4 w-4 text-slate-500 dark:text-slate-400" />
+                            <Icon className="h-4 w-4 text-zinc-600 dark:text-slate-400" />
                           </div>
                           <div>
-                            <p className="text-sm text-slate-600 dark:text-slate-300">{message.text}</p>
+                            <p className="text-sm text-zinc-600 dark:text-slate-300">{message.text}</p>
                             <p className="text-xs text-slate-500">
                               {formatTimestamp(message.timestamp)} · {stageLabel(message.stage, language)}
                             </p>
@@ -4445,7 +4431,7 @@ export default function Home() {
                           prompt: singleJob.prompt,
                         })
                       }
-                      className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1 text-[11px] font-semibold text-slate-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-800 dark:hover:text-slate-100"
+                      className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1 text-[11px] font-semibold text-zinc-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-800 dark:hover:text-slate-100"
                     >
                       <DocumentTextIcon className="h-4 w-4" />
                       {translate("View input prompt")}
@@ -4476,32 +4462,32 @@ export default function Home() {
               <dl className="mt-6 grid gap-4 text-sm text-slate-500 dark:text-slate-400 sm:grid-cols-2 md:grid-cols-5">
                 <div>
                   <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Started")}</dt>
-                  <dd className="mt-1 text-slate-600 dark:text-slate-300">{formatTimeDistance(singleJob.started_at)}</dd>
+                  <dd className="mt-1 text-zinc-600 dark:text-slate-300">{formatTimeDistance(singleJob.started_at)}</dd>
                 </div>
                 <div>
                   <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Completed")}</dt>
-                  <dd className="mt-1 text-slate-600 dark:text-slate-300">{singleJob.completed_at ? formatTimeDistance(singleJob.completed_at) : "—"}</dd>
+                  <dd className="mt-1 text-zinc-600 dark:text-slate-300">{singleJob.completed_at ? formatTimeDistance(singleJob.completed_at) : "—"}</dd>
                 </div>
                 <div>
                   <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Resolution")}</dt>
-                  <dd className="mt-1 text-slate-600 dark:text-slate-300">{singleJob.resolution}</dd>
+                  <dd className="mt-1 text-zinc-600 dark:text-slate-300">{singleJob.resolution}</dd>
                 </div>
                 <div>
                   <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Duration")}</dt>
-                  <dd className="mt-1 text-slate-600 dark:text-slate-300">
+                  <dd className="mt-1 text-zinc-600 dark:text-slate-300">
                     {singleJob.duration}
                     {translate("s")}
                   </dd>
                 </div>
                 <div>
                   <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Azure video ID:")}</dt>
-                  <dd className="mt-1 text-slate-600 dark:text-slate-300">{singleJob.video_id ?? translate("Unavailable")}</dd>
+                  <dd className="mt-1 text-zinc-600 dark:text-slate-300">{singleJob.video_id ?? translate("Unavailable")}</dd>
                 </div>
               </dl>
 
               {singleVideoUrl ? (
                 <div className="mt-8 space-y-3">
-                  <h3 className="text-sm font-semibold text-slate-600 dark:text-slate-300">{translate("Generated Video")}</h3>
+                  <h3 className="text-sm font-semibold text-zinc-600 dark:text-slate-300">{translate("Generated Video")}</h3>
                   <video
                     controls
                     className="max-h-[360px] w-full rounded border border-slate-200 dark:border-slate-800 bg-black/60"
@@ -4528,7 +4514,7 @@ export default function Home() {
               {singleJob.video_id ? (
                 <form className="mt-6 space-y-2" onSubmit={handleSingleRemixSubmit}>
                   <div className="flex flex-wrap items-center justify-between gap-3">
-                    <h3 className="text-sm font-semibold text-slate-600 dark:text-slate-300">{translate("Remix Single Video")}</h3>
+                    <h3 className="text-sm font-semibold text-zinc-600 dark:text-slate-300">{translate("Remix Single Video")}</h3>
                     <span className="text-[11px] text-slate-500">
                       {translate("Uses previous video ID:")} {singleJob.video_id}
                     </span>
@@ -4558,7 +4544,7 @@ export default function Home() {
 
               {singleJob.versions?.length ? (
                 <div className="mt-8 space-y-3">
-                  <h3 className="text-sm font-semibold text-slate-600 dark:text-slate-300">{translate("Versions")}</h3>
+                  <h3 className="text-sm font-semibold text-zinc-600 dark:text-slate-300">{translate("Versions")}</h3>
                   <div className="space-y-3">
                     {singleJob.versions.map((version) => {
                       const versionVideoUrl = buildAssetUrl(apiBase, version.video_url);
@@ -4629,17 +4615,17 @@ export default function Home() {
                   </summary>
                   <ol className="mt-4 space-y-2 max-h-60 overflow-y-auto pr-2">
                     {singleJob.messages.map((message, index) => {
-                      const Icon = stageIcons[message.stage] ?? ArrowPathIcon;
+                      const Icon = stageIcons[message.stage.toLowerCase()] ?? ArrowPathIcon;
                       return (
                         <li
                           key={`${message.timestamp}-${index}`}
                           className="relative flex gap-3 rounded border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/50 p-2 shadow-inner shadow-black/20"
                         >
                           <div className="relative mt-0.5 flex h-7 w-7 items-center justify-center rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800">
-                            <Icon className="h-4 w-4 text-slate-500 dark:text-slate-400" />
+                            <Icon className="h-4 w-4 text-zinc-600 dark:text-slate-400" />
                           </div>
                           <div>
-                            <p className="text-sm text-slate-600 dark:text-slate-300">{message.text}</p>
+                            <p className="text-sm text-zinc-600 dark:text-slate-300">{message.text}</p>
                             <p className="text-xs text-slate-500">
                               {formatTimestamp(message.timestamp)} · {stageLabel(message.stage, language)}
                             </p>
@@ -4695,22 +4681,22 @@ export default function Home() {
               <dl className="mt-6 grid gap-4 text-sm text-slate-500 dark:text-slate-400 sm:grid-cols-3">
                 <div>
                   <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Started")}</dt>
-                  <dd className="mt-1 text-slate-600 dark:text-slate-300">{formatTimeDistance(insightJob.started_at)}</dd>
+                  <dd className="mt-1 text-zinc-600 dark:text-slate-300">{formatTimeDistance(insightJob.started_at)}</dd>
                 </div>
                 <div>
                   <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Completed")}</dt>
-                  <dd className="mt-1 text-slate-600 dark:text-slate-300">
+                  <dd className="mt-1 text-zinc-600 dark:text-slate-300">
                     {insightJob.completed_at ? formatTimeDistance(insightJob.completed_at) : "—"}
                   </dd>
                 </div>
                 <div>
                   <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Content type")}</dt>
-                  <dd className="mt-1 text-slate-600 dark:text-slate-300">{insightJob.content_type ?? translate("Unavailable")}</dd>
+                  <dd className="mt-1 text-zinc-600 dark:text-slate-300">{insightJob.content_type ?? translate("Unavailable")}</dd>
                 </div>
               </dl>
 
               <div className="mt-8 space-y-3">
-                <h3 className="text-sm font-semibold text-slate-600 dark:text-slate-300">
+                <h3 className="text-sm font-semibold text-zinc-600 dark:text-slate-300">
                   {translate("Result files")}
                 </h3>
                 {insightVideoUrl ? (
@@ -4762,7 +4748,7 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={handleExportInsight}
-                  className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-slate-100/70 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-slate-400 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-300 dark:hover:text-white"
+                  className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-slate-100/70 px-3 py-1.5 text-xs font-semibold text-zinc-600 transition hover:border-slate-400 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-300 dark:hover:text-white"
                 >
                   <ArrowDownTrayIcon className="h-4 w-4" />
                   {translate("Export insights JSON")}
@@ -4770,7 +4756,7 @@ export default function Home() {
               </div>
 
               <div className="mt-8 space-y-3">
-                <h3 className="text-sm font-semibold text-slate-600 dark:text-slate-300">
+                <h3 className="text-sm font-semibold text-zinc-600 dark:text-slate-300">
                   {translate("Key frames")}
                 </h3>
                 {insightJob.key_frames?.length ? (
@@ -4808,7 +4794,7 @@ export default function Home() {
               </div>
 
               <div className="mt-8 space-y-3">
-                <h3 className="text-sm font-semibold text-slate-600 dark:text-slate-300">
+                <h3 className="text-sm font-semibold text-zinc-600 dark:text-slate-300">
                   {translate("Video segments")}
                 </h3>
                 {insightJob.segments?.length ? (
@@ -4909,17 +4895,17 @@ export default function Home() {
                   </summary>
                   <ol className="mt-4 space-y-2 max-h-60 overflow-y-auto pr-2">
                     {insightJob.messages.map((message, index) => {
-                      const Icon = stageIcons[message.stage] ?? ArrowPathIcon;
+                      const Icon = stageIcons[message.stage.toLowerCase()] ?? ArrowPathIcon;
                       return (
                         <li
                           key={`${message.timestamp}-${index}`}
                           className="relative flex gap-3 rounded border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/50 p-2 shadow-inner shadow-black/20"
                         >
                           <div className="relative mt-0.5 flex h-7 w-7 items-center justify-center rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800">
-                            <Icon className="h-4 w-4 text-slate-500 dark:text-slate-400" />
+                            <Icon className="h-4 w-4 text-zinc-600 dark:text-slate-400" />
                           </div>
                           <div>
-                            <p className="text-sm text-slate-600 dark:text-slate-300">{message.text}</p>
+                            <p className="text-sm text-zinc-600 dark:text-slate-300">{message.text}</p>
                             <p className="text-xs text-slate-500">
                               {formatTimestamp(message.timestamp)} · {stageLabel(message.stage, language)}
                             </p>
@@ -4969,7 +4955,7 @@ export default function Home() {
                 ) : null}
               </div>
 
-              <dl className="grid gap-4 text-sm text-slate-600 dark:text-slate-300 sm:grid-cols-4">
+              <dl className="grid gap-4 text-sm text-zinc-600 dark:text-slate-300 sm:grid-cols-4">
                 <div>
                   <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Started")}</dt>
                   <dd className="mt-1">{formatTimeDistance(reproduceJob.started_at)}</dd>
@@ -5002,7 +4988,7 @@ export default function Home() {
 
               <div className="grid gap-4 lg:grid-cols-2">
                 <div>
-                  <h4 className="text-sm font-semibold text-slate-600 dark:text-slate-300">{translate("Uploaded video")}</h4>
+                  <h4 className="text-sm font-semibold text-zinc-600 dark:text-slate-300">{translate("Uploaded video")}</h4>
                   {reproduceSourceVideoUrl ? (
                     <video
                       controls
@@ -5016,7 +5002,7 @@ export default function Home() {
                   )}
                 </div>
                 <div>
-                  <h4 className="text-sm font-semibold text-slate-600 dark:text-slate-300">{translate("Merged Kling video")}</h4>
+                  <h4 className="text-sm font-semibold text-zinc-600 dark:text-slate-300">{translate("Merged Kling video")}</h4>
                   {reproduceFinalVideoUrl ? (
                     <video
                       controls
@@ -5032,7 +5018,7 @@ export default function Home() {
               </div>
 
               <div className="space-y-4">
-                <h4 className="text-sm font-semibold text-slate-600 dark:text-slate-300">{translate("Video segments")}</h4>
+                <h4 className="text-sm font-semibold text-zinc-600 dark:text-slate-300">{translate("Video segments")}</h4>
                 {reproduceJob.segments?.length ? (
                   reproduceJob.segments.map((segment) => {
                     const activeVersion =
@@ -5068,7 +5054,7 @@ export default function Home() {
                             {translate("Segment")} {segment.order}
                           </span>
                         </div>
-                        <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">{segment.description}</p>
+                        <p className="mt-3 text-sm text-zinc-600 dark:text-slate-300">{segment.description}</p>
                         {segment.tags?.length ? (
                           <p className="text-xs text-slate-500 dark:text-slate-400">{segment.tags.join(", ")}</p>
                         ) : null}
@@ -5152,7 +5138,7 @@ export default function Home() {
 
               {reproduceJob.messages?.length ? (
                 <details className="group space-y-2">
-                  <summary className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-slate-600 dark:text-slate-300 list-none">
+                  <summary className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-zinc-600 dark:text-slate-300 list-none">
                     {translate("Workflow Timeline")}
                     <div className="ml-auto text-xs font-normal text-slate-500">
                       <span className="group-open:hidden">Show</span>
@@ -5161,17 +5147,17 @@ export default function Home() {
                   </summary>
                   <ol className="space-y-2 max-h-60 overflow-y-auto pr-2">
                     {reproduceJob.messages.map((message, index) => {
-                      const Icon = stageIcons[message.stage] ?? ArrowPathIcon;
+                      const Icon = stageIcons[message.stage.toLowerCase()] ?? ArrowPathIcon;
                       return (
                         <li
                           key={`${message.timestamp}-${index}`}
                           className="relative flex gap-3 rounded border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/40 p-2 shadow-inner shadow-black/10"
                         >
                           <div className="relative mt-0.5 flex h-6 w-6 items-center justify-center rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800">
-                            <Icon className="h-3.5 w-3.5 text-slate-500 dark:text-slate-400" />
+                            <Icon className="h-3.5 w-3.5 text-zinc-600 dark:text-slate-400" />
                           </div>
                           <div>
-                            <p className="text-xs text-slate-600 dark:text-slate-300">{message.text}</p>
+                            <p className="text-xs text-zinc-600 dark:text-slate-300">{message.text}</p>
                             <p className="text-[11px] text-slate-500">
                               {formatTimestamp(message.timestamp)} · {stageLabel(message.stage, language)}
                             </p>
@@ -5215,7 +5201,7 @@ export default function Home() {
                 <div className="space-y-3 rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/40 p-3">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <p className="text-sm font-semibold text-slate-600 dark:text-slate-200">{translate("GPT-5 prompt template")}</p>
+                      <p className="text-sm font-semibold text-zinc-600 dark:text-slate-200">{translate("GPT-5 prompt template")}</p>
                       <p className="text-xs text-slate-500 dark:text-slate-400">
                         {translate("Edit or replace the GPT-5 prompt file before refining scenes.")}
                       </p>
@@ -5224,7 +5210,7 @@ export default function Home() {
                       type="button"
                       onClick={handleWorkflowTemplateReload}
                       disabled={workflowTemplateLoading || workflowTemplateSaving}
-                      className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1 text-[11px] font-semibold text-slate-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-800 dark:hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                      className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1 text-[11px] font-semibold text-zinc-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-800 dark:hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {workflowTemplateLoading ? (
                         <ArrowPathIcon className="h-4 w-4 animate-spin" />
@@ -5258,7 +5244,7 @@ export default function Home() {
                           workflowTemplateLoading ||
                           workflowTemplateSaving
                         }
-                        className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1 text-[11px] font-semibold text-slate-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-800 dark:hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                        className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1 text-[11px] font-semibold text-zinc-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-800 dark:hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         {translate("Reset changes")}
                       </button>
@@ -5270,7 +5256,7 @@ export default function Home() {
                           workflowTemplateLoading ||
                           workflowTemplateSaving
                         }
-                        className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1 text-[11px] font-semibold text-slate-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-800 dark:hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                        className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1 text-[11px] font-semibold text-zinc-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-800 dark:hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         {workflowTemplateSaving ? (
                           <ArrowPathIcon className="h-4 w-4 animate-spin" />
@@ -5313,7 +5299,7 @@ export default function Home() {
                           : refinementReview.refinedText || refinementReview.originalText,
                       )
                     }
-                    className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-800 dark:hover:text-slate-100"
+                    className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs font-semibold text-zinc-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-800 dark:hover:text-slate-100"
                   >
                     <DocumentTextIcon className="h-4 w-4" />
                     {translate("Copy prompt")}
@@ -5321,7 +5307,7 @@ export default function Home() {
                   <button
                     type="button"
                     onClick={handleRefinementDismiss}
-                    className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-800 dark:hover:text-slate-100"
+                    className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs font-semibold text-zinc-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-800 dark:hover:text-slate-100"
                   >
                     {translate("Back to edit")}
                   </button>
@@ -5370,7 +5356,7 @@ export default function Home() {
                   <button
                     type="button"
                     onClick={() => handleCopyPrompt(promptPreview.prompt)}
-                    className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-[11px] font-semibold text-slate-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-800 dark:hover:text-slate-100"
+                    className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-[11px] font-semibold text-zinc-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-800 dark:hover:text-slate-100"
                   >
                     <DocumentTextIcon className="h-4 w-4" />
                     {translate("Copy prompt")}

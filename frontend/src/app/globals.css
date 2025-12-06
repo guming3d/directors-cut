@@ -3,15 +3,17 @@
 @variant dark (&:where(.dark, .dark *));
 
 :root {
-  --background: #f6f7fb;
-  --foreground: #1f2937;
-  --surface: rgba(255, 255, 255, 0.94);
+  /* Default to dark theme for video editor studio feel */
+  --background: #09090b; /* Zinc 950 */
+  --foreground: #fafafa; /* Zinc 50 */
+  --surface: #18181b;    /* Zinc 900 */
+  --accent: #2563eb;     /* Blue 600 */
 }
 
 .dark {
-  --background: #0f172a;
-  --foreground: #e2e8f0;
-  --surface: rgba(30, 41, 59, 0.94);
+  --background: #09090b;
+  --foreground: #fafafa;
+  --surface: #18181b;
 }
 
 @theme inline {
@@ -27,4 +29,20 @@ body {
   color: var(--foreground);
   font-family: var(--font-geist-sans), "Inter", "Helvetica Neue", Arial, sans-serif;
   line-height: 1.6;
+}
+
+/* Scrollbar styling for professional look */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #18181b; 
+}
+::-webkit-scrollbar-thumb {
+  background: #3f3f46; 
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #52525b; 
 }
