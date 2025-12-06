@@ -370,6 +370,7 @@ const zhTranslations: Record<string, string> = {
   "Failed to refresh workflow status. Check that the FastAPI server is reachable.": "无法刷新工作流状态，请检查 FastAPI 服务是否可访问。",
   "Failed to regenerate this scene. Confirm the backend is reachable.": "无法重新生成该场景，请确认后端可用。",
   "Failed": "失败",
+  "Generation blocked. Update the prompt and regenerate this scene.": "生成被拦截，请修改提示词后重新生成该场景。",
   "Final Video": "最终视频",
   "Merged Kling video": "合并后的 Kling 视频",
   "Generate a clip to see it listed here.": "先生成一个片段即可在此查看。",
@@ -419,9 +420,11 @@ const zhTranslations: Record<string, string> = {
   "Scene images enabled": "已启用场景参考图",
   "Scene reference": "场景参考图",
   "Scene references": "场景参考图",
+  "Scene generation blocked": "场景生成被拦截",
   "Segment": "片段",
   "Scene duration": "场景时长",
   "Scene Renders": "场景渲染",
+  "Scene regeneration in progress": "场景正在重新生成",
   "Scene": "场景",
   "seconds": "秒",
   "Scenes this run": "本次场景数",
@@ -849,7 +852,11 @@ export default function Home() {
   const [isRecomposing, setIsRecomposing] = useState(false);
   const [refineWorkflowWithGpt5, setRefineWorkflowWithGpt5] = useState(false);
   const [sceneRegenerating, setSceneRegenerating] = useState<Record<number, boolean>>({});
+  const [sceneRegenerationTargets, setSceneRegenerationTargets] = useState<
+    Record<number, { versionCount: number; latestVersionId: string | null }>
+  >({});
   const [scenePromptEdits, setScenePromptEdits] = useState<Record<number, string>>({});
+  const [activeSceneOrder, setActiveSceneOrder] = useState<number | null>(null);
 
   // Single video state
   const [singlePrompt, setSinglePrompt] = useState("");
@@ -1261,7 +1268,58 @@ export default function Home() {
 
   useEffect(() => {
     setScenePromptEdits({});
+    setSceneRegenerating({});
+    setSceneRegenerationTargets({});
   }, [job?.job_id]);
+
+  useEffect(() => {
+    if (!job?.scenes?.length) {
+      setActiveSceneOrder(null);
+      return;
+    }
+    setActiveSceneOrder((current) => {
+      if (current && job.scenes.some((scene) => scene.order === current)) {
+        return current;
+      }
+      return job.scenes[0].order;
+    });
+  }, [job?.scenes]);
+
+  useEffect(() => {
+    if (!job?.scenes?.length) {
+      return;
+    }
+    if (!Object.keys(sceneRegenerating).length) {
+      return;
+    }
+    const nextTargets = { ...sceneRegenerationTargets };
+    const nextFlags = { ...sceneRegenerating };
+    let changed = false;
+
+    job.scenes.forEach((scene) => {
+      if (!nextFlags[scene.order]) {
+        return;
+      }
+      const versions = scene.versions ?? [];
+      const versionCount = versions.length;
+      const latestVersionId = versionCount ? versions[versionCount - 1].version_id : null;
+      const target = nextTargets[scene.order];
+      const hasNewVersion =
+        versionCount > (target?.versionCount ?? 0) ||
+        (target?.latestVersionId && latestVersionId && target.latestVersionId !== latestVersionId);
+
+      if (hasNewVersion || job.status === "failed") {
+        delete nextFlags[scene.order];
+        delete nextTargets[scene.order];
+        changed = true;
+      }
+    });
+
+    if (changed) {
+      setSceneRegenerationTargets(nextTargets);
+      setSceneRegenerating(nextFlags);
+    }
+  }, [job?.scenes, job?.status, sceneRegenerating, sceneRegenerationTargets]);
 
   useEffect(() => {
     if (!reproduceJob) {
@@ -1460,6 +1518,22 @@ export default function Home() {
   const currentStatusToken = getStatusToken(job?.status, language);
   const showSequenceReferences = job?.generation_mode === "sequence";
   const showAiFirstFrames = Boolean(job?.generate_ai_first_frame);
+  const activeScene =
+    job?.scenes?.find((scene) => scene.order === activeSceneOrder) ?? job?.scenes?.[0];
+  const activeSceneVersions = activeScene?.versions ?? [];
+  const activeSceneSelectedVersion =
+    activeSceneVersions.find((version) => version.version_id === activeScene?.selected_version_id) ??
+    activeSceneVersions[0];
+  const activeSceneVideoUrl = buildAssetUrl(apiBase, activeSceneSelectedVersion?.video_url);
+  const activeSceneFirstFrameUrl =
+    showAiFirstFrames && activeScene ? buildAssetUrl(apiBase, activeScene.first_frame_url) : null;
+  const activeSceneLastFrameUrl =
+    showSequenceReferences && activeSceneSelectedVersion
+      ? buildAssetUrl(
+          apiBase,
+          activeSceneSelectedVersion.last_frame_url ?? activeScene?.last_frame_url,
+        )
+      : null;
 
   const singleVideoUrl = buildAssetUrl(apiBase, singleJob?.video_url);
   const singleStatusToken = getStatusToken(singleJob?.status, language);
@@ -1949,6 +2023,15 @@ export default function Home() {
     }
     const trimmedOverride = promptOverride?.trim() ?? "";
     setCombinedError(null);
+    const targetScene = job.scenes?.find((scene) => scene.order === sceneOrder);
+    const targetVersions = targetScene?.versions ?? [];
+    const baselineVersionCount = targetVersions.length;
+    const baselineLatestVersionId =
+      baselineVersionCount > 0 ? targetVersions[baselineVersionCount - 1].version_id : null;
+    setSceneRegenerationTargets((prev) => ({
+      ...prev,
+      [sceneOrder]: { versionCount: baselineVersionCount, latestVersionId: baselineLatestVersionId },
+    }));
     setSceneRegenerating((prev) => ({ ...prev, [sceneOrder]: true }));
     try {
       const hasOverride = Boolean(trimmedOverride);
@@ -1972,8 +2055,12 @@ export default function Home() {
     } catch (err) {
       console.error(err);
       setCombinedError("Failed to regenerate this scene. Confirm the backend is reachable.");
-    } finally {
       setSceneRegenerating((prev) => ({ ...prev, [sceneOrder]: false }));
+      setSceneRegenerationTargets((prev) => {
+        const next = { ...prev };
+        delete next[sceneOrder];
+        return next;
+      });
     }
   };
 
@@ -3792,213 +3879,508 @@ export default function Home() {
 
               {job.scenes?.length ? (
                 <div className="mt-8">
-                  <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
-                    <PlayCircleIcon className="h-5 w-5 text-slate-500 dark:text-slate-400" />
-                    {translate("Scene Renders")}
-                  </h2>
-                  <div className="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-[repeat(auto-fit,minmax(360px,1fr))]">
-                    {job.scenes.map((scene) => {
-                      const versions = scene.versions ?? [];
-                      const selectedVersion = versions.find((version) => version.version_id === scene.selected_version_id) ?? versions[0];
-                      const isRegenerating = Boolean(sceneRegenerating[scene.order]);
-            const firstFrameUrl = showAiFirstFrames ? buildAssetUrl(apiBase, scene.first_frame_url) : null;
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
+                        <PlayCircleIcon className="h-5 w-5 text-slate-500 dark:text-slate-400" />
+                        {translate("Scene Renders")}
+                      </h2>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        {translate("Scenes this workflow")}: {job.scenes.length}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-wide text-slate-500">
+                      <span className="rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-2 py-0.5">
+                        {translate(job.generation_mode === "sequence" ? "Sequence" : "Parallel")}
+                      </span>
+                      <span className="rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-2 py-0.5">
+                        {translate(showAiFirstFrames ? "AI start stills enabled" : "No AI first frames")}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="mt-5 grid gap-4 lg:grid-cols-[320px,1fr]">
+                    <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/50 p-3 shadow-inner shadow-black/20">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                          {translate("Scenes this workflow")}
+                        </p>
+                        <span className="text-[11px] text-slate-500">{translate("Available scenes")}</span>
+                      </div>
+                      <div className="mt-3 space-y-2">
+                        {job.scenes.map((scene) => {
+                          const versions = scene.versions ?? [];
+                          const selectedVersion =
+                            versions.find((version) => version.version_id === scene.selected_version_id) ??
+                            versions[0];
+                          const previewUrl = buildAssetUrl(
+                            apiBase,
+                            showSequenceReferences
+                              ? scene.last_frame_url ?? selectedVersion?.last_frame_url
+                              : scene.first_frame_url ??
+                                selectedVersion?.first_frame_url ??
+                                selectedVersion?.last_frame_url,
+                          );
+                          const isActive = activeScene?.order === scene.order;
+                          const isFailed = selectedVersion?.source === "failed";
+                          const isRegenerating = Boolean(sceneRegenerating[scene.order]);
+                          return (
+                            <button
+                              key={scene.order}
+                              type="button"
+                              onClick={() => setActiveSceneOrder(scene.order)}
+                              className={`group relative flex w-full items-center gap-3 rounded-md border px-3 py-2 text-left transition ${
+                                isActive
+                                  ? "border-slate-400 dark:border-slate-600 bg-white dark:bg-slate-900 shadow-sm shadow-black/20"
+                                  : "border-slate-200 dark:border-slate-800 bg-white/60 dark:bg-slate-900/40 hover:border-slate-400/80 dark:hover:border-slate-700"
+                              }`}
+                            >
+                              {isRegenerating ? (
+                                <span className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-full bg-slate-900 px-2 py-0.5 text-[10px] font-semibold text-white shadow-sm shadow-black/20 dark:bg-slate-100 dark:text-slate-900">
+                                  <ArrowPathIcon className="h-3 w-3 animate-spin" />
+                                  {translate("Regenerating...")}
+                                </span>
+                              ) : null}
+                              <div className="relative">
+                                <span className="block rounded-md border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400">
+                                  {translate("Scene")} {scene.order}
+                                </span>
+                              </div>
+                              {previewUrl ? (
+                                <div className="relative h-14 w-20 overflow-hidden rounded-md border border-slate-200 dark:border-slate-700 bg-black/40">
+                                  <Image
+                                    src={previewUrl}
+                                    alt={`${scene.label} preview`}
+                                    width={120}
+                                    height={80}
+                                    unoptimized
+                                    className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.02]"
+                                  />
+                                </div>
+                              ) : (
+                                <div className="flex h-14 w-20 items-center justify-center rounded-md border border-dashed border-slate-200 dark:border-slate-700 text-[10px] text-slate-400">
+                                  {translate("Video pending...")}
+                                </div>
+                              )}
+                              <div className="flex-1 space-y-1">
+                                <div className="flex items-center justify-between gap-2">
+                                  <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                                    {scene.label}
+                                  </p>
+                                  <span className="rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                    {scene.duration_seconds} {translate("seconds")}
+                                  </span>
+                                  {isFailed ? (
+                                    <span className="rounded-full border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rose-600 dark:text-rose-300">
+                                      {translate("Failed")}
+                                    </span>
+                                  ) : null}
+                                </div>
+                                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                                  {(selectedVersion?.label ?? translate("Versions"))} • {versions.length} {translate("Versions")}
+                                </p>
+                                <p className="text-[11px] text-slate-500 dark:text-slate-400 overflow-hidden text-ellipsis">
+                                  {scenePromptEdits[scene.order]?.trim()
+                                    ? scenePromptEdits[scene.order]
+                                    : selectedVersion?.prompt ?? ""}
+                                </p>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
 
-                      return (
-                        <div
-                          key={scene.order}
-                          className="rounded border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/50 p-4 shadow-inner shadow-black/20"
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <div>
-                              <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{scene.label}</h3>
+                    <div className="space-y-4 rounded-lg border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/50 p-4 shadow-inner shadow-black/20">
+                      {activeScene ? (
+                        <>
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2">
+                                <span className="rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                  {translate("Scene")} {activeScene.order}
+                                </span>
+                                <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+                                  {activeScene.label}
+                                </h3>
+                              </div>
                               <p className="text-xs text-slate-500 dark:text-slate-400">
-                                {scene.duration_seconds} {translate("seconds")}
+                                {translate("Scene duration")}: {activeScene.duration_seconds} {translate("seconds")} •{" "}
+                                {translate("Versions")}: {activeSceneVersions.length}
                               </p>
+                              {activeSceneSelectedVersion ? (
+                                <p className="text-xs text-slate-500 dark:text-slate-400">
+                                  {translate("Selected")}: {activeSceneSelectedVersion.label} •{" "}
+                                  {formatTimeDistance(activeSceneSelectedVersion.created_at)}
+                                </p>
+                              ) : null}
                             </div>
-                            <span className="rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                              {translate("Scene")} {scene.order}
-                            </span>
-                          </div>
-
-                          {firstFrameUrl ? (
-                            <div className="mt-3 rounded-md border border-slate-300 dark:border-slate-700 bg-slate-100/50 dark:bg-slate-800/50 p-2">
-                              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                                {translate("AI first frame preview")}
-                              </p>
-                              <Image
-                                src={firstFrameUrl}
-                                alt={`${scene.label} ${translate("AI first frame preview")}`}
-                                width={320}
-                                height={200}
-                                unoptimized
-                                className="mt-2 h-32 w-full rounded object-cover"
-                              />
-                            </div>
-                          ) : null}
-
-                          <div className="mt-3 space-y-2">
-                            <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                              {translate("Edit prompt before regenerating")}
-                            </label>
-                            <textarea
-                              className="w-full rounded-md border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-xs text-slate-900 dark:text-slate-100 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-800"
-                              value={scenePromptEdits[scene.order] ?? selectedVersion?.prompt ?? ""}
-                              onChange={(event) =>
-                                setScenePromptEdits((prev) => ({ ...prev, [scene.order]: event.target.value }))
-                              }
-                              placeholder={translate("Edit prompt before regenerating")}
-                            />
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                                {translate("Video ID:")} {selectedVersion?.video_id ?? translate("Unavailable")}
-                              </p>
+                            <div className="flex flex-wrap items-center gap-2">
+                              {activeSceneSelectedVersion?.prompt ? (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setPromptPreview({
+                                      sceneLabel: activeScene.label,
+                                      versionLabel: activeSceneSelectedVersion.label,
+                                      prompt: activeSceneSelectedVersion.prompt ?? "",
+                                    })
+                                  }
+                                  className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-[11px] font-semibold text-slate-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-800 dark:hover:text-slate-100"
+                                >
+                                  <DocumentTextIcon className="h-4 w-4" />
+                                  {translate("View system prompt")}
+                                </button>
+                              ) : null}
                               <button
                                 type="button"
                                 onClick={() =>
-                                  handleRegenerateScene(
-                                    scene.order,
-                                    scenePromptEdits[scene.order] ?? selectedVersion?.prompt ?? "",
+                                  handleCopyPrompt(
+                                    scenePromptEdits[activeScene.order] ??
+                                      activeSceneSelectedVersion?.prompt ??
+                                      "",
                                   )
                                 }
-                                disabled={isRegenerating}
-                                className="inline-flex items-center gap-1 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
+                                className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-[11px] font-semibold text-slate-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-800 dark:hover:text-slate-100"
                               >
-                                {isRegenerating ? (
-                                  <ArrowPathIcon className="h-3.5 w-3.5 animate-spin" />
-                                ) : (
-                                  <ArrowPathIcon className="h-3.5 w-3.5" />
-                                )}
-                                {isRegenerating ? translate("Regenerating...") : translate("Regenerate Scene")}
+                                <DocumentTextIcon className="h-4 w-4" />
+                                {translate("Copy prompt")}
                               </button>
+                              {activeSceneSelectedVersion?.video_id ? (
+                                <span className="rounded-md border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-2 py-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                                  {translate("Video ID:")} {activeSceneSelectedVersion.video_id}
+                                </span>
+                              ) : null}
                             </div>
                           </div>
 
-                          {versions.length ? (
-                            <div className="mt-4 space-y-3">
-                              <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                {translate("Versions")}
-                              </h4>
-                              {versions.map((version) => {
-                              const versionVideoUrl = buildAssetUrl(apiBase, version.video_url);
-                              const versionLastFrameUrl = showSequenceReferences ? buildAssetUrl(apiBase, version.last_frame_url) : null;
-                                const isActive = version.version_id === scene.selected_version_id;
-                                const isBusy = Boolean(selectionSubmitting[version.version_id]);
-                                return (
-                                  <div
-                                    key={version.version_id}
-                                    className={`rounded border p-3 ${
-                                      isActive
-                                        ? "border-slate-400 dark:border-slate-600 bg-slate-100 dark:bg-slate-800"
-                                        : "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30"
-                                    }`}
-                                  >
-                                    <div className="flex items-start justify-between gap-3">
-                                      <div>
-                                        <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">{version.label}</p>
-                                        <p className="text-xs text-slate-500">
-                                          {version.source} • {formatTimeDistance(version.created_at)}
-                                        </p>
-                                      </div>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleSelectVersion(scene.order, version.version_id)}
-                                        disabled={isActive || isBusy}
-                                        className={`rounded-md border px-3 py-1 text-xs font-semibold transition ${
-                                          isActive
-                                            ? "border-emerald-200 dark:border-emerald-900/50 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-400"
-                                            : "border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200 disabled:opacity-60"
-                                        }`}
-                                      >
-                                        {isActive
-                                          ? translate("Selected")
-                                          : isBusy
-                                            ? translate("Selecting...")
-                                            : translate("Use this version")}
-                                      </button>
-                                    </div>
-                                    {versionVideoUrl ? (
-                                      <video
-                                        key={`${version.version_id}-${versionVideoUrl}`}
-                                        controls
-                                        className="mt-2 max-h-40 w-full rounded-md border border-slate-200 dark:border-slate-800 bg-black/60"
-                                        src={versionVideoUrl}
-                                      >
-                                        {translate("Version video unavailable.")}
-                                      </video>
-                                    ) : null}
-                                    {versionLastFrameUrl ? (
-                                      <div className="mt-2 rounded-md border border-slate-300 dark:border-slate-700 bg-slate-100/50 dark:bg-slate-100 dark:bg-slate-800/50 p-2">
-                                        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                                          {translate("Last frame reference")}
-                                        </p>
-                                        <Image
-                                          src={versionLastFrameUrl}
-                                          alt={`${version.label} ${translate("Last frame reference")}`}
-                                          width={280}
-                                          height={200}
-                                          unoptimized
-                                          className="mt-2 h-28 w-full rounded object-cover"
-                                        />
-                                      </div>
-                                    ) : null}
-                                    {version.prompt ? (
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          setPromptPreview({
-                                            sceneLabel: scene.label,
-                                            versionLabel: version.label,
-                                            prompt: version.prompt ?? "",
-                                          })
-                                        }
-                                        className="mt-3 inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200"
-                                      >
-                                        <DocumentTextIcon className="h-4 w-4" />
-                                        {translate("View system prompt")}
-                                      </button>
-                                    ) : null}
-                                    {version.video_id ? (
-                                      <p className="text-[11px] text-slate-500">{translate("Azure video ID:")} {version.video_id}</p>
-                                    ) : null}
-                                  </div>
-                                );
-                              })}
+                          {activeSceneSelectedVersion?.source === "failed" ? (
+                            <div className="flex items-start gap-3 rounded-md border border-rose-200 dark:border-rose-900/40 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 shadow-inner shadow-rose-900/10">
+                              <ExclamationTriangleIcon className="h-5 w-5 flex-none text-rose-500" />
+                              <div className="space-y-1">
+                                <p className="text-xs font-semibold text-rose-700 dark:text-rose-300">
+                                  {translate("Scene generation blocked")}
+                                </p>
+                                <p className="text-[11px] text-rose-600 dark:text-rose-300">
+                                  {translate("Generation blocked. Update the prompt and regenerate this scene.")}
+                                </p>
+                              </div>
                             </div>
                           ) : null}
 
-                          <form className="mt-4 space-y-2" onSubmit={(event) => handleRemixSubmit(event, scene.order)}>
-                            <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                              {translate("Remix prompt")}
-                            </label>
-                            <textarea
-                              className="min-h-[80px] w-full rounded-md border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-800"
-                              placeholder={translate("Describe how you want to remix this scene...")}
-                              value={remixPrompts[scene.order] ?? ""}
-                              onChange={(event) =>
-                                setRemixPrompts((prev) => ({ ...prev, [scene.order]: event.target.value }))
-                              }
-                            />
-                            <div className="flex items-center justify-between gap-2 text-xs text-slate-500">
-                              <span>
-                                {translate("Uses previous video ID:")} {selectedVersion?.video_id ?? translate("Unavailable")}
-                              </span>
-                              <button
-                                type="submit"
-                                disabled={!selectedVersion?.video_id || remixSubmitting[scene.order]}
-                                className="inline-flex items-center gap-1 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1 text-xs font-semibold text-slate-500 dark:text-slate-400 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
-                              >
-                                {remixSubmitting[scene.order] ? (
-                                  <ArrowPathIcon className="h-4 w-4 animate-spin" />
-                                ) : (
-                                  <ArrowPathIcon className="h-4 w-4" />
-                                )}
-                                {translate("Remix Scene")}
-                              </button>
+                          {sceneRegenerating[activeScene.order] ? (
+                            <div className="flex items-center gap-3 rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/70 px-3 py-2 shadow-inner shadow-black/10">
+                              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 shadow-sm shadow-black/20">
+                                <ArrowPathIcon className="h-5 w-5 animate-spin" />
+                              </div>
+                              <div className="flex-1 space-y-1">
+                                <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">
+                                  {translate("Scene regeneration in progress")}
+                                </p>
+                                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                                  {translate("Awaiting version refresh...")}
+                                </p>
+                                <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
+                                  <div className="h-full w-2/3 animate-pulse bg-gradient-to-r from-slate-400 via-slate-200 to-slate-400 dark:from-slate-600 dark:via-slate-500 dark:to-slate-600" />
+                                </div>
+                              </div>
                             </div>
-                          </form>
-                        </div>
-                      );
-                    })}
+                          ) : null}
+
+                          <div className="grid gap-4 xl:grid-cols-[1.15fr,0.85fr]">
+                            <div className="space-y-3">
+                              <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-black/10 dark:bg-black/40 p-3 shadow-inner shadow-black/20">
+                                <div className="flex items-center justify-between gap-3">
+                                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                                    {translate("Generated Video")}
+                                  </p>
+                                  {activeSceneSelectedVersion?.source ? (
+                                    <span className="rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                      {activeSceneSelectedVersion.source}
+                                    </span>
+                                  ) : null}
+                                </div>
+                                {activeSceneVideoUrl ? (
+                                  <video
+                                    key={`${activeSceneSelectedVersion?.version_id ?? "scene"}-${activeSceneVideoUrl}`}
+                                    controls
+                                    className="mt-2 max-h-[360px] w-full rounded-md border border-slate-200 dark:border-slate-800 bg-black/80"
+                                    src={activeSceneVideoUrl}
+                                  >
+                                    {translate("Version video unavailable.")}
+                                  </video>
+                                ) : (
+                                  <div className="mt-2 flex h-52 items-center justify-center rounded-md border border-dashed border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-sm text-slate-500 dark:text-slate-400">
+                                    {translate("Video pending...")}
+                                  </div>
+                                )}
+                              </div>
+                              <div className="grid gap-3 sm:grid-cols-2">
+                                {activeSceneFirstFrameUrl ? (
+                                  <div className="rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 p-2">
+                                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                                      {translate("AI first frame preview")}
+                                    </p>
+                                    <Image
+                                      src={activeSceneFirstFrameUrl}
+                                      alt={`${activeScene.label} ${translate("AI first frame preview")}`}
+                                      width={320}
+                                      height={200}
+                                      unoptimized
+                                      className="mt-2 h-28 w-full rounded object-cover"
+                                    />
+                                  </div>
+                                ) : null}
+                                {activeSceneLastFrameUrl ? (
+                                  <div className="rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 p-2">
+                                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                                      {translate("Last frame reference")}
+                                    </p>
+                                    <Image
+                                      src={activeSceneLastFrameUrl}
+                                      alt={`${activeScene.label} ${translate("Last frame reference")}`}
+                                      width={320}
+                                      height={200}
+                                      unoptimized
+                                      className="mt-2 h-28 w-full rounded object-cover"
+                                    />
+                                  </div>
+                                ) : null}
+                              </div>
+                            </div>
+
+                            <div className="space-y-3">
+                              <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 p-3 shadow-inner shadow-black/10">
+                                <div className="flex items-center justify-between gap-3">
+                                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                                    {translate("Edit prompt before regenerating")}
+                                  </p>
+                                  <span className="text-[11px] text-slate-500">
+                                    {translate("Video ID:")}{" "}
+                                    {activeSceneSelectedVersion?.video_id ?? translate("Unavailable")}
+                                  </span>
+                                </div>
+                                <textarea
+                                  className="mt-2 min-h-[120px] w-full rounded-md border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-800"
+                                  value={
+                                    scenePromptEdits[activeScene.order] ??
+                                    activeSceneSelectedVersion?.prompt ??
+                                    ""
+                                  }
+                                  onChange={(event) =>
+                                    setScenePromptEdits((prev) => ({
+                                      ...prev,
+                                      [activeScene.order]: event.target.value,
+                                    }))
+                                  }
+                                  placeholder={translate("Edit prompt before regenerating")}
+                                />
+                                <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleCopyPrompt(
+                                        scenePromptEdits[activeScene.order] ??
+                                          activeSceneSelectedVersion?.prompt ??
+                                          "",
+                                      )
+                                    }
+                                    className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-800 dark:hover:text-slate-100"
+                                  >
+                                    <DocumentTextIcon className="h-4 w-4" />
+                                    {translate("Copy prompt")}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleRegenerateScene(
+                                        activeScene.order,
+                                        scenePromptEdits[activeScene.order] ??
+                                          activeSceneSelectedVersion?.prompt ??
+                                          "",
+                                      )
+                                    }
+                                    disabled={Boolean(sceneRegenerating[activeScene.order])}
+                                    className="inline-flex items-center justify-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 bg-slate-900 px-4 py-2 text-xs font-semibold text-white dark:bg-slate-100 dark:text-slate-900 shadow-sm shadow-slate-900/50 transition hover:bg-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    {sceneRegenerating[activeScene.order] ? (
+                                      <ArrowPathIcon className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                      <ArrowPathIcon className="h-4 w-4" />
+                                    )}
+                                    {sceneRegenerating[activeScene.order]
+                                      ? translate("Regenerating...")
+                                      : translate("Regenerate Scene")}
+                                  </button>
+                                </div>
+                              </div>
+
+                              <form
+                                className="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 p-3 shadow-inner shadow-black/10"
+                                onSubmit={(event) => handleRemixSubmit(event, activeScene.order)}
+                              >
+                                <div className="flex items-center justify-between gap-3">
+                                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                                    {translate("Remix prompt")}
+                                  </p>
+                                  <span className="text-[11px] text-slate-500">
+                                    {translate("Uses previous video ID:")}{" "}
+                                    {activeSceneSelectedVersion?.video_id ?? translate("Unavailable")}
+                                  </span>
+                                </div>
+                                <textarea
+                                  className="mt-2 min-h-[96px] w-full rounded-md border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-800"
+                                  placeholder={translate("Describe how you want to remix this scene...")}
+                                  value={remixPrompts[activeScene.order] ?? ""}
+                                  onChange={(event) =>
+                                    setRemixPrompts((prev) => ({
+                                      ...prev,
+                                      [activeScene.order]: event.target.value,
+                                    }))
+                                  }
+                                />
+                                <div className="mt-3 flex items-center justify-between gap-2 text-xs text-slate-500">
+                                  <span>
+                                    {translate("Prompt:")}{" "}
+                                    {activeSceneSelectedVersion?.label ?? translate("Versions")}
+                                  </span>
+                                  <button
+                                    type="submit"
+                                    disabled={
+                                      !activeSceneSelectedVersion?.video_id || remixSubmitting[activeScene.order]
+                                    }
+                                    className="inline-flex items-center gap-1 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-800 dark:hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    {remixSubmitting[activeScene.order] ? (
+                                      <ArrowPathIcon className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                      <ArrowPathIcon className="h-4 w-4" />
+                                    )}
+                                    {translate("Remix Scene")}
+                                  </button>
+                                </div>
+                              </form>
+                            </div>
+                          </div>
+
+                          <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 p-3 shadow-inner shadow-black/10">
+                            <div className="flex items-center justify-between gap-3">
+                              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                                {translate("Versions")}
+                              </p>
+                              <span className="text-[11px] text-slate-500">
+                                {translate("Scene")} {activeScene.order}
+                              </span>
+                            </div>
+                            <div className="mt-3 overflow-x-auto">
+                              <div className="flex min-w-full gap-3">
+                                {activeSceneVersions.map((version) => {
+                                  const versionVideoUrl = buildAssetUrl(apiBase, version.video_url);
+                                  const versionLastFrameUrl = showSequenceReferences
+                                    ? buildAssetUrl(apiBase, version.last_frame_url)
+                                    : null;
+                                  const isActiveVersion =
+                                    version.version_id === activeScene?.selected_version_id;
+                                  const isBusy = Boolean(selectionSubmitting[version.version_id]);
+                                  return (
+                                    <div
+                                      key={version.version_id}
+                                      className={`w-[260px] flex-shrink-0 rounded-md border p-3 ${
+                                        isActiveVersion
+                                          ? "border-slate-400 dark:border-slate-600 bg-white dark:bg-slate-900"
+                                          : "border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/40"
+                                      }`}
+                                    >
+                                      <div className="flex items-start justify-between gap-2">
+                                        <div>
+                                          <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                                            {version.label}
+                                          </p>
+                                          <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                                            {version.source} • {formatTimeDistance(version.created_at)}
+                                          </p>
+                                        </div>
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            handleSelectVersion(activeScene.order, version.version_id)
+                                          }
+                                          disabled={isActiveVersion || isBusy}
+                                          className={`rounded-md border px-3 py-1 text-[11px] font-semibold transition ${
+                                            isActiveVersion
+                                              ? "border-emerald-200 dark:border-emerald-900/50 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-500"
+                                              : "border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200 disabled:opacity-60"
+                                          }`}
+                                        >
+                                          {isActiveVersion
+                                            ? translate("Selected")
+                                            : isBusy
+                                              ? translate("Selecting...")
+                                              : translate("Use this version")}
+                                        </button>
+                                      </div>
+                                      {versionVideoUrl ? (
+                                        <video
+                                          key={`${version.version_id}-${versionVideoUrl}`}
+                                          controls
+                                          className="mt-2 max-h-32 w-full rounded-md border border-slate-200 dark:border-slate-800 bg-black/60"
+                                          src={versionVideoUrl}
+                                        >
+                                          {translate("Version video unavailable.")}
+                                        </video>
+                                      ) : (
+                                        <div className="mt-2 flex h-32 items-center justify-center rounded-md border border-dashed border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs text-slate-500 dark:text-slate-400">
+                                          {translate("Video unavailable.")}
+                                        </div>
+                                      )}
+                                      {versionLastFrameUrl ? (
+                                        <div className="mt-2 rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 p-2">
+                                          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                                            {translate("Last frame reference")}
+                                          </p>
+                                          <Image
+                                            src={versionLastFrameUrl}
+                                            alt={`${version.label} ${translate("Last frame reference")}`}
+                                            width={260}
+                                            height={140}
+                                            unoptimized
+                                            className="mt-2 h-20 w-full rounded object-cover"
+                                          />
+                                        </div>
+                                      ) : null}
+                                      {version.prompt ? (
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            setPromptPreview({
+                                              sceneLabel: activeScene.label,
+                                              versionLabel: version.label,
+                                              prompt: version.prompt ?? "",
+                                            })
+                                          }
+                                          className="mt-3 inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200"
+                                        >
+                                          <DocumentTextIcon className="h-4 w-4" />
+                                          {translate("View system prompt")}
+                                        </button>
+                                      ) : null}
+                                      {version.video_id ? (
+                                        <p className="text-[11px] text-slate-500">
+                                          {translate("Azure video ID:")} {version.video_id}
+                                        </p>
+                                      ) : null}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          </div>
+                        </>
+                      ) : (
+                        <p className="text-sm text-slate-500 dark:text-slate-400">
+                          {translate("Start a workflow before regenerating scenes.")}
+                        </p>
+                      )}
+                    </div>
                   </div>
                 </div>
               ) : null}

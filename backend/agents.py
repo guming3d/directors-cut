@@ -263,6 +263,12 @@ class Sora2Agent(Executor):
                     )
 
         renders.sort(key=lambda item: item.order)
+        if errors and request.job_id:
+            for plan, exc in errors:
+                try:
+                    await WORKFLOW_JOB_STORE.record_scene_failure(request.job_id, plan, str(exc))
+                except Exception:  # pragma: no cover - defensive logging
+                    logger.exception("Unable to record failed scene %s for job %s", plan.label, request.job_id)
         if errors:
             details = "; ".join(f"{plan.label}: {exc}" for plan, exc in errors if plan.label)
             raise RuntimeError(f"{len(errors)} scene(s) failed: {details or 'Unknown scenes'}")
@@ -314,6 +320,12 @@ class Sora2Agent(Executor):
                 logger.error("Sequence render failed for %s: %s", plan.label, exc)
                 next_reference = None
                 if request.job_id:
+                    try:
+                        await WORKFLOW_JOB_STORE.record_scene_failure(request.job_id, plan, str(exc))
+                    except Exception:  # pragma: no cover - defensive logging
+                        logger.exception(
+                            "Unable to record failed scene %s for job %s", plan.label, request.job_id
+                        )
                     await WORKFLOW_JOB_STORE.add_message(
                         request.job_id,
                         "failed",

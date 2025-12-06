@@ -48,6 +48,7 @@ from .models import (
     ReproduceSegmentVersion,
     ReproduceSegmentVersionModel,
     WorkflowJobState,
+    ScenePlan,
 )
 from .utils import build_static_asset_url, utc_now
 
@@ -383,26 +384,67 @@ class WorkflowJobStore:
                 last_frame_path=render.last_frame_path,
                 first_frame_path=render.first_frame_path,
             )
-            scene = SceneStatus(
-                order=render.order,
-                label=render.label,
-                duration_seconds=render.duration_seconds,
-                prompt_path=render.prompt_path,
-                video_path=render.video_path,
-                log_path=render.log_path,
-                client_log_path=render.client_log_path,
-                last_frame_path=render.last_frame_path,
-                first_frame_path=render.first_frame_path,
-            )
+            scene = next((item for item in job.scenes if item.order == render.order), None)
+            if scene is None:
+                scene = SceneStatus(
+                    order=render.order,
+                    label=render.label,
+                    duration_seconds=render.duration_seconds,
+                    prompt_path=render.prompt_path,
+                    video_path=render.video_path,
+                    log_path=render.log_path,
+                    client_log_path=render.client_log_path,
+                    last_frame_path=render.last_frame_path,
+                    first_frame_path=render.first_frame_path,
+                )
+                job.scenes.append(scene)
+            else:
+                scene.label = render.label
+                scene.duration_seconds = render.duration_seconds
+                scene.prompt_path = render.prompt_path
+                scene.video_path = render.video_path
+                scene.log_path = render.log_path
+                scene.client_log_path = render.client_log_path
+                scene.last_frame_path = render.last_frame_path
+                scene.first_frame_path = render.first_frame_path
             scene.versions.append(version)
             scene.set_selected_version(version)
-            job.scenes.append(scene)
             total = job.total_scenes or 1
             fraction = min(job.completed_scenes / total, 1.0)
             progress = 0.2 + 0.6 * fraction
             job.progress = max(job.progress, progress)
             job.stage = "rendering"
             job.add_message("rendering", f"Completed {render.label}.")
+            self._persist(job)
+
+    async def record_scene_failure(self, job_id: str, plan: ScenePlan, error: Optional[str] = None) -> None:
+        async with self._lock:
+            job = self._require(job_id)
+            scene = next((item for item in job.scenes if item.order == plan.order), None)
+            if scene is None:
+                scene = SceneStatus(
+                    order=plan.order,
+                    label=plan.label,
+                    duration_seconds=plan.duration_seconds,
+                    prompt_path=plan.prompt_path,
+                    video_path="",
+                )
+                job.scenes.append(scene)
+            else:
+                scene.label = plan.label or scene.label
+                scene.duration_seconds = plan.duration_seconds or scene.duration_seconds
+                scene.prompt_path = plan.prompt_path or scene.prompt_path
+            version = SceneVersionEntry(
+                version_id=uuid.uuid4().hex,
+                label=f"Attempt {len(scene.versions) + 1} (failed)",
+                video_path="",
+                prompt=plan.prompt_text,
+                prompt_path=plan.prompt_path,
+                source="failed",
+            )
+            scene.versions.append(version)
+            if not scene.selected_version_id:
+                scene.selected_version_id = version.version_id
             self._persist(job)
 
     async def mark_composing(self, job_id: str, message: str | None = None) -> None:
