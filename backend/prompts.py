@@ -319,9 +319,20 @@ async def refine_text_with_gpt5(
             deployment,
             question,
         )
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": question,
+                    }
+                ],
+            }
+        ]
         response = client.responses.create(
             model=deployment,
-            input=question,
+            input=messages,
             max_output_tokens=max_tokens,
         )
         output_text = extract_response_text(response)

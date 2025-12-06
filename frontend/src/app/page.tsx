@@ -318,6 +318,17 @@ const getSegmentationLabel = (value: string): string => {
 
 const AUTH_USERNAME = "user";
 const AUTH_PASSWORD = "sora2isgreat";
+
+const DEFAULT_WORKFLOW_PROMPT_TEMPLATE = [
+  "**Scene 1 (Scene 1 title)**",
+  "Scene 1 kling prompt content",
+  "",
+  "**Scene 2 (Scene 2 title)**",
+  "Scene 2 kling prompt content",
+  "",
+  "**Scene 3 (Scene 3 title) **",
+  "Scene 3 kling prompt content",
+].join("\n");
 const AUTH_STORAGE_KEY = "sora2-authenticated";
 
 const zhTranslations: Record<string, string> = {
@@ -815,7 +826,7 @@ export default function Home() {
   }, [apiBase]);
 
   // Combined workflow state
-  const [script, setScript] = useState("");
+  const [script, setScript] = useState(DEFAULT_WORKFLOW_PROMPT_TEMPLATE);
   const [useSceneImages, setUseSceneImages] = useState(false);
   const [generateAiFirstFrames, setGenerateAiFirstFrames] = useState(false);
   const [generationMode, setGenerationMode] = useState<"parallel" | "sequence">("parallel");
