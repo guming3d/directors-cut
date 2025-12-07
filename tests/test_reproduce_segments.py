@@ -6,6 +6,7 @@ import pytest
 
 from backend import reproduce
 from backend.models import VideoInsightSegment, VideoReproduceSegment
+from backend.stores import VideoReproduceJobStore
 
 
 def test_build_segment_states_splits_long_segments() -> None:
@@ -80,3 +81,45 @@ async def test_ensure_segment_duration_trims_long_kling_clip(tmp_path, monkeypat
     assert adjusted.read_bytes() == b"trimmed"
     assert recorded_cmds, "Expected trim command to run."
     assert "-t" in recorded_cmds[0]
+
+
+@pytest.mark.asyncio
+async def test_update_segment_attributes_can_clear_stylized_paths() -> None:
+    store = VideoReproduceJobStore()
+    job_id = "job-clear-stylized"
+    await store.create_job(
+        job_id,
+        "clip.mp4",
+        "video/mp4",
+        None,
+        3,
+        "original",
+        "opencv",
+    )
+    segment = VideoReproduceSegment(
+        order=1,
+        label="Segment 1",
+        description="desc",
+        start_seconds=0.0,
+        end_seconds=2.0,
+        duration_seconds=2.0,
+        kling_duration_seconds=5,
+        stylized_start_frame_path="start.png",
+        stylized_end_frame_path="end.png",
+        image_prompt_path="prompt.txt",
+    )
+    await store.set_segments(job_id, [segment], source="test")
+
+    await store.update_segment_attributes(
+        job_id,
+        segment.order,
+        stylized_start_frame_path=None,
+        stylized_end_frame_path=None,
+        image_prompt_path=None,
+    )
+
+    state = await store.get_job_state(job_id)
+    stored_segment = state.segments[0]
+    assert stored_segment.stylized_start_frame_path is None
+    assert stored_segment.stylized_end_frame_path is None
+    assert stored_segment.image_prompt_path is None

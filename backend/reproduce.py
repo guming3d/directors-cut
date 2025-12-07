@@ -10,12 +10,16 @@ from pathlib import Path
 from typing import Sequence
 
 from .config import (
+    DEFAULT_IMAGE_GENERATOR,
+    DEFAULT_REPRODUCE_REFERENCE_MODE,
     DEFAULT_REPRODUCE_SEGMENTATION,
     DEFAULT_SORA_RESOLUTION,
     GPT5_REFINEMENT_DEPLOYMENT,
     KLING_ALLOWED_DURATIONS,
     REPRODUCE_DEFAULT_THREADS,
     REPRODUCE_SEGMENT_FRAME_SAMPLES,
+    SUPPORTED_REPRODUCE_REFERENCE_MODES,
+    SUPPORTED_IMAGE_GENERATORS,
     VIDEO_REPRODUCE_JOBS_DIR,
     azure_text_client,
     extract_response_text,
@@ -76,6 +80,10 @@ async def run_reproduce_job(job_id: str) -> None:
         segmentation_backend = (
             job_state.segmentation_backend or DEFAULT_REPRODUCE_SEGMENTATION
         ).strip().lower()
+        reference_mode = (job_state.reference_mode or DEFAULT_REPRODUCE_REFERENCE_MODE).strip().lower()
+        if reference_mode not in SUPPORTED_REPRODUCE_REFERENCE_MODES:
+            reference_mode = DEFAULT_REPRODUCE_REFERENCE_MODE
+        use_tail_reference = reference_mode != "start_only"
 
         await VIDEO_REPRODUCE_STORE.mark_running(job_id)
         job_dir = reproduce_job_root(job_id)
@@ -178,13 +186,23 @@ async def run_reproduce_job(job_id: str) -> None:
                 prompts_dir,
             )
 
+        image_generator_backend = (job_state.image_generation_backend or DEFAULT_IMAGE_GENERATOR).strip().lower()
+        if image_generator_backend not in SUPPORTED_IMAGE_GENERATORS:
+            image_generator_backend = DEFAULT_IMAGE_GENERATOR
+        stylization_disabled = image_generator_backend == "original"
+        reference_note = "start and end frames" if use_tail_reference else "start frame only"
+        progress_message = (
+            f"Using original {reference_note} as Kling reference(s)."
+            if stylization_disabled
+            else (
+                "Converting key frames to stylized "
+                f"{image_generator_backend or 'gpt-image-1'} references ({reference_note})."
+            )
+        )
         await VIDEO_REPRODUCE_STORE.update_progress(
             job_id,
             0.35,
-            (
-                "Converting key frames to stylized "
-                f"{job_state.image_generation_backend or 'gpt-image-1'} references."
-            ),
+            progress_message,
         )
         await _stylize_segment_frames(
             job_id,
@@ -192,7 +210,9 @@ async def run_reproduce_job(job_id: str) -> None:
             stylized_dir,
             prompts_dir,
             resolution,
-            job_state.image_generation_backend,
+            image_generator_backend,
+            use_tail_reference=use_tail_reference,
+            skip_stylization=stylization_disabled,
         )
 
         thread_count = max(1, job_state.thread_count or REPRODUCE_DEFAULT_THREADS)
@@ -208,6 +228,7 @@ async def run_reproduce_job(job_id: str) -> None:
             prompts_dir,
             resolution,
             thread_count,
+            use_tail_reference,
         )
 
         await VIDEO_REPRODUCE_STORE.update_progress(
@@ -231,6 +252,10 @@ async def regenerate_segment(job_id: str, order: int, prompt: str) -> None:
     state = await VIDEO_REPRODUCE_STORE.get_job_state(job_id)
     if state.status == "running":
         raise RuntimeError("Cannot regenerate segments while the reproduce job is still running.")
+    reference_mode = (state.reference_mode or DEFAULT_REPRODUCE_REFERENCE_MODE).strip().lower()
+    if reference_mode not in SUPPORTED_REPRODUCE_REFERENCE_MODES:
+        reference_mode = DEFAULT_REPRODUCE_REFERENCE_MODE
+    use_tail_reference = reference_mode != "start_only"
     segment = next((item for item in state.segments if item.order == order), None)
     if segment is None:
         raise KeyError(f"Segment {order} not found for job {job_id}.")
@@ -257,6 +282,7 @@ async def regenerate_segment(job_id: str, order: int, prompt: str) -> None:
         cleaned_prompt,
         output_path,
         state.resolution or DEFAULT_SORA_RESOLUTION,
+        use_tail_reference,
     )
     if not success:
         raise RuntimeError(error or "Segment regeneration failed.")
@@ -724,6 +750,7 @@ async def _render_segments_with_kling(
     prompts_dir: Path,
     resolution: str,
     thread_count: int,
+    use_tail_reference: bool,
 ) -> None:
     semaphore = asyncio.Semaphore(max(1, thread_count))
     tasks: list[asyncio.Task[tuple[int, bool, str | None]]] = []
@@ -757,6 +784,7 @@ async def _render_segments_with_kling(
                     prompt_text,
                     output_path,
                     resolution,
+                    use_tail_reference,
                     semaphore=semaphore,
                 )
             )
@@ -794,6 +822,7 @@ async def _run_kling_version(
     prompt_text: str,
     output_path: Path,
     resolution: str,
+    use_tail_reference: bool,
     semaphore: asyncio.Semaphore | None = None,
 ) -> tuple[int, bool, str | None]:
     lock = semaphore or _AsyncNoopLock()
@@ -808,7 +837,9 @@ async def _run_kling_version(
         await VIDEO_REPRODUCE_STORE.update_segment_attributes(job_id, segment.order, status="rendering")
         try:
             primary_image = segment.stylized_start_frame_path or segment.start_frame_path
-            tail_image = segment.stylized_end_frame_path or segment.end_frame_path
+            tail_image = None
+            if use_tail_reference:
+                tail_image = segment.stylized_end_frame_path or segment.end_frame_path
             result = await render_kling_clip(
                 prompt_text=prompt_text,
                 duration_seconds=segment.kling_duration_seconds,
@@ -1123,46 +1154,67 @@ async def _stylize_segment_frames(
     prompts_dir: Path,
     resolution: str,
     image_backend: str | None,
+    use_tail_reference: bool,
+    skip_stylization: bool = False,
 ) -> None:
     stylized_dir.mkdir(parents=True, exist_ok=True)
-    try:
-        generator = get_image_generator(image_backend)
-    except ImageGenerationError as exc:
-        logger.warning("Image generator unavailable (%s): %s", image_backend, exc)
+    if skip_stylization:
+        generator = None
         await VIDEO_REPRODUCE_STORE.add_message(
             job_id,
             "running",
-            "Image generator unavailable; using original frames for Kling references.",
+            "Stylization disabled; using original start/end frames for Kling references.",
         )
-        generator = None
+    else:
+        try:
+            generator = get_image_generator(image_backend)
+        except ImageGenerationError as exc:
+            logger.warning("Image generator unavailable (%s): %s", image_backend, exc)
+            await VIDEO_REPRODUCE_STORE.add_message(
+                job_id,
+                "running",
+                "Image generator unavailable; using original frames for Kling references.",
+            )
+            generator = None
     normalized_resolution = resolution or DEFAULT_SORA_RESOLUTION
     for segment in segments:
-        prompt_path, prompt_text = _ensure_stylize_prompt(prompts_dir, segment)
+        prompt_path: Path | None = None
+        prompt_text = ""
+        if generator is not None:
+            prompt_path, prompt_text = _ensure_stylize_prompt(prompts_dir, segment)
         stylized_start_path = stylized_dir / f"segment_{segment.order:03d}_start_stylized.png"
         stylized_end_path = stylized_dir / f"segment_{segment.order:03d}_end_stylized.png"
-        start_result = await _stylize_single_frame(
-            generator,
-            segment.start_frame_path,
-            prompt_text,
-            stylized_start_path,
-            normalized_resolution,
+        start_result = (
+            await _stylize_single_frame(
+                generator,
+                segment.start_frame_path,
+                prompt_text,
+                stylized_start_path,
+                normalized_resolution,
+            )
+            if generator is not None
+            else None
         )
-        end_result = await _stylize_single_frame(
-            generator,
-            segment.end_frame_path,
-            prompt_text,
-            stylized_end_path,
-            normalized_resolution,
+        end_result = (
+            await _stylize_single_frame(
+                generator,
+                segment.end_frame_path,
+                prompt_text,
+                stylized_end_path,
+                normalized_resolution,
+            )
+            if generator is not None and use_tail_reference
+            else None
         )
         segment.stylized_start_frame_path = start_result
-        segment.stylized_end_frame_path = end_result
-        segment.image_prompt_path = str(prompt_path)
+        segment.stylized_end_frame_path = end_result if use_tail_reference else None
+        segment.image_prompt_path = str(prompt_path) if prompt_path else None
         await VIDEO_REPRODUCE_STORE.update_segment_attributes(
             job_id,
             segment.order,
             stylized_start_frame_path=start_result,
-            stylized_end_frame_path=end_result,
-            image_prompt_path=str(prompt_path),
+            stylized_end_frame_path=end_result if use_tail_reference else None,
+            image_prompt_path=str(prompt_path) if prompt_path else None,
         )
 
 

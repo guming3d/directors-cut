@@ -379,6 +379,7 @@ async def _render_scene_regen_with_kling(
     resolution: str,
     output_path: Path,
 ) -> tuple[Path, Path, str]:
+    regen_token = uuid.uuid4().hex[:8]
     result = await render_kling_clip(
         prompt_text=prompt_text,
         duration_seconds=scene.duration_seconds,
@@ -387,7 +388,7 @@ async def _render_scene_regen_with_kling(
         primary_image_path=scene.first_frame_path,
         tail_image_path=scene.last_frame_path,
         extra_image_paths=[],
-        external_task_id=f"{job_id}-scene{scene.order:02d}-regen",
+        external_task_id=f"{job_id}-scene{scene.order:02d}-regen-{regen_token}",
     )
     log_path = output_path.with_suffix(".json")
     client_log_path = output_path.with_suffix(".regen.log")

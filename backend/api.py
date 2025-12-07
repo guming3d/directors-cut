@@ -19,6 +19,7 @@ from starlette.background import BackgroundTask
 from .config import (
     CONTENT_UNDERSTANDING_MAX_UPLOAD_BYTES,
     DEFAULT_IMAGE_GENERATOR,
+    DEFAULT_REPRODUCE_REFERENCE_MODE,
     DEFAULT_REPRODUCE_SEGMENTATION,
     DEFAULT_SORA_RESOLUTION,
     DEFAULT_VIDEO_PROVIDER,
@@ -28,6 +29,7 @@ from .config import (
     SINGLE_VIDEO_JOBS_DIR,
     STATIC_URL_PREFIX,
     SUPPORTED_IMAGE_GENERATORS,
+    SUPPORTED_REPRODUCE_REFERENCE_MODES,
     SUPPORTED_REPRODUCE_SEGMENTERS,
     SUPPORTED_VIDEO_PROVIDERS,
     allowed_origins,
@@ -551,6 +553,7 @@ async def create_reproduce_job(
     thread_count: int | None = Form(default=None, alias="threadCount"),
     image_generator: str | None = Form(default=None, alias="imageGenerator"),
     segmentation_backend: str | None = Form(default=None, alias="segmentationBackend"),
+    frame_reference_mode: str | None = Form(default=None, alias="frameReferenceMode"),
 ) -> VideoReproduceJobResponse:
     if video_file.content_type and not video_file.content_type.startswith("video/"):
         raise HTTPException(status_code=400, detail="Upload a valid video file (mp4, mov, webm).")
@@ -575,6 +578,11 @@ async def create_reproduce_job(
             ensure_content_understanding_ready()
         except RuntimeError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
+    requested_reference_mode = (
+        (frame_reference_mode or DEFAULT_REPRODUCE_REFERENCE_MODE).strip().lower()
+    )
+    if requested_reference_mode not in SUPPORTED_REPRODUCE_REFERENCE_MODES:
+        requested_reference_mode = DEFAULT_REPRODUCE_REFERENCE_MODE
     await VIDEO_REPRODUCE_STORE.create_job(
         job_id,
         filename,
@@ -583,6 +591,7 @@ async def create_reproduce_job(
         threads,
         requested_generator,
         requested_segmentation,
+        requested_reference_mode,
     )
     job_dir = reproduce_job_root(job_id)
     destination = job_dir / filename

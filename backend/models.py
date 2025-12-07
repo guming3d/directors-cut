@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .config import (
     DEFAULT_IMAGE_GENERATOR,
+    DEFAULT_REPRODUCE_REFERENCE_MODE,
     DEFAULT_REPRODUCE_SEGMENTATION,
     DEFAULT_SORA_RESOLUTION,
     DEFAULT_VIDEO_PROVIDER,
@@ -393,6 +394,7 @@ class VideoReproduceJobState:
     resolution: str = DEFAULT_SORA_RESOLUTION
     image_generation_backend: str = DEFAULT_IMAGE_GENERATOR
     segmentation_backend: str = DEFAULT_REPRODUCE_SEGMENTATION
+    reference_mode: str = DEFAULT_REPRODUCE_REFERENCE_MODE
     messages: list[ProgressMessage] = field(default_factory=list)
     segments: list[VideoReproduceSegment] = field(default_factory=list)
 
@@ -602,6 +604,7 @@ class VideoReproduceJobResponse(BaseModel):
     final_video_url: Optional[str]
     image_generation_backend: str
     segmentation_backend: str
+    reference_mode: str
     messages: list[JobMessageModel]
     segments: list[VideoReproduceSegmentModel] = Field(default_factory=list)
 

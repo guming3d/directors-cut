@@ -13,6 +13,7 @@ from tinydb import Query, TinyDB
 
 from .config import (
     DEFAULT_IMAGE_GENERATOR,
+    DEFAULT_REPRODUCE_REFERENCE_MODE,
     DEFAULT_REPRODUCE_SEGMENTATION,
     DEFAULT_SORA_RESOLUTION,
     DEFAULT_VIDEO_PROVIDER,
@@ -51,6 +52,9 @@ from .models import (
     ScenePlan,
 )
 from .utils import build_static_asset_url, utc_now
+
+
+_UNSET = object()
 
 
 def _serialize_datetime(value: Optional[datetime]) -> Optional[str]:
@@ -952,6 +956,7 @@ def _reproduce_job_to_record(job: VideoReproduceJobState) -> dict[str, Any]:
         "segments": [_reproduce_segment_to_record(segment) for segment in job.segments],
         "image_generation_backend": job.image_generation_backend,
         "segmentation_backend": job.segmentation_backend,
+        "reference_mode": job.reference_mode,
     }
 
 
@@ -984,6 +989,7 @@ def _reproduce_job_from_record(payload: dict[str, Any]) -> VideoReproduceJobStat
         segmentation_backend=(
             payload.get("segmentation_backend") or DEFAULT_REPRODUCE_SEGMENTATION
         ),
+        reference_mode=(payload.get("reference_mode") or DEFAULT_REPRODUCE_REFERENCE_MODE),
     )
 
 
@@ -1480,6 +1486,7 @@ class VideoReproduceJobStore:
         thread_count: int,
         image_generation_backend: str,
         segmentation_backend: str,
+        reference_mode: str,
     ) -> None:
         async with self._lock:
             state = VideoReproduceJobState(
@@ -1490,6 +1497,7 @@ class VideoReproduceJobStore:
                 thread_count=thread_count,
                 image_generation_backend=image_generation_backend,
                 segmentation_backend=segmentation_backend,
+                reference_mode=reference_mode,
             )
             state.add_message("queued", "Video reproduce workflow queued.")
             self._jobs[job_id] = state
@@ -1569,10 +1577,10 @@ class VideoReproduceJobStore:
         status: Optional[str] = None,
         description: Optional[str] = None,
         original_video_path: Optional[str] = None,
-        stylized_start_frame_path: Optional[str] = None,
-        stylized_end_frame_path: Optional[str] = None,
-        image_prompt_path: Optional[str] = None,
-        gpt_image_prompt_path: Optional[str] = None,
+        stylized_start_frame_path: Any = _UNSET,
+        stylized_end_frame_path: Any = _UNSET,
+        image_prompt_path: Any = _UNSET,
+        gpt_image_prompt_path: Any = _UNSET,
     ) -> None:
         async with self._lock:
             job = self._require(job_id)
@@ -1585,13 +1593,15 @@ class VideoReproduceJobStore:
                 segment.description = description
             if original_video_path is not None:
                 segment.original_video_path = original_video_path
-            if stylized_start_frame_path is not None:
-                segment.stylized_start_frame_path = stylized_start_frame_path
-            if stylized_end_frame_path is not None:
-                segment.stylized_end_frame_path = stylized_end_frame_path
-            prompt_path_value = image_prompt_path if image_prompt_path is not None else gpt_image_prompt_path
-            if prompt_path_value is not None:
-                segment.image_prompt_path = prompt_path_value
+            if stylized_start_frame_path is not _UNSET:
+                segment.stylized_start_frame_path = stylized_start_frame_path or None
+            if stylized_end_frame_path is not _UNSET:
+                segment.stylized_end_frame_path = stylized_end_frame_path or None
+            prompt_path_value = (
+                image_prompt_path if image_prompt_path is not _UNSET else gpt_image_prompt_path
+            )
+            if prompt_path_value is not _UNSET:
+                segment.image_prompt_path = prompt_path_value or None
             self._persist(job)
 
     async def add_segment_version(
@@ -1773,6 +1783,7 @@ class VideoReproduceJobStore:
             final_video_url=build_static_asset_url(job.final_video_path),
             image_generation_backend=job.image_generation_backend,
             segmentation_backend=job.segmentation_backend,
+            reference_mode=job.reference_mode,
             messages=messages,
             segments=segments,
         )

@@ -79,6 +79,12 @@ except ValueError:
     _segment_frame_samples = 5
 REPRODUCE_SEGMENT_FRAME_SAMPLES = max(0, _segment_frame_samples)
 
+SUPPORTED_REPRODUCE_REFERENCE_MODES = ("start_end", "start_only")
+_reference_mode_env = (os.getenv("REPRODUCE_REFERENCE_MODE") or "start_end").strip().lower()
+DEFAULT_REPRODUCE_REFERENCE_MODE = (
+    _reference_mode_env if _reference_mode_env in SUPPORTED_REPRODUCE_REFERENCE_MODES else "start_end"
+)
+
 # Video provider defaults
 SUPPORTED_VIDEO_PROVIDERS = ("sora2", "kling")
 _provider_env = (os.getenv("VIDEO_PROVIDER") or "sora2").strip().lower()
@@ -87,7 +93,7 @@ SORA_ALLOWED_DURATIONS = (4, 8, 12)
 KLING_ALLOWED_DURATIONS = (5, 10)
 
 # Image generation provider defaults
-SUPPORTED_IMAGE_GENERATORS = ("gpt-image-1", "kling")
+SUPPORTED_IMAGE_GENERATORS = ("gpt-image-1", "kling", "original")
 _image_generator_env = (os.getenv("REPRODUCE_IMAGE_GENERATOR") or "gpt-image-1").strip().lower()
 DEFAULT_IMAGE_GENERATOR = (
     _image_generator_env if _image_generator_env in SUPPORTED_IMAGE_GENERATORS else "gpt-image-1"
@@ -368,6 +374,7 @@ __all__ = [
     "DATA_URL_PATTERN",
     "DEFAULT_SORA_RESOLUTION",
     "DEFAULT_IMAGE_GENERATOR",
+    "DEFAULT_REPRODUCE_REFERENCE_MODE",
     "DEFAULT_REPRODUCE_SEGMENTATION",
     "DEFAULT_VIDEO_PROVIDER",
     "DIRECTOR_REFINEMENT_DEPLOYMENT",
@@ -394,6 +401,7 @@ __all__ = [
     "RESOLUTION_PATTERN",
     "ROOT",
     "REPRODUCE_DEFAULT_THREADS",
+    "SUPPORTED_REPRODUCE_REFERENCE_MODES",
     "REPRODUCE_SEGMENT_FRAME_SAMPLES",
     "SCENE_IMAGE_DIR",
     "SCENE_IMAGE_PATTERN",

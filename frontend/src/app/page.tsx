@@ -179,6 +179,8 @@ type ReproduceSegmentVersion = {
   created_at: string;
 };
 
+type ReferenceFrameMode = "start_end" | "start_only";
+
 type VideoReproduceSegment = {
   segment_id: string | null;
   order: number;
@@ -224,6 +226,7 @@ type VideoReproduceJob = {
   final_video_path: string | null;
   final_video_url: string | null;
   segmentation_backend: ReproduceSegmentationOption;
+  reference_mode: ReferenceFrameMode;
   messages: JobMessage[];
   segments: VideoReproduceSegment[];
 };
@@ -297,6 +300,7 @@ const VIDEO_PROVIDER_OPTIONS = ["sora2", "kling"] as const;
 const IMAGE_GENERATOR_OPTIONS = [
   { value: "gpt-image-1", label: "Azure gpt-image-1" },
   { value: "kling", label: "Kling image generation" },
+  { value: "original", label: "Use original frames (no stylization)" },
 ] as const;
 type ImageGeneratorOption = (typeof IMAGE_GENERATOR_OPTIONS)[number]["value"];
 
@@ -306,6 +310,11 @@ const SEGMENTATION_OPTIONS = [
 ] as const;
 type ReproduceSegmentationOption = (typeof SEGMENTATION_OPTIONS)[number]["value"];
 
+const REFERENCE_FRAME_OPTIONS: { value: ReferenceFrameMode; label: string }[] = [
+  { value: "start_end", label: "Start + end frames" },
+  { value: "start_only", label: "Start frame only" },
+];
+
 const getImageGeneratorLabel = (value: string): string => {
   const option = IMAGE_GENERATOR_OPTIONS.find((item) => item.value === value);
   return option ? option.label : value;
@@ -313,6 +322,11 @@ const getImageGeneratorLabel = (value: string): string => {
 
 const getSegmentationLabel = (value: string): string => {
   const option = SEGMENTATION_OPTIONS.find((item) => item.value === value);
+  return option ? option.label : value;
+};
+
+const getReferenceModeLabel = (value: string): string => {
+  const option = REFERENCE_FRAME_OPTIONS.find((item) => item.value === value);
   return option ? option.label : value;
 };
 
@@ -556,11 +570,17 @@ const zhTranslations: Record<string, string> = {
   "Stylized frame generator": "风格化图像引擎",
   "Segmentation backend": "分割方式",
   "Select how video segments are detected.": "选择视频片段的检测方式。",
+  "Reference frame usage": "参考帧使用方式",
+  "Choose whether Kling receives both start and end frames or only the first frame reference.": "选择向 Kling 提供起止帧还是仅提供第一帧作为参考。",
   "Azure Content Understanding": "Azure 内容理解",
   "OpenCV (PySceneDetect)": "OpenCV（PySceneDetect）",
   "Select how key frames get stylized before Kling renders.": "请选择 Kling 渲染前用于风格化关键帧的方式。",
   "Azure gpt-image-1": "Azure gpt-image-1",
   "Kling image generation": "Kling 图像生成",
+  "Use original frames (no stylization)": "使用原始起止帧（不做风格化）",
+  "Reference frames": "参考帧",
+  "Start + end frames": "起始+结束帧",
+  "Start frame only": "仅起始帧",
   "Upload video for analysis": "上传用于分析的视频",
   "Upload video for reproduction": "上传待复刻视频",
   "Uploaded video": "已上传视频",
@@ -951,6 +971,8 @@ export default function Home() {
   );
   const [reproduceSegmentation, setReproduceSegmentation] =
     useState<ReproduceSegmentationOption>(SEGMENTATION_OPTIONS[0].value);
+  const [reproduceReferenceMode, setReproduceReferenceMode] =
+    useState<ReferenceFrameMode>(REFERENCE_FRAME_OPTIONS[0].value);
   const [reproduceError, setReproduceError] = useState<string | null>(null);
   const [reproduceFormError, setReproduceFormError] = useState<string | null>(null);
   const [isSubmittingReproduce, setIsSubmittingReproduce] = useState(false);
@@ -2279,6 +2301,7 @@ export default function Home() {
       formData.append("threadCount", String(threads));
       formData.append("imageGenerator", reproduceImageGenerator);
       formData.append("segmentationBackend", reproduceSegmentation);
+      formData.append("frameReferenceMode", reproduceReferenceMode);
       const response = await fetch(`${apiBase}/api/reproduce`, {
         method: "POST",
         body: formData,
@@ -3462,6 +3485,27 @@ export default function Home() {
                 className="w-full rounded border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 shadow-inner focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-800"
               >
                 {IMAGE_GENERATOR_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {translate(option.label)}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-slate-500 dark:text-slate-400">
+                {translate("Reference frame usage")}
+              </label>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {translate(
+                  "Choose whether Kling receives both start and end frames or only the first frame reference.",
+                )}
+              </p>
+              <select
+                value={reproduceReferenceMode}
+                onChange={(event) => setReproduceReferenceMode(event.target.value as ReferenceFrameMode)}
+                className="w-full rounded border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 shadow-inner focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-800"
+              >
+                {REFERENCE_FRAME_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>
                     {translate(option.label)}
                   </option>
@@ -4981,6 +5025,10 @@ export default function Home() {
                   </dd>
                 </div>
                 <div>
+                  <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Reference frames")}</dt>
+                  <dd className="mt-1">{translate(getReferenceModeLabel(reproduceJob.reference_mode))}</dd>
+                </div>
+                <div>
                   <dt className="text-xs uppercase tracking-wide text-slate-500">{translate("Parallel Kling renders")}</dt>
                   <dd className="mt-1">{reproduceJob.thread_count}</dd>
                 </div>
@@ -5030,12 +5078,29 @@ export default function Home() {
                     const endFrameUrl = buildAssetUrl(apiBase, segment.end_frame_url);
                     const stylizedStartFrameUrl = buildAssetUrl(apiBase, segment.stylized_start_frame_url);
                     const stylizedEndFrameUrl = buildAssetUrl(apiBase, segment.stylized_end_frame_url);
-                    const framePreviews = [
-                      { key: "start", label: translate("Start frame"), url: startFrameUrl },
-                      { key: "stylized-start", label: translate("Stylized start frame"), url: stylizedStartFrameUrl },
-                      { key: "end", label: translate("End frame"), url: endFrameUrl },
-                      { key: "stylized-end", label: translate("Stylized end frame"), url: stylizedEndFrameUrl },
-                    ];
+                    const stylizationDisabled = reproduceJob.image_generation_backend === "original";
+                    const useTailReference = reproduceJob.reference_mode !== "start_only";
+                    const framePreviews = stylizationDisabled
+                      ? [
+                          { key: "start", label: translate("Start frame"), url: startFrameUrl },
+                          ...(useTailReference
+                            ? [{ key: "end", label: translate("End frame"), url: endFrameUrl }]
+                            : []),
+                        ]
+                      : [
+                          { key: "start", label: translate("Start frame"), url: startFrameUrl },
+                          { key: "stylized-start", label: translate("Stylized start frame"), url: stylizedStartFrameUrl },
+                          ...(useTailReference
+                            ? [
+                                { key: "end", label: translate("End frame"), url: endFrameUrl },
+                                {
+                                  key: "stylized-end",
+                                  label: translate("Stylized end frame"),
+                                  url: stylizedEndFrameUrl,
+                                },
+                              ]
+                            : []),
+                        ];
                     const promptValue = segmentPrompts[segment.order] ?? "";
                     const isBusy = regeneratingSegment === segment.order;
                     return (

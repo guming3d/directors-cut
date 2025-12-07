@@ -105,7 +105,11 @@ class DirectorAgent(Executor):
             description = "\n".join(draft.description_lines)
             slug = slugify(f"{draft.scene_number:02d}-{draft.title}")
             prompt_path = prompt_dir / f"scene_{idx:02d}_{slug}.txt"
-            refined_description = await refine_scene_description(draft.title, description, duration)
+            refined_description = (
+                await refine_scene_description(draft.title, description, duration)
+                if request.refine_with_gpt5
+                else description
+            )
             prompt_text = build_prompt_text(
                 draft.title, refined_description, duration, request.resolution
             )
