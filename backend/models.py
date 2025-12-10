@@ -52,10 +52,10 @@ class VideoWorkflowRequest(BaseModel):
     script_path: str = Field(
         default=str(SCRIPT_PATH), description="Path to the master video script."
     )
-    video_provider: Literal["sora2", "kling"] = Field(
+    video_provider: Literal["sora2", "kling", "jimeng"] = Field(
         default=DEFAULT_VIDEO_PROVIDER,
         alias="videoProvider",
-        description="Video backend to use for rendering (sora2 or kling).",
+        description="Video backend to use for rendering.",
     )
     output_dir: str = Field(default=str(OUTPUT_DIR), description="Root output folder.")
     prompt_dir: str = Field(
@@ -96,7 +96,7 @@ class VideoWorkflowRequest(BaseModel):
     )
     scene_duration: int = Field(
         default=SORA_CLIP_DURATION_SECONDS,
-        description="Scene duration in seconds (Sora: 4/8/12, Kling: 5/10).",
+        description="Scene duration in seconds (Sora: 4/8/12, Kling/Jimeng: 5/10).",
     )
     thread_count: int = Field(
         default=int(os.getenv("SORA_WORKFLOW_THREADS", "3")),
@@ -615,7 +615,7 @@ class StartWorkflowPayload(BaseModel):
     script: str = Field(
         ..., description="Storyboard script content for the Director agent to process."
     )
-    video_provider: Literal["sora2", "kling"] = Field(
+    video_provider: Literal["sora2", "kling", "jimeng"] = Field(
         default=DEFAULT_VIDEO_PROVIDER,
         alias="videoProvider",
         description="Video backend to use when rendering scenes.",
@@ -663,7 +663,7 @@ class StartWorkflowPayload(BaseModel):
     scene_duration: int = Field(
         default=SORA_CLIP_DURATION_SECONDS,
         alias="sceneDuration",
-        description="Scene runtime in seconds (Sora: 4/8/12, Kling: 5/10).",
+        description="Scene runtime in seconds (Sora: 4/8/12, Kling/Jimeng: 5/10).",
     )
 
     @model_validator(mode="after")
@@ -680,19 +680,19 @@ class StartWorkflowPayload(BaseModel):
 class SingleVideoPayload(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
-    prompt: str = Field(..., description="Prompt text for a single Sora2 video generation.")
+    prompt: str = Field(..., description="Prompt text for a single video generation.")
     resolution: str = Field(
         default=DEFAULT_SORA_RESOLUTION,
         description="Output resolution (e.g. 720x1280).",
     )
-    video_provider: Literal["sora2", "kling"] = Field(
+    video_provider: Literal["sora2", "kling", "jimeng"] = Field(
         default=DEFAULT_VIDEO_PROVIDER,
         alias="videoProvider",
-        description="Video backend to use for this single clip (sora2 or kling).",
+        description="Video backend to use for this single clip.",
     )
     duration: int = Field(
         default=8,
-        description="Video duration in seconds (Sora: 4/8/12, Kling: 5/10).",
+        description="Video duration in seconds (Sora: 4/8/12, Kling/Jimeng: 5/10).",
     )
     download_variant: Optional[str] = Field(
         default=None,
@@ -767,7 +767,7 @@ class RefineWorkflowPayload(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     script: str
-    video_provider: Literal["sora2", "kling"] = Field(
+    video_provider: Literal["sora2", "kling", "jimeng"] = Field(
         default=DEFAULT_VIDEO_PROVIDER,
         alias="videoProvider",
         description="Video backend that controls which GPT-5 template is used while refining.",
@@ -781,7 +781,7 @@ class RefineSinglePayload(BaseModel):
 class WorkflowPromptTemplateResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
-    video_provider: Literal["sora2", "kling"] = Field(
+    video_provider: Literal["sora2", "kling", "jimeng"] = Field(
         default=DEFAULT_VIDEO_PROVIDER,
         alias="videoProvider",
     )
@@ -792,7 +792,7 @@ class WorkflowPromptTemplateUpdate(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     template: str
-    video_provider: Literal["sora2", "kling"] = Field(
+    video_provider: Literal["sora2", "kling", "jimeng"] = Field(
         default=DEFAULT_VIDEO_PROVIDER,
         alias="videoProvider",
     )

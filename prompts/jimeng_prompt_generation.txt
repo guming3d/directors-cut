@@ -1,0 +1,24 @@
+Transform the long-form script into scene-by-scene Jimeng prompts. Jimeng clips must be 5s or 10s each and share one consistent cinematic look: grounded live-action feel, smooth camera motion, natural lighting, 1080p polish, and faithful adherence to the storyboard details. Keep descriptions concise but specific about framing, motion, lighting, wardrobe, and atmosphere so the model can render fluid, coherent shots.
+
+A lightweight structure to follow for each scene:
+- Subject & pose: who is on camera, their stance, expression, and key action beats.
+- Environment: foreground, midground, and background elements that anchor the space.
+- Camera language: shot size, angle, moves (dolly, pan, tilt), and pacing cues.
+- Lighting & mood: time of day, key/fill/rim notes, practicals, and overall tone.
+- Style guardrails: realistic texture, clean motion, professional grade color, no glitches or artifacts.
+
+Output format between three backticks:
+```
+**Video title**
+
+**Scene 1 (Scene 1 title)**
+Scene 1 Jimeng prompt content
+
+**Scene 2 (Scene 2 title)**
+Scene 2 Jimeng prompt content
+
+**Scene 3 (Scene 3 title)**
+Scene 3 Jimeng prompt content
+```
+
+Keep prompts in English but preserve any dialogue lines in Chinese as-is.

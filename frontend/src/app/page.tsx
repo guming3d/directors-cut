@@ -294,9 +294,9 @@ type DurationOption =
   | (typeof SORA_DURATION_OPTIONS)[number]
   | (typeof KLING_DURATION_OPTIONS)[number];
 const getDurationOptions = (provider: string | null): readonly DurationOption[] =>
-  provider === "kling" ? KLING_DURATION_OPTIONS : SORA_DURATION_OPTIONS;
+  provider === "kling" || provider === "jimeng" ? KLING_DURATION_OPTIONS : SORA_DURATION_OPTIONS;
 const resolutionOptions = ["720x1280", "1280x720", "1920x1080"] as const;
-const VIDEO_PROVIDER_OPTIONS = ["sora2", "kling"] as const;
+const VIDEO_PROVIDER_OPTIONS = ["sora2", "kling", "jimeng"] as const;
 const IMAGE_GENERATOR_OPTIONS = [
   { value: "gpt-image-1", label: "Azure gpt-image-1" },
   { value: "kling", label: "Kling image generation" },

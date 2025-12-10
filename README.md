@@ -1,22 +1,22 @@
 # Sora Agent Workflow
 
-Full-stack toolkit for running the Azure Sora2/Kling multi-agent video workflow with a FastAPI backend and a Next.js dashboard. The backend orchestrates Director → Sora → Composer agents to generate per-scene clips, monitor progress, and stitch the final video. The frontend lets users paste storyboard scripts, launch jobs, and watch live status updates, scene previews, and the completed compilation.
+Full-stack toolkit for running the Azure Sora2/Kling/Jimeng multi-agent video workflow with a FastAPI backend and a Next.js dashboard. The backend orchestrates Director → Sora → Composer agents to generate per-scene clips, monitor progress, and stitch the final video. The frontend lets users paste storyboard scripts, launch jobs, and watch live status updates, scene previews, and the completed compilation.
 
 ## Prerequisites
 
 - Python 3.10+
 - Node.js 18.17+ (or 20+) and npm
 - `ffmpeg`/`ffprobe` available on your system `PATH`
-- Azure Sora/OpenAI credentials (and optional Kling credentials) expected by `backend/sora-openai-client.py`
+- Azure Sora/OpenAI credentials (and optional Kling or Jimeng credentials) expected by `backend/sora-openai-client.py`
 - Optional environment variables:
   - `SORA_WORKFLOW_ALLOWED_ORIGINS` — comma-separated list of origins permitted by CORS
   - `SORA_WORKFLOW_THREADS` — concurrent render jobs (default: `3`)
   - `SORA_BLOCK_RETRIES` — retries for moderated scenes (default: `3`)
   - `VIDEO_DOWNLOAD_VARIANT` — override the variant name sent to the Sora client
 
-### Switching video backends (Sora2 vs. Kling)
+### Switching video backends (Sora2, Kling, or Jimeng)
 
-Set `VIDEO_PROVIDER` to `sora2` (default) or `kling` to decide which API generates clips. When targeting Kling you must configure `KLING_API_BASE_URL`, `KLING_ACCESS_KEY`, and `KLING_SECRET_KEY` so the workflow can mint short-lived JWTs. Optional knobs such as `KLING_MODEL_NAME`, `KLING_MODE`, `KLING_CFG_SCALE`, `KLING_POLL_INTERVAL`, `KLING_POLL_TIMEOUT`, and `KLING_TOKEN_TTL` still apply, and a legacy `KLING_API_KEY` fallback remains available for staging environments. Run `python verify_kling_token.py` to confirm your keys produce a valid token and inspect its expiration. The workflow reuses the same Director/Composer agents, and the dashboard now surfaces a “Video backend” tag so operators can immediately see which engine is active. For Kling image-to-video runs you can optionally drop files named `scene1_tail.png`, `scene2_tail.png`, etc., into your `scene_start_screen/` directory to provide last-frame guidance alongside the usual `scene#.png` head images. Remix endpoints remain Sora-only; Kling jobs support regeneration but not Azure remix APIs.
+Set `VIDEO_PROVIDER` to `sora2` (default), `kling`, or `jimeng` to decide which API generates clips. When targeting Kling you must configure `KLING_API_BASE_URL`, `KLING_ACCESS_KEY`, and `KLING_SECRET_KEY` so the workflow can mint short-lived JWTs. Optional knobs such as `KLING_MODEL_NAME`, `KLING_MODE`, `KLING_CFG_SCALE`, `KLING_POLL_INTERVAL`, `KLING_POLL_TIMEOUT`, and `KLING_TOKEN_TTL` still apply, and a legacy `KLING_API_KEY` fallback remains available for staging environments. Run `python verify_kling_token.py` to confirm your keys produce a valid token and inspect its expiration. For Jimeng, provide `JIMENG_ACCESS_KEY_ID` and `JIMENG_SECRET_ACCESS_KEY` (STS token optional via `JIMENG_SECURITY_TOKEN`); the client signs requests against `JIMENG_API_BASE_URL` (defaults to `https://visual.volcengineapi.com`) using the fixed `JIMENG_REGION=cn-north-1` and `JIMENG_SERVICE=cv` unless overridden. Jimeng supports 5s/10s clips and accepts an optional reference image as the first frame. The workflow reuses the same Director/Composer agents, and the dashboard surfaces a “Video backend” tag so operators can immediately see which engine is active. Remix endpoints remain Sora-only; Kling and Jimeng jobs support regeneration but not Azure remix APIs.
 
 ## Backend (FastAPI) Setup
 
@@ -41,7 +41,7 @@ uvicorn video_agent_workflow:fastapi_app --host 0.0.0.0 --port 8000
 - `POST /api/workflows/{job_id}/scenes/{scene_order}/remix` — remix a completed scene by supplying a new prompt against the previous Azure video ID
 - `POST /api/workflows/{job_id}/scenes/{scene_order}/select` — choose which scene version should be used when composing the final cut
 - `POST /api/workflows/{job_id}/recompose` — regenerate the final video using the currently selected scene versions
-- `GET /api/providers/active` — report the default backend (`sora2` or `kling`) configured for new workloads
+- `GET /api/providers/active` — report the default backend configured for new workloads
 - `POST /api/video-insights` — upload a video for Azure Content Understanding analysis
 - `GET /api/video-insights` — list recent insight jobs with progress snapshots
 - `GET /api/video-insights/{job_id}` — poll the key-frame/segment results and download links for a specific job

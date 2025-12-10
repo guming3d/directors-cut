@@ -98,6 +98,7 @@ PROMPT_TEMPLATE_DIR = ROOT / "prompts"
 WORKFLOW_TEMPLATE_FILES = {
     "sora2": PROMPT_TEMPLATE_DIR / "sora_prompt_generation.txt",
     "kling": PROMPT_TEMPLATE_DIR / "kling_prompt_generation.txt",
+    "jimeng": PROMPT_TEMPLATE_DIR / "jimeng_prompt_generation.txt",
 }
 
 STATIC_PROMPT_FILES = {

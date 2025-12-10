@@ -13,6 +13,7 @@ from .config import ROOT, SCENE_IMAGE_DIR, logger
 from .first_frames import generate_first_frame_image
 from .images import prepare_scene_start_images, prepare_scene_tail_image
 from .kling import render_kling_clip
+from .jimeng import render_jimeng_clip
 from .models import (
     ScenePlan,
     ScenePlanBatch,
@@ -183,7 +184,7 @@ class DirectorAgent(Executor):
 
 
 class Sora2Agent(Executor):
-    """Generate each clip concurrently via the configured video backend (Sora2 or Kling)."""
+    """Generate each clip concurrently via the configured video backend (Sora2, Kling, or Jimeng)."""
 
     def __init__(self) -> None:
         super().__init__(id="sora2_agent")
@@ -222,10 +223,11 @@ class Sora2Agent(Executor):
         scene_images: Sequence[str],
     ) -> list[SceneRender]:
         semaphore = asyncio.Semaphore(max(1, request.thread_count))
+        provider_label = request.video_provider.upper()
         await report_progress(
             request,
             "rendering",
-            f"Rendering {len(batch.plans)} scene(s) with up to {request.thread_count} concurrent Sora jobs.",
+            f"Rendering {len(batch.plans)} scene(s) with up to {request.thread_count} concurrent {provider_label} jobs.",
             progress=0.25,
         )
 
@@ -286,10 +288,11 @@ class Sora2Agent(Executor):
         scenes_dir: Path,
         scene_images: Sequence[str],
     ) -> list[SceneRender]:
+        provider_label = request.video_provider.upper()
         await report_progress(
             request,
             "rendering",
-            f"Sequence mode: rendering {len(batch.plans)} scene(s) one after another for visual continuity.",
+            f"Sequence mode: rendering {len(batch.plans)} scene(s) one after another with {provider_label} for visual continuity.",
             progress=0.25,
         )
         next_reference = request.sequence_initial_image or (scene_images[0] if scene_images else None)
@@ -383,7 +386,69 @@ class Sora2Agent(Executor):
     ) -> SceneRender:
         if request.video_provider == "kling":
             return await self._invoke_kling(plan, request, scenes_dir, scene_images, reference_override)
+        if request.video_provider == "jimeng":
+            return await self._invoke_jimeng(plan, request, scenes_dir, scene_images, reference_override)
         return await self._invoke_sora(plan, request, scenes_dir, scene_images, reference_override)
+
+    async def _invoke_jimeng(
+        self,
+        plan: ScenePlan,
+        request: VideoWorkflowRequest,
+        scenes_dir: Path,
+        scene_images: Sequence[str],
+        reference_override: Optional[str] = None,
+    ) -> SceneRender:
+        scene_basename = f"scene_{plan.order:02d}.mp4"
+        video_path = scenes_dir / scene_basename
+        await report_progress(
+            request,
+            "rendering",
+            f"Jimeng: starting render for {plan.label}.",
+        )
+
+        input_reference, first_frame_path = await self._prepare_reference_image(
+            plan, request, scene_images, reference_override
+        )
+        result = await render_jimeng_clip(
+            prompt_text=plan.prompt_text,
+            duration_seconds=plan.duration_seconds,
+            resolution=request.resolution,
+            output_path=video_path,
+            primary_image_path=input_reference,
+        )
+
+        log_path = video_path.with_suffix(".json")
+        client_log_path = video_path.with_suffix(".client.log")
+        sanitized_request = dict(result.request_payload)
+        if "binary_data_base64" in sanitized_request:
+            sanitized_request["binary_data_base64"] = ["<omitted>"]
+        log_data = {
+            "provider": "jimeng",
+            "task_id": result.task_id,
+            "endpoint": result.endpoint,
+            "request": sanitized_request,
+            "response": result.final_response,
+            "video_url": result.video_url,
+            "status": result.status,
+        }
+        log_path.write_text(json.dumps(log_data, indent=2), encoding="utf-8")
+        client_log_path.write_text(
+            f"Jimeng task {result.task_id} completed via {result.endpoint}.\nVideo URL: {result.video_url}\n",
+            encoding="utf-8",
+        )
+
+        return SceneRender(
+            order=plan.order,
+            label=plan.label,
+            duration_seconds=plan.duration_seconds,
+            prompt_path=plan.prompt_path,
+            video_path=str(video_path),
+            log_path=str(log_path),
+            client_log_path=str(client_log_path),
+            prompt_text=plan.prompt_text,
+            video_id=result.task_id,
+            first_frame_path=first_frame_path,
+        )
 
     async def _invoke_sora(
         self,

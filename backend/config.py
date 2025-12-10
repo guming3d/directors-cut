@@ -86,11 +86,12 @@ DEFAULT_REPRODUCE_REFERENCE_MODE = (
 )
 
 # Video provider defaults
-SUPPORTED_VIDEO_PROVIDERS = ("sora2", "kling")
+SUPPORTED_VIDEO_PROVIDERS = ("sora2", "kling", "jimeng")
 _provider_env = (os.getenv("VIDEO_PROVIDER") or "sora2").strip().lower()
 DEFAULT_VIDEO_PROVIDER = _provider_env if _provider_env in SUPPORTED_VIDEO_PROVIDERS else "sora2"
 SORA_ALLOWED_DURATIONS = (4, 8, 12)
 KLING_ALLOWED_DURATIONS = (5, 10)
+JIMENG_ALLOWED_DURATIONS = (5, 10)
 
 # Image generation provider defaults
 SUPPORTED_IMAGE_GENERATORS = ("gpt-image-1", "kling", "original")
@@ -118,7 +119,11 @@ def normalize_video_provider(value: Optional[str]) -> str:
 
 def allowed_durations_for_provider(value: Optional[str]) -> tuple[int, ...]:
     provider = normalize_video_provider(value)
-    return KLING_ALLOWED_DURATIONS if provider == "kling" else SORA_ALLOWED_DURATIONS
+    if provider == "kling":
+        return KLING_ALLOWED_DURATIONS
+    if provider == "jimeng":
+        return JIMENG_ALLOWED_DURATIONS
+    return SORA_ALLOWED_DURATIONS
 
 
 # Kling configuration
@@ -156,6 +161,18 @@ KLING_CREATE_RETRY_MAX_DELAY_SECONDS = max(
     _float_env("KLING_CREATE_RETRY_MAX_DELAY", "30"),
 )
 KLING_CREATE_RETRY_JITTER_SECONDS = max(0.0, _float_env("KLING_CREATE_RETRY_JITTER", "0.5"))
+
+# Jimeng configuration
+JIMENG_ACCESS_KEY_ID = os.getenv("JIMENG_ACCESS_KEY_ID") or os.getenv("JIMENG_ACCESS_KEY")
+JIMENG_API_BASE_URL = (os.getenv("JIMENG_API_BASE_URL") or "https://visual.volcengineapi.com").rstrip("/")
+JIMENG_POLL_INTERVAL_SECONDS = max(1.0, _float_env("JIMENG_POLL_INTERVAL", "3"))
+JIMENG_POLL_TIMEOUT_SECONDS = max(60.0, _float_env("JIMENG_POLL_TIMEOUT", "900"))
+JIMENG_REGION = os.getenv("JIMENG_REGION", "cn-north-1")
+JIMENG_REQ_KEY = "jimeng_ti2v_v30_pro"
+JIMENG_SECRET_ACCESS_KEY = os.getenv("JIMENG_SECRET_ACCESS_KEY") or os.getenv("JIMENG_SECRET_KEY")
+JIMENG_SECURITY_TOKEN = os.getenv("JIMENG_SECURITY_TOKEN")
+JIMENG_SERVICE = os.getenv("JIMENG_SERVICE", "cv")
+JIMENG_SUPPORTED_ASPECT_RATIOS = ("16:9", "4:3", "1:1", "3:4", "9:16", "21:9")
 
 # Azure content understanding configuration
 AZURE_CONTENT_UNDERSTANDING_ENDPOINT = (os.getenv("AZURE_CONTENT_UNDERSTANDING_ENDPOINT") or "").rstrip("/")
@@ -381,6 +398,17 @@ __all__ = [
     "FINAL_VIDEO_PATH",
     "GPT5_REFINEMENT_DEPLOYMENT",
     "HEADER_PATTERN",
+    "JIMENG_ACCESS_KEY_ID",
+    "JIMENG_ALLOWED_DURATIONS",
+    "JIMENG_API_BASE_URL",
+    "JIMENG_POLL_INTERVAL_SECONDS",
+    "JIMENG_POLL_TIMEOUT_SECONDS",
+    "JIMENG_REGION",
+    "JIMENG_REQ_KEY",
+    "JIMENG_SECRET_ACCESS_KEY",
+    "JIMENG_SECURITY_TOKEN",
+    "JIMENG_SERVICE",
+    "JIMENG_SUPPORTED_ASPECT_RATIOS",
     "KLING_API_BASE_URL",
     "KLING_API_KEY",
     "KLING_ACCESS_KEY",

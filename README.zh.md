@@ -1,19 +1,19 @@
 # Sora Agent Workflow
 
-这是一个用于运行 Azure Sora2/Kling 多智能体视频工作流的全栈工具包，包含 FastAPI 后端和 Next.js 仪表盘。后端负责编排 Director → Sora → Composer 智能体以生成分场景的片段、监控进度并拼接最终视频。前端支持粘贴分镜脚本、发起任务、查看实时状态、场景预览以及最终成片。
+这是一个用于运行 Azure Sora2/Kling/Jimeng 多智能体视频工作流的全栈工具包，包含 FastAPI 后端和 Next.js 仪表盘。后端负责编排 Director → Sora → Composer 智能体以生成分场景的片段、监控进度并拼接最终视频。前端支持粘贴分镜脚本、发起任务、查看实时状态、场景预览以及最终成片。
 
 ## 前置要求
 
 - Python 3.10+
 - Node.js 18.17+（或 20+）与 npm
 - 系统 `PATH` 中可用的 `ffmpeg`/`ffprobe`
-- `backend/sora-openai-client.py` 所需的 Azure Sora/OpenAI 凭据（如需 Kling 也要提供 Kling 凭据）
+- `backend/sora-openai-client.py` 所需的 Azure Sora/OpenAI 凭据（如需 Kling 或 Jimeng 也要提供对应凭据）
 - 可选环境变量：
   - `SORA_WORKFLOW_ALLOWED_ORIGINS` — 允许的 CORS 来源列表（逗号分隔）
   - `SORA_WORKFLOW_THREADS` — 并发渲染任务数量（默认 `3`）
   - `SORA_BLOCK_RETRIES` — 因审核拦截的场景的重试次数（默认 `3`）
   - `VIDEO_DOWNLOAD_VARIANT` — 覆盖传给 Sora 客户端的 variant 名称
-  - `VIDEO_PROVIDER` — 选择后端：`sora2`（默认）或 `kling`
+  - `VIDEO_PROVIDER` — 选择后端：`sora2`（默认）、`kling` 或 `jimeng`
 
 ## 项目结构
 
@@ -40,9 +40,9 @@
    ```
 4. 生成的文件位于 `output/<job_id>/`，并通过 `/static/...` 提供访问。
 
-### 切换 Sora2 与 Kling
+### 切换 Sora2、Kling、Jimeng
 
-设置 `VIDEO_PROVIDER=sora2`（默认）或 `VIDEO_PROVIDER=kling` 选择后端。使用 Kling 时需配置 `KLING_API_BASE_URL`、`KLING_ACCESS_KEY`、`KLING_SECRET_KEY`；可选参数（`KLING_MODEL_NAME`、`KLING_MODE`、`KLING_CFG_SCALE`、`KLING_POLL_INTERVAL`、`KLING_POLL_TIMEOUT`、`KLING_TOKEN_TTL`、旧的 `KLING_API_KEY`）同样适用。运行 `python verify_kling_token.py` 可验证令牌设置与有效期。Kling 图转视频任务可在 `scene_start_screen/` 中添加 `scene1_tail.png`、`scene2_tail.png` 等文件以引导最终帧。
+设置 `VIDEO_PROVIDER=sora2`（默认）、`VIDEO_PROVIDER=kling` 或 `VIDEO_PROVIDER=jimeng` 选择后端。使用 Kling 时需配置 `KLING_API_BASE_URL`、`KLING_ACCESS_KEY`、`KLING_SECRET_KEY`（可选 `KLING_API_KEY` 仅用于旧环境），其余参数如 `KLING_MODEL_NAME`、`KLING_MODE`、`KLING_CFG_SCALE`、`KLING_POLL_INTERVAL`、`KLING_POLL_TIMEOUT`、`KLING_TOKEN_TTL` 仍可调，`python verify_kling_token.py` 可用于检查令牌有效期。使用 Jimeng 时需提供 `JIMENG_ACCESS_KEY_ID`、`JIMENG_SECRET_ACCESS_KEY`（如有 STS 令牌则填 `JIMENG_SECURITY_TOKEN`），默认调用 `https://visual.volcengineapi.com`，Region/Service 固定为 `cn-north-1` / `cv`，支持 5s/10s 时长，可选首帧参考图。Kling/Jimeng 目前仅支持重新生成，不支持 remix。
 
 ### API 路由
 
@@ -52,7 +52,7 @@
 - `POST /api/workflows/{job_id}/scenes/{scene_order}/remix` — 基于上一版 Azure 视频 ID，提交新提示词对已完成的场景进行 remix
 - `POST /api/workflows/{job_id}/scenes/{scene_order}/select` — 选择某个场景版本用于最终剪辑
 - `POST /api/workflows/{job_id}/recompose` — 按当前选择的版本重新生成最终视频
-- `GET /api/providers/active` — 返回默认配置的后端（`sora2` 或 `kling`）
+- `GET /api/providers/active` — 返回默认配置的后端
 - `POST /api/reproduce` — 上传参考视频并启动 Kling reproduce 工作流
 - `GET /api/reproduce` — 列出 reproduce 任务及其分段、提示与输出
 - `GET /api/reproduce/{job_id}` — 查看指定 reproduce 任务的分段、风格化帧与 Kling 版本
@@ -118,3 +118,4 @@ pytest -q
 - 使用顺序模式时需确保存在对应数量的 `scene_start_screen/scene#.png`，数量不匹配会导致失败。
 - 审核拦截的场景会按 `SORA_BLOCK_RETRIES` 进行重试；也可重新生成某个场景或使用 **Compose Available Scenes** 拼接已完成片段。
 - Kling 报错包含 `/v1/videos/...` 通常代表缺少密钥、令牌有效期或基地址。请用 `python verify_kling_token.py` 验证。Kling 目前不支持 remix，请使用 regenerate，并按需提供 `_tail` 图引导最终帧。
+- Jimeng 返回 code≠10000 或缺少视频链接时，优先检查 Access Key/Secret、签名参数以及时长（仅支持 5/10 秒）；Jimeng 也不支持 remix，只能重新生成。

@@ -25,6 +25,7 @@ from .config import (
 )
 from .images import prepare_sequence_initial_image, resolve_scene_image_dir, save_payload_as_png
 from .kling import render_kling_clip
+from .jimeng import render_jimeng_clip
 from .models import (
     EncodedImagePayload,
     SceneRender,
@@ -243,6 +244,8 @@ async def run_single_video_job(config: SingleVideoJobConfig) -> None:
 
         if config.video_provider == "kling":
             log_path, client_log_path, video_id = await _render_single_with_kling(config)
+        elif config.video_provider == "jimeng":
+            log_path, client_log_path, video_id = await _render_single_with_jimeng(config)
         else:
             log_path, client_log_path, video_id = await _render_single_with_sora(config)
         await SINGLE_VIDEO_STORE.update_progress(job_id, 0.75, "Download completed, finalizing artifacts.")
@@ -372,6 +375,44 @@ async def _render_single_with_kling(
     return log_path, client_log_path, result.task_id
 
 
+async def _render_single_with_jimeng(
+    config: SingleVideoJobConfig,
+) -> tuple[Path, Path, Optional[str]]:
+    reference_path = (
+        str(config.reference_image_path)
+        if config.reference_image_path
+        else (str(config.reference_image_paths[0]) if config.reference_image_paths else None)
+    )
+    result = await render_jimeng_clip(
+        prompt_text=config.prompt_text,
+        duration_seconds=config.duration,
+        resolution=config.resolution,
+        output_path=config.video_path,
+        primary_image_path=reference_path,
+    )
+
+    log_path = config.video_path.with_suffix(".json")
+    client_log_path = config.video_path.with_suffix(".client.log")
+    sanitized_request = dict(result.request_payload)
+    if "binary_data_base64" in sanitized_request:
+        sanitized_request["binary_data_base64"] = ["<omitted>"]
+    log_data = {
+        "provider": "jimeng",
+        "task_id": result.task_id,
+        "endpoint": result.endpoint,
+        "request": sanitized_request,
+        "response": result.final_response,
+        "video_url": result.video_url,
+        "status": result.status,
+    }
+    log_path.write_text(json.dumps(log_data, indent=2), encoding="utf-8")
+    client_log_path.write_text(
+        f"Jimeng task {result.task_id} completed via {result.endpoint}.\nVideo URL: {result.video_url}\n",
+        encoding="utf-8",
+    )
+    return log_path, client_log_path, result.task_id
+
+
 async def _render_scene_regen_with_kling(
     job_id: str,
     scene,
@@ -408,6 +449,43 @@ async def _render_scene_regen_with_kling(
     return log_path, client_log_path, result.task_id
 
 
+async def _render_scene_regen_with_jimeng(
+    job_id: str,
+    scene,
+    prompt_text: str,
+    resolution: str,
+    output_path: Path,
+) -> tuple[Path, Path, str]:
+    reference_path = scene.first_frame_path or scene.last_frame_path
+    result = await render_jimeng_clip(
+        prompt_text=prompt_text,
+        duration_seconds=scene.duration_seconds,
+        resolution=resolution,
+        output_path=output_path,
+        primary_image_path=reference_path,
+    )
+    log_path = output_path.with_suffix(".json")
+    client_log_path = output_path.with_suffix(".regen.log")
+    sanitized_request = dict(result.request_payload)
+    if "binary_data_base64" in sanitized_request:
+        sanitized_request["binary_data_base64"] = ["<omitted>"]
+    log_data = {
+        "provider": "jimeng",
+        "task_id": result.task_id,
+        "endpoint": result.endpoint,
+        "request": sanitized_request,
+        "response": result.final_response,
+        "video_url": result.video_url,
+        "status": result.status,
+    }
+    log_path.write_text(json.dumps(log_data, indent=2), encoding="utf-8")
+    client_log_path.write_text(
+        f"Jimeng regeneration {result.task_id} completed via {result.endpoint}.\nVideo URL: {result.video_url}\n",
+        encoding="utf-8",
+    )
+    return log_path, client_log_path, result.task_id
+
+
 async def run_single_video_remix(job_id: str, prompt: str) -> None:
     prompt_text = prompt.strip()
     if not prompt_text:
@@ -419,11 +497,11 @@ async def run_single_video_remix(job_id: str, prompt: str) -> None:
         logger.warning("Remix requested for unknown single job %s: %s", job_id, exc)
         return
 
-    if job_state.video_provider == "kling":
+    if job_state.video_provider in {"kling", "jimeng"}:
         await SINGLE_VIDEO_STORE.add_message(
             job_id,
             "failed",
-            "Kling backend does not support remix operations. Please generate a new version instead.",
+            "Selected backend does not support remix operations. Please generate a new version instead.",
         )
         return
 
@@ -532,11 +610,11 @@ async def run_scene_remix_job(job_id: str, scene_order: int, prompt: str) -> Non
         )
         return
 
-    if video_provider == "kling":
+    if video_provider in {"kling", "jimeng"}:
         await WORKFLOW_JOB_STORE.add_message(
             job_id,
             "failed",
-            "Kling backend does not support remix operations. Please regenerate the scene instead.",
+            "Selected backend does not support remix operations. Please regenerate the scene instead.",
         )
         return
 
@@ -696,6 +774,46 @@ async def run_scene_regeneration_job(job_id: str, scene_order: int, prompt_overr
             )
         except Exception as exc:  # pragma: no cover - defensive logging
             logger.exception("Kling regeneration job for %s scene %s failed: %s", job_id, scene_order, exc)
+            await WORKFLOW_JOB_STORE.add_message(
+                job_id,
+                "failed",
+                f"Regeneration for scene {scene_order} failed: {exc}",
+            )
+        return
+
+    if video_provider == "jimeng":
+        try:
+            log_path, client_log_path, video_id = await _render_scene_regen_with_jimeng(
+                job_id,
+                scene,
+                prompt_text_current,
+                resolution,
+                video_path,
+            )
+            version = SceneVersionEntry(
+                version_id=uuid.uuid4().hex,
+                label=f"Regenerate {len(scene.versions) + 1}",
+                video_path=str(video_path),
+                log_path=str(log_path),
+                client_log_path=str(client_log_path),
+                video_id=video_id,
+                prompt=prompt_text_current,
+                prompt_path=str(prompt_path),
+                source="regenerate",
+            )
+            await WORKFLOW_JOB_STORE.add_scene_version(
+                job_id,
+                scene_order,
+                version,
+                make_active=True,
+                message=(
+                    f"Regenerated {scene.label} with updated prompt."
+                    if prompt_override_text
+                    else f"Regenerated {scene.label}."
+                ),
+            )
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.exception("Jimeng regeneration job for %s scene %s failed: %s", job_id, scene_order, exc)
             await WORKFLOW_JOB_STORE.add_message(
                 job_id,
                 "failed",
