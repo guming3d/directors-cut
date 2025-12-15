@@ -234,6 +234,11 @@ _IMAGE_CLIENT: AzureOpenAI | None = None
 def _configure_logging() -> logging.Logger:
     level_name = (os.getenv("LOG_LEVEL") or "ERROR").upper()
     level = getattr(logging, level_name, logging.ERROR)
+    quiet_uvicorn = (os.getenv("QUIET_UVICORN_LOGS") or "1").strip().lower() not in (
+        "0",
+        "false",
+        "no",
+    )
     log_path = OUTPUT_DIR / "video_workflow.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -252,7 +257,8 @@ def _configure_logging() -> logging.Logger:
     logger.addHandler(stream_handler)
 
     logger.propagate = False
-    _quiet_uvicorn_logs()
+    if quiet_uvicorn:
+        _quiet_uvicorn_logs()
     logger.debug("Logging configured at %s", level_name)
     return logger
 

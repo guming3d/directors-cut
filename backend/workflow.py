@@ -10,10 +10,7 @@ def create_sora_video_workflow():
     sora_agent = Sora2Agent()
     composer = ComposerAgent()
 
-    builder = WorkflowBuilder(
-        name="Azure Sora multi-agent workflow",
-        description="Director -> Sora2 -> Composer pipeline that follows the provided storyboard script.",
-    )
+    builder = WorkflowBuilder()
     (
         builder.set_start_executor(director)
         .add_edge(director, sora_agent)

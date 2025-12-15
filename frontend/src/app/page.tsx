@@ -1,8 +1,14 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState, useRef } from "react";
+import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Modal from "@/components/Modal";
 import WorkflowProgress from "@/components/WorkflowProgress";
+import { LanguageToggle } from "@/components/dashboard/LanguageToggle";
+import { ThemeToggle } from "@/components/dashboard/ThemeToggle";
+import { WorkflowTable } from "@/components/dashboard/WorkflowTable";
+import { SingleJobsTable } from "@/components/dashboard/SingleJobsTable";
+import { InsightJobsTable } from "@/components/dashboard/InsightJobsTable";
+import { ReproduceJobsTable } from "@/components/dashboard/ReproduceJobsTable";
 import {
   ArrowDownTrayIcon,
   ArrowPathIcon,
@@ -14,619 +20,55 @@ import {
   PaperAirplaneIcon,
   PlayCircleIcon,
   TrashIcon,
-  SunIcon,
-  MoonIcon,
 } from "@heroicons/react/24/outline";
 import Image from "next/image";
+import {
+  AUTH_PASSWORD,
+  AUTH_STORAGE_KEY,
+  AUTH_USERNAME,
+  DEFAULT_WORKFLOW_PROMPT_TEMPLATE,
+  IMAGE_GENERATOR_OPTIONS,
+  REFERENCE_FRAME_OPTIONS,
+  SEGMENTATION_OPTIONS,
+  SORA_DURATION_OPTIONS,
+  TABS,
+  VIDEO_PROVIDER_OPTIONS,
+  getDurationOptions,
+  getImageGeneratorLabel,
+  getReferenceModeLabel,
+  getSegmentationLabel,
+  resolutionOptions,
+  stageIcons,
+  terminalStatuses,
+} from "./dashboard/constants";
+import {
+  buildAssetUrl,
+  formatSeconds,
+  formatSegmentTimestampDisplay,
+  formatTimeDistance,
+  formatTimestamp,
+  getStatusToken,
+  stageLabel,
+} from "./dashboard/utils";
+import { translateValue } from "./dashboard/translations";
+import {
+  DurationOption,
+  ImageGeneratorOption,
+  JobStatus,
+  Language,
+  PromptPreview,
+  ReferenceFrameMode,
+  RefinementReview,
+  ReproduceSegmentationOption,
+  SingleVideoJob,
+  TabId,
+  VideoInsightJob,
+  VideoReproduceJob,
+  VideoReproduceSegment,
+} from "@/types/dashboard";
 
 const RAW_API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "").replace(/\/$/, "");
 const DEFAULT_API_BASE = (RAW_API_BASE || "http://localhost:8000").replace(/\/$/, "");
-
-type JobMessage = {
-  timestamp: string;
-  stage: string;
-  text: string;
-};
-
-type SceneVersion = {
-  version_id: string;
-  label: string;
-  source: string;
-  prompt: string | null;
-  prompt_path: string | null;
-  video_path: string;
-  video_url: string | null;
-  log_path: string | null;
-  client_log_path: string | null;
-  video_id: string | null;
-  created_at: string;
-  last_frame_path?: string | null;
-  last_frame_url?: string | null;
-  first_frame_path?: string | null;
-  first_frame_url?: string | null;
-};
-
-type SceneStatus = {
-  order: number;
-  label: string;
-  duration_seconds: number;
-  prompt_path: string;
-  video_path: string;
-  video_url: string | null;
-  log_path: string | null;
-  client_log_path: string | null;
-  selected_version_id: string | null;
-  versions: SceneVersion[];
-  last_frame_path?: string | null;
-  last_frame_url?: string | null;
-  first_frame_path?: string | null;
-  first_frame_url?: string | null;
-};
-
-type SingleVideoVersion = {
-  version_id: string;
-  label: string;
-  source: string;
-  prompt: string;
-  prompt_path: string;
-  video_path: string;
-  video_url: string | null;
-  log_path: string | null;
-  client_log_path: string | null;
-  video_id: string | null;
-  created_at: string;
-};
-
-type JobStatus = {
-  job_id: string;
-  status: string;
-  video_provider: string;
-  resolution: string;
-  stage: string | null;
-  progress: number;
-  started_at: string;
-  completed_at: string | null;
-  error: string | null;
-  final_video_path: string | null;
-  final_video_url: string | null;
-  manifest: Record<string, unknown> | null;
-  script?: string | null;
-  script_path?: string | null;
-  messages: JobMessage[];
-  scenes: SceneStatus[];
-  generation_mode: "parallel" | "sequence";
-  scene_duration?: number;
-  generate_ai_first_frame?: boolean;
-};
-
-type SingleVideoJob = {
-  job_id: string;
-  status: string;
-  progress: number;
-  prompt: string;
-  video_provider: string;
-  resolution: string;
-  duration: number;
-  download_variant: string;
-  started_at: string;
-  completed_at: string | null;
-  error: string | null;
-  video_path: string | null;
-  video_url: string | null;
-  log_path: string | null;
-  log_url: string | null;
-  client_log_path: string | null;
-  video_id: string | null;
-  selected_version_id: string | null;
-  versions: SingleVideoVersion[];
-  messages: JobMessage[];
-};
-
-type VideoInsightKeyFrame = {
-  frame_id: string | null;
-  timestamp: string | null;
-  description: string | null;
-  confidence: number | null;
-  tags: string[];
-};
-
-type VideoInsightSegment = {
-  segment_id: string | null;
-  label: string | null;
-  start: string | null;
-  end: string | null;
-  start_seconds?: number | null;
-  end_seconds?: number | null;
-  summary: string | null;
-  tags: string[];
-  start_frame_path?: string | null;
-  start_frame_url?: string | null;
-  end_frame_path?: string | null;
-  end_frame_url?: string | null;
-};
-
-type VideoInsightJob = {
-  job_id: string;
-  filename: string;
-  status: string;
-  progress: number;
-  content_type: string | null;
-  notes: string | null;
-  started_at: string;
-  completed_at: string | null;
-  error: string | null;
-  video_path: string | null;
-  video_url: string | null;
-  result_path: string | null;
-  result_url: string | null;
-  key_frames: VideoInsightKeyFrame[];
-  segments: VideoInsightSegment[];
-  messages: JobMessage[];
-};
-
-type ReproduceSegmentVersion = {
-  version_id: string;
-  prompt: string;
-  status: string;
-  video_path: string | null;
-  video_url: string | null;
-  log_path: string | null;
-  log_url: string | null;
-  client_log_path: string | null;
-  client_log_url: string | null;
-  task_id: string | null;
-  error: string | null;
-  created_at: string;
-};
-
-type ReferenceFrameMode = "start_end" | "start_only";
-
-type VideoReproduceSegment = {
-  segment_id: string | null;
-  order: number;
-  label: string;
-  description: string;
-  start_seconds: number;
-  end_seconds: number;
-  duration_seconds: number;
-  kling_duration_seconds: number;
-  tags: string[];
-  start_frame_path: string | null;
-  start_frame_url: string | null;
-  end_frame_path: string | null;
-  end_frame_url: string | null;
-  stylized_start_frame_path: string | null;
-  stylized_start_frame_url: string | null;
-  stylized_end_frame_path: string | null;
-  stylized_end_frame_url: string | null;
-  image_prompt_path: string | null;
-  image_prompt_url: string | null;
-  original_video_path: string | null;
-  original_video_url: string | null;
-  status: string;
-  selected_version_id: string | null;
-  versions: ReproduceSegmentVersion[];
-};
-
-type VideoReproduceJob = {
-  job_id: string;
-  filename: string;
-  content_type: string | null;
-  status: string;
-  progress: number;
-  thread_count: number;
-  resolution: string;
-  image_generation_backend: string;
-  started_at: string;
-  completed_at: string | null;
-  error: string | null;
-  notes: string | null;
-  video_path: string | null;
-  video_url: string | null;
-  final_video_path: string | null;
-  final_video_url: string | null;
-  segmentation_backend: ReproduceSegmentationOption;
-  reference_mode: ReferenceFrameMode;
-  messages: JobMessage[];
-  segments: VideoReproduceSegment[];
-};
-
-type PromptPreview = {
-  sceneLabel: string;
-  versionLabel: string;
-  prompt: string;
-};
-
-type RefinementReview = {
-  mode: "workflow" | "single";
-  originalText: string;
-  refinedText: string;
-  videoProvider?: string;
-};
-
-const STATUS_TOKENS: Record<string, { label: string; className: string }> = {
-  queued: {
-    label: "Queued",
-    className: "text-zinc-600 dark:text-slate-300",
-  },
-  running: {
-    label: "In Progress",
-    className: "text-zinc-600 dark:text-slate-300",
-  },
-  completed: {
-    label: "Completed",
-    className: "text-emerald-600 dark:text-emerald-400",
-  },
-  failed: {
-    label: "Failed",
-    className: "text-rose-600 dark:text-rose-400",
-  },
-};
-
-const stageIcons: Record<string, typeof DocumentTextIcon> = {
-  queued: ClockIcon,
-  initializing: ArrowPathIcon,
-  planning: DocumentTextIcon,
-  rendering: FilmIcon,
-  composing: PlayCircleIcon,
-  running: ArrowPathIcon,
-  completed: CheckCircleIcon,
-  failed: ExclamationTriangleIcon,
-};
-
-const terminalStatuses = new Set(["completed", "failed"]);
-
-type TabId = "combined" | "single" | "insight" | "reproduce";
-
-type Language = "en" | "zh";
-
-const TABS: { id: TabId; label: string }[] = [
-  { id: "combined", label: "Storyboard workspace" },
-  { id: "single", label: "Single clip console" },
-  { id: "insight", label: "Video insight" },
-  { id: "reproduce", label: "Video reproduce" },
-];
-const LANGUAGE_OPTIONS: Language[] = ["en", "zh"];
-
-const SORA_DURATION_OPTIONS = ["4", "8", "12"] as const;
-const KLING_DURATION_OPTIONS = ["5", "10"] as const;
-type DurationOption =
-  | (typeof SORA_DURATION_OPTIONS)[number]
-  | (typeof KLING_DURATION_OPTIONS)[number];
-const getDurationOptions = (provider: string | null): readonly DurationOption[] =>
-  provider === "kling" || provider === "jimeng" ? KLING_DURATION_OPTIONS : SORA_DURATION_OPTIONS;
-const resolutionOptions = ["720x1280", "1280x720", "1920x1080"] as const;
-const VIDEO_PROVIDER_OPTIONS = ["sora2", "kling", "jimeng"] as const;
-const IMAGE_GENERATOR_OPTIONS = [
-  { value: "gpt-image-1", label: "Azure gpt-image-1" },
-  { value: "kling", label: "Kling image generation" },
-  { value: "original", label: "Use original frames (no stylization)" },
-] as const;
-type ImageGeneratorOption = (typeof IMAGE_GENERATOR_OPTIONS)[number]["value"];
-
-const SEGMENTATION_OPTIONS = [
-  { value: "content_understanding", label: "Azure Content Understanding" },
-  { value: "opencv", label: "OpenCV (PySceneDetect)" },
-] as const;
-type ReproduceSegmentationOption = (typeof SEGMENTATION_OPTIONS)[number]["value"];
-
-const REFERENCE_FRAME_OPTIONS: { value: ReferenceFrameMode; label: string }[] = [
-  { value: "start_end", label: "Start + end frames" },
-  { value: "start_only", label: "Start frame only" },
-];
-
-const getImageGeneratorLabel = (value: string): string => {
-  const option = IMAGE_GENERATOR_OPTIONS.find((item) => item.value === value);
-  return option ? option.label : value;
-};
-
-const getSegmentationLabel = (value: string): string => {
-  const option = SEGMENTATION_OPTIONS.find((item) => item.value === value);
-  return option ? option.label : value;
-};
-
-const getReferenceModeLabel = (value: string): string => {
-  const option = REFERENCE_FRAME_OPTIONS.find((item) => item.value === value);
-  return option ? option.label : value;
-};
-
-const AUTH_USERNAME = "user";
-const AUTH_PASSWORD = "sora2isgreat";
-
-const DEFAULT_WORKFLOW_PROMPT_TEMPLATE = [
-  "**Scene 1 (Scene 1 title)**",
-  "Scene 1 kling prompt content",
-  "",
-  "**Scene 2 (Scene 2 title)**",
-  "Scene 2 kling prompt content",
-  "",
-  "**Scene 3 (Scene 3 title) **",
-  "Scene 3 kling prompt content",
-].join("\n");
-const AUTH_STORAGE_KEY = "sora2-authenticated";
-
-const zhTranslations: Record<string, string> = {
-  "Across storyboard & single clips": "涵盖分镜与单条视频",
-  "Active workflows": "运行中的工作流",
-  "Accepted formats: PNG, JPG. Images remain local until submission.": "支持 PNG、JPG，文件在提交前仅存于本地。",
-  "API target:": "API 地址：",
-  "API ·": "API ·",
-  "Available scenes": "可用场景",
-  "Awaiting version refresh...": "正在刷新版本…",
-  "Chinese": "中文",
-  "Clip pending...": "片段准备中…",
-  "Completed jobs": "已完成的任务",
-  "AI first frames": "AI 开场画面",
-  "AI start stills enabled": "已启用 AI 开场画面",
-  "No AI first frames": "未启用 AI 开场画面",
-  "AI first frame preview": "AI 开场画面预览",
-  "Use GPT-5 + gpt-image-1 to seed each scene.": "使用 GPT-5 与 gpt-image-1 为每个场景生成开场画面。",
-  "Completed runs": "完成的运行",
-  "Completed": "已完成",
-  "Composing final video": "合成最终视频",
-  "Compose Available Scenes": "合成已完成的场景",
-  "Video backend": "视频引擎",
-  "Unknown": "未知",
-  "Composition manifest:": "合成清单：",
-  "Delete Selected": "删除选中项",
-  "Delete workflows": "删除工作流",
-  "Download final video": "下载最终视频",
-  "Download logs": "下载日志",
-  "Duration (seconds)": "时长（秒）",
-  "Generation mode": "生成模式",
-  "Enable scene reference images": "启用场景参考图",
-  "Enter password": "输入密码",
-  "Enter prompt for remix": "输入重制提示词",
-  "Enter script or storyboard prompt": "输入剧本或分镜提示词",
-  "Enter username": "输入用户名",
-  "English": "英文",
-  "Failed to refresh single-video status. Confirm the backend is reachable.": "无法刷新单视频状态，请确认后端可访问。",
-  "Failed to refresh workflow status. Check that the FastAPI server is reachable.": "无法刷新工作流状态，请检查 FastAPI 服务是否可访问。",
-  "Failed to regenerate this scene. Confirm the backend is reachable.": "无法重新生成该场景，请确认后端可用。",
-  "Failed": "失败",
-  "Generation blocked. Update the prompt and regenerate this scene.": "生成被拦截，请修改提示词后重新生成该场景。",
-  "Final Video": "最终视频",
-  "Merged Kling video": "合并后的 Kling 视频",
-  "Generate a clip to see it listed here.": "先生成一个片段即可在此查看。",
-  "Generate video": "生成视频",
-  "Generating video": "生成视频中",
-  "Hint: user / sora2isgreat": "提示：user / sora2isgreat",
-  "Idle": "空闲",
-  "In Progress": "进行中",
-  "Invalid username or password.": "用户名或密码不正确。",
-  "Initializing single job...": "正在初始化单视频任务…",
-  "Initializing workflow...": "正在初始化工作流…",
-  "Job Timeline": "任务时间线",
-  "Job ID": "任务 ID",
-  "Language": "语言",
-  "Mode": "模式",
-  "No scene references": "不使用参考图",
-  "Live jobs": "正在运行的任务",
-  "Log file": "日志文件",
-  "Mode:": "模式：",
-  "Monitor orchestrator agents, track scene deliveries, and keep your queue aligned with Sora best practices.": "监控调度代理、跟踪场景交付，并让队列遵循 Sora 最佳实践。",
-  "Orchestrate multi-scene storyboards, monitor scene renders, and review delivery timelines. The workspace syncs live with your FastAPI backend.": "编排多场景分镜，监控渲染并审阅交付时间线。该工作区与 FastAPI 后端实时同步。",
-  "Parallel": "并行",
-  "Parallel Kling renders": "Kling 并行数",
-  "Paste your storyboard with scene headings.": "请按场景标题粘贴分镜。",
-  "Password": "密码",
-  "Plan scenes in parallel": "并行规划场景",
-  "Planning scenes": "规划场景",
-  "Please provide a storyboard script before starting the workflow.": "请先提供分镜脚本再启动工作流。",
-  "Preparing workflow": "准备工作流",
-  "Progress": "进度",
-  "Production Workspace": "制作工作区",
-  "Quick actions": "快捷操作",
-  "Queued": "排队中",
-  "Recent Single Jobs": "最近的单视频任务",
-  "Render scenes concurrently": "并行渲染场景",
-  "Chain scenes sequentially": "串行衔接场景",
-  "Clipboard unavailable": "剪贴板不可用",
-  "Copied to clipboard": "已复制到剪贴板",
-  "Copy or update the prompt before proceeding.": "可在继续前复制或修改提示词。",
-  "Copy prompt": "复制提示词",
-
-  "Remix prompt": "重制提示词",
-  "Remix Scene": "重制场景",
-  "Selecting...": "正在选择…",
-  "Rendering video clips": "渲染视频片段",
-  "Resolution": "分辨率",
-  "Scene images enabled": "已启用场景参考图",
-  "Scene reference": "场景参考图",
-  "Scene references": "场景参考图",
-  "Scene generation blocked": "场景生成被拦截",
-  "Segment": "片段",
-  "Scene duration": "场景时长",
-  "Scene Renders": "场景渲染",
-  "Scene regeneration in progress": "场景正在重新生成",
-  "Scene": "场景",
-  "seconds": "秒",
-  "Scenes this run": "本次场景数",
-  "Scenes this workflow": "当前工作流场景数",
-  "Current storyboard": "当前分镜",
-  "Script-to-Video Control Room": "脚本到视频操控室",
-  "System prompt": "系统提示词",
-  "Since session start": "自会话开始以来",
-  "Select workflows": "选择工作流",
-  "Selected": "已选择",
-  "Some scenes finished before an error. Compose the available clips or regenerate blocked scenes, then try again.": "部分场景完成后出现错误。可先合成已完成的片段，或重新生成被阻止的场景后再试。",
-  "Sequence": "串行",
-  "Sign in to continue": "登录以继续",
-  "Sign in": "登录",
-  "Sign out": "退出登录",
-  "Single clip console": "单条视频面板",
-  "Single Sora2 Video": "单个 Sora2 视频",
-  "Single queue": "单视频队列",
-  "Single video prompt": "单视频提示词",
-  "Single Video Status": "单视频状态",
-  "Sora Agent Production Dashboard": "Sora 代理制作看板",
-  "Streams Agent Workflow logo": "Streams 工作流徽标",
-  "Storyboard Script": "分镜脚本",
-  "Streams Studio": "Streams 工作室",
-  "video generation workflow by AI": "AI 视频生成工作流",
-  "Start Workflow": "启动工作流",
-  "Starting Workflow...": "正在启动工作流…",
-  "Start a workflow before regenerating scenes.": "请先启动工作流再重新生成场景。",
-  "Start single video": "启动单视频",
-  "Started": "开始时间",
-  "Storyboard Workflow": "分镜工作流",
-  "Storyboard workspace": "分镜工作区",
-  "Status": "状态",
-  "The Director agent will refine prompts following Sora2 best practices.": "导演代理会按照 Sora2 最佳实践优化提示词。",
-  "Regenerate Final Video": "重新生成最终视频",
-  "Regenerate Scene": "重新生成场景",
-  "Regenerating...": "重新生成中…",
-  "Open MP4 in new tab": "在新标签页打开 MP4",
-  "Your browser does not support HTML5 video.": "您的浏览器不支持 HTML5 视频。",
-  "Submit reference image": "上传参考图",
-  "Submit remix": "提交重制",
-  "Tracked workstreams": "追踪的工作项",
-  "Tap a row to view job details.": "点击任意行以查看任务详情。",
-  "Upload reference stills": "上传参考画面",
-  "Use the provided username and password to access the dashboard.": "使用提供的用户名和密码登录控制面板。",
-  "Use this version": "使用该版本",
-  "Start your first workflow to see it listed here.": "启动第一个工作流后即可在此查看。",
-  "Uses previous video ID:": "继承上一段视频 ID：",
-  "Username": "用户名",
-  "Video ID:": "视频 ID：",
-  "Version video unavailable.": "版本视频暂不可用。",
-  "Versions": "版本列表",
-  "Describe how you want to remix this scene...": "描述你希望如何重制此场景…",
-  "Prompt:": "提示词：",
-  "Azure video ID:": "Azure 视频 ID：",
-  "Waiting to start": "等待开始",
-  "Workflow Status": "工作流状态",
-  "Workflow Runs": "工作流记录",
-  "Workflow Timeline": "工作流时间线",
-  "Workflow complete": "工作流完成",
-  "Workflow failed": "工作流失败",
-  "Workflow health": "工作流健康情况",
-  "Sequence mode accepts a single starting still, then reuses the last frame of each clip to guide the next scene for smoother continuity.": "串行模式使用单个起始画面，并复用上一段的最后一帧来引导下一个场景，实现更平滑的衔接。",
-  "running or queued": "运行或排队中",
-  "Video unavailable.": "视频暂不可用。",
-  "Unavailable": "不可用",
-  "Generated Video": "已生成视频",
-  "Video pending...": "视频生成中…",
-  "Image pending...": "图像生成中…",
-  "Generate Single Clip": "创建单条视频",
-  "Submit a single prompt directly to the selected video backend. Optionally attach a still reference, select the render resolution, and choose a supported clip duration.": "将单条提示提交到所选视频引擎，可附加参考图、选择分辨率并设置片段时长。",
-  "Describe the scene, motion, cinematography, and mood for the selected video backend...": "描述场景、运动、镜头语言与情绪，系统会交付给指定的视频引擎…",
-  "Duration": "时长",
-  "Generate Clip": "生成片段",
-  "Reference image (optional)": "参考图（可选）",
-  "Reference preview": "参考图预览",
-  "Enter a prompt before requesting a video clip.": "提交前请先填写提示词。",
-  "Refine script with GPT-5": "使用 GPT-5 优化剧本",
-  "Use GPT-5 to polish the storyboard before planning scenes.": "在规划场景前，用 GPT-5 打磨分镜文案。",
-  "Refine prompt with GPT-5": "使用 GPT-5 优化提示词",
-  "Let GPT-5 tighten the single-scene prompt before submitting.": "在提交前，让 GPT-5 精炼单条视频的提示词。",
-  "Enabled": "已启用",
-  "Disabled": "已关闭",
-  "Edit prompt before regenerating": "修改提示词后再重新生成",
-  "Last frame reference": "最后一帧参考图",
-  "Remix Clip": "重制片段",
-  "Remix Single Video": "重制单条视频",
-  "Describe how you want to remix this clip...": "描述你希望如何重制该片段…",
-  "Enter a prompt to remix this clip.": "请填写重制提示词。",
-  "Unable to submit single-video remix. Confirm the backend endpoint is reachable.": "无法提交单视频重制请求，请确认后端可访问。",
-  "Start a single-video job before requesting a remix.": "请先创建单视频任务再尝试重制。",
-  "Sending Prompt...": "正在发送提示词…",
-  "s": "秒",
-  "View system prompt": "查看系统提示词",
-  "View input prompt": "查看输入提示词",
-  "Workflow prompt": "工作流提示词",
-  "GPT-5 prompt template": "GPT-5 提示词模板",
-  "Edit or replace the GPT-5 prompt file before refining scenes.": "在优化场景前，可在此编辑或替换 GPT-5 提示词模板。",
-  "Reload prompt file": "重新载入模板",
-  "Reset changes": "重置更改",
-  "Save template & re-run": "保存模板并重新优化",
-  "Loading prompt template...": "正在加载提示词模板…",
-  "Unable to load prompt template. Confirm the backend exposes /api/prompts/workflow.": "无法加载提示词模板，请确认后端已开放 /api/prompts/workflow。",
-  "Unable to update prompt template. Confirm the backend accepts template edits.": "无法更新提示词模板，请确认后端允许模板编辑。",
-  "Template updated but GPT-5 rerun failed. Try refining again.": "模板已保存，但 GPT-5 重新优化失败，请重试。",
-  "Review refined prompt": "审阅优化后的提示词",
-  "GPT-5 refined your storyboard. Edit it below or proceed.": "GPT-5 已优化分镜，你可在继续前进一步编辑。",
-  "GPT-5 refined your prompt. Edit it below or proceed.": "GPT-5 已优化提示词，你可在继续前进一步编辑。",
-  "Refined prompt": "优化后的提示词",
-  "Original input": "原始内容",
-  "Back to edit": "返回编辑",
-  "Proceed to workflow": "继续到工作流",
-  "Proceed to single video": "继续生成单视频",
-  "Prompt details": "提示词详情",
-  "Prompt unavailable.": "提示词不可用。",
-  "Unable to copy prompt": "无法复制提示词",
-  "Unable to refine the storyboard. Continue without refinement or try again.": "无法优化分镜。可直接继续或稍后再试。",
-  "Unable to refine the prompt. Continue without refinement or try again.": "无法优化提示词。可直接继续或稍后再试。",
-  "Submitted prompt": "已提交的提示词",
-  "Analyze Video": "分析视频",
-  "Video insight": "视频洞察",
-  "Video reproduce": "视频复刻",
-  "Video insight jobs": "视频洞察任务",
-  "Reproduce jobs": "复刻任务",
-  "Investigate and reproduce uploaded videos.": "使用内容理解与 Kling 复刻上传的视频。",
-  "Upload a video to see analysis jobs here.": "上传视频以查看分析任务。",
-  "Upload a video to reproduce segments.": "上传视频以拆分并复刻片段。",
-  "Image generator": "图像引擎",
-  "Stylized frame generator": "风格化图像引擎",
-  "Segmentation backend": "分割方式",
-  "Select how video segments are detected.": "选择视频片段的检测方式。",
-  "Reference frame usage": "参考帧使用方式",
-  "Choose whether Kling receives both start and end frames or only the first frame reference.": "选择向 Kling 提供起止帧还是仅提供第一帧作为参考。",
-  "Azure Content Understanding": "Azure 内容理解",
-  "OpenCV (PySceneDetect)": "OpenCV（PySceneDetect）",
-  "Select how key frames get stylized before Kling renders.": "请选择 Kling 渲染前用于风格化关键帧的方式。",
-  "Azure gpt-image-1": "Azure gpt-image-1",
-  "Kling image generation": "Kling 图像生成",
-  "Use original frames (no stylization)": "使用原始起止帧（不做风格化）",
-  "Reference frames": "参考帧",
-  "Start + end frames": "起始+结束帧",
-  "Start frame only": "仅起始帧",
-  "Upload video for analysis": "上传用于分析的视频",
-  "Upload video for reproduction": "上传待复刻视频",
-  "Uploaded video": "已上传视频",
-  "Notes (optional)": "备注（可选）",
-  "Content notes": "任务备注",
-  "Describe any context for this clip": "描述此视频的上下文",
-  "Result files": "结果文件",
-  "Open analyzed video": "打开已分析视频",
-  "Download JSON result": "下载 JSON 结果",
-  "JSON result unavailable.": "JSON 结果不可用。",
-  "Download scene assets": "下载场景素材",
-  "Preparing ZIP...": "正在打包 ZIP…",
-  "Unable to download workflow assets. Confirm the backend can bundle files.": "无法下载工作流素材，请确认后端支持打包文件。",
-  "Key frames": "关键帧",
-  "Video segments": "视频段落",
-  "Start frame": "起始帧",
-  "End frame": "结束帧",
-  "Stylized start frame": "风格化起始帧",
-  "Stylized end frame": "风格化结束帧",
-  "Timestamp": "时间戳",
-  "Tags": "标签",
-  "Confidence": "置信度",
-  "Start": "开始",
-  "End": "结束",
-  "Summary": "摘要",
-  "No insights yet.": "尚无分析结果。",
-  "View full image": "查看完整图片",
-  "Export insights JSON": "导出洞察 JSON",
-  "Download processed insight data as JSON.": "下载当前洞察结果为 JSON。",
-  "Describe using Azure Content Understanding": "说明通过 Azure 内容理解的分析需求",
-  "Azure Content Understanding extracts key frames and segments.": "Azure 内容理解会返回关键帧与视频片段洞察。",
-  "Unable to analyze video. Confirm the backend endpoint is reachable.": "无法分析该视频，请确认后端可访问。",
-  "Content type": "内容类型",
-  "Unable to load video insights. Verify the API endpoint.": "无法加载视频洞察，请检查 API 地址。",
-  "Unable to load reproduce jobs. Verify the API endpoint.": "无法加载复刻任务，请检查 API 地址。",
-  "Unable to load reproduce job details. Verify the API endpoint.": "无法刷新复刻任务详情，请检查 API 地址。",
-  "Unable to delete one or more insight jobs.": "部分视频洞察任务无法删除。",
-  "Unable to delete one or more reproduce jobs.": "部分复刻任务无法删除。",
-  "Unable to start reproduce workflow. Confirm the backend is reachable.": "无法启动复刻流程，请确认后端可访问。",
-  "Unable to regenerate this segment. Verify the API endpoint.": "无法重新生成该片段，请检查 API 地址。",
-  "Start reproduce workflow": "启动复刻流程",
-  "Original segment": "原始片段",
-  "Reproduced clip": "复刻片段",
-  "Regenerate segment": "重新生成片段",
-  "Thread count must be between 1 and 10.": "线程数需在 1 到 10 之间。",
-};
 
 const normalizeProvider = (value?: string | null) => {
   const normalized = (value ?? "").trim().toLowerCase();
@@ -636,8 +78,6 @@ const normalizeProvider = (value?: string | null) => {
     ? normalized
     : null;
 };
-
-const translateValue = (language: Language, value: string) => (language === "zh" ? zhTranslations[value] ?? value : value);
 
 const readFileAsDataUrl = (file: File): Promise<string> =>
   new Promise((resolve, reject) => {
@@ -653,108 +93,9 @@ const readFileAsDataUrl = (file: File): Promise<string> =>
     reader.readAsDataURL(file);
   });
 
-const stageLabel = (stage: string | null, language: Language) => {
-  if (!stage) return translateValue(language, "Waiting to start");
-  const normalized = stage.toLowerCase();
-  switch (normalized) {
-    case "planning":
-      return translateValue(language, "Planning scenes");
-    case "rendering":
-      return translateValue(language, "Rendering video clips");
-    case "composing":
-      return translateValue(language, "Composing final video");
-    case "initializing":
-      return translateValue(language, "Preparing workflow");
-    case "running":
-      return translateValue(language, "Generating video");
-    case "completed":
-      return translateValue(language, "Workflow complete");
-    case "failed":
-      return translateValue(language, "Workflow failed");
-    case "queued":
-      return translateValue(language, "Queued");
-    default:
-      return translateValue(language, normalized.charAt(0).toUpperCase() + normalized.slice(1));
-  }
-};
-
-const formatTimestamp = (value: string) => {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-  return `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`;
-};
-
-const formatTimeDistance = (value: string | null) => {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return "—";
-  }
-  return date.toLocaleString();
-};
-
-const formatSeconds = (value: number | null | undefined) => {
-  if (value == null || Number.isNaN(value)) return "—";
-  const total = Math.max(0, Number(value));
-  const minutes = Math.floor(total / 60);
-  const seconds = total % 60;
-  if (minutes > 0) {
-    return `${minutes}m ${seconds.toFixed(1)}s`;
-  }
-  return `${seconds.toFixed(1)}s`;
-};
-
-const formatSegmentTimestampDisplay = (seconds?: number | null, fallback?: string | null) => {
-  if (typeof seconds === "number" && Number.isFinite(seconds)) {
-    const totalMilliseconds = Math.round(seconds * 1000);
-    const hours = Math.floor(totalMilliseconds / 3_600_000);
-    const minutes = Math.floor((totalMilliseconds % 3_600_000) / 60_000);
-    const secondsWhole = Math.floor((totalMilliseconds % 60_000) / 1000);
-    const milliseconds = totalMilliseconds % 1000;
-    let secondsText = secondsWhole.toString().padStart(2, "0");
-    if (milliseconds) {
-      const fractional = milliseconds.toString().padStart(3, "0").replace(/0+$/, "");
-      if (fractional) {
-        secondsText = `${secondsText}.${fractional}`;
-      }
-    }
-    const minuteText = minutes.toString().padStart(2, "0");
-    if (hours > 0) {
-      const hourText = hours.toString().padStart(2, "0");
-      return `${hourText}:${minuteText}:${secondsText}`;
-    }
-    return `${minuteText}:${secondsText}`;
-  }
-  return fallback ?? "—";
-};
-
-const buildAssetUrl = (base: string, path: string | null | undefined) => {
-  if (!path) return null;
-  return `${base}${path}`;
-};
-
-const getStatusToken = (status: string | undefined, language: Language) => {
-  if (!status) {
-    return {
-      label: translateValue(language, "Idle"),
-      className: "border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-500",
-    };
-  }
-  const token = STATUS_TOKENS[status];
-  if (token) {
-    return { ...token, label: translateValue(language, token.label) };
-  }
-  return {
-    label: translateValue(language, status.charAt(0).toUpperCase() + status.slice(1)),
-    className: "border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-500",
-  };
-};
-
 export default function Home() {
   const [activeTab, setActiveTab] = useState<TabId>("combined");
-    const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [theme, setTheme] = useState<"light" | "dark">("light");
 
   useEffect(() => {
     if (theme === "dark") {
@@ -764,43 +105,12 @@ export default function Home() {
     }
   }, [theme]);
 
-  const ThemeToggle = () => (
-    <button
-      type="button"
-      onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-      className="rounded-full border border-slate-300 bg-white p-1.5 text-zinc-600 transition hover:bg-slate-100 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200"
-      title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-    >
-      {theme === "dark" ? <SunIcon className="h-4 w-4" /> : <MoonIcon className="h-4 w-4" />}
-    </button>
-  );
-
   const [language, setLanguage] = useState<Language>("zh");
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [authError, setAuthError] = useState<string | null>(null);
   const translate = useCallback((value: string) => translateValue(language, value), [language]);
-  const LanguageToggle = () => (
-    <div className="flex items-center gap-2">
-      <span className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-500">{translate("Language")}</span>
-      <div className="flex overflow-hidden rounded-full border border-slate-300 dark:border-slate-700">
-        {LANGUAGE_OPTIONS.map((locale) => {
-          const isActive = language === locale;
-          return (
-            <button
-              key={locale}
-              type="button"
-              onClick={() => setLanguage(locale)}
-              className={`px-3 py-1 text-xs font-semibold transition ${isActive ? "bg-slate-100 text-slate-900" : "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:bg-slate-700"}`}
-            >
-              {translate(locale === "en" ? "English" : "Chinese")}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1575,9 +885,6 @@ export default function Home() {
 
   const panelCardClass =
     "rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white/80 dark:bg-zinc-900/50 p-6 shadow-2xl backdrop-blur-xl";
-  const pillButtonClass =
-    "rounded-full border border-slate-300 dark:border-slate-700 bg-slate-100/50 dark:bg-slate-100 dark:bg-slate-800/50 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400";
-  const displayApiBase = apiBase.replace(/^https?:\/\//, "");
   const scrollToWorkspaceTop = () => {
     if (typeof window !== "undefined") {
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -2631,7 +1938,10 @@ export default function Home() {
               <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-500">{translate("Streams Studio")}</p>
               <p className="text-[9px] text-slate-400">{translate("video generation workflow by AI")}</p>
             </div>
-            <div className="flex items-center gap-3"><ThemeToggle /><LanguageToggle /></div>
+            <div className="flex items-center gap-3">
+              <ThemeToggle theme={theme} onToggle={() => setTheme(theme === "dark" ? "light" : "dark")} />
+              <LanguageToggle language={language} translate={translate} onChange={setLanguage} />
+            </div>
           </div>
           <div className="space-y-2 text-center">
             <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{translate("Sign in to continue")}</h1>
@@ -2718,7 +2028,10 @@ export default function Home() {
         </div>
 
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-3"><ThemeToggle /><LanguageToggle /></div>
+          <div className="flex items-center gap-3">
+            <ThemeToggle theme={theme} onToggle={() => setTheme(theme === "dark" ? "light" : "dark")} />
+            <LanguageToggle language={language} translate={translate} onChange={setLanguage} />
+          </div>
 
           <button
             type="button"
@@ -2769,82 +2082,18 @@ export default function Home() {
                     {translate("Delete Selected")}
                   </button>
               </div>
-              {jobs.length === 0 ? (
-                <p className="text-sm text-slate-500 p-4">{translate("Start your first workflow to see it listed here.")}</p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800 text-sm">
-                    <thead className="bg-zinc-100 dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                      <tr>
-                        <th scope="col" className="px-6 py-3 text-left">
-                          <span className="sr-only">{translate("Select workflows")}</span>
-                        </th>
-                        <th scope="col" className="px-6 py-3 text-left">{translate("Job ID")}</th>
-                        <th scope="col" className="px-6 py-3 text-left">{translate("Status")}</th>
-                        <th scope="col" className="px-6 py-3 text-left">{translate("Video backend")}</th>
-                        <th scope="col" className="px-6 py-3 text-left">{translate("Mode")}</th>
-                        <th scope="col" className="px-6 py-3 text-left">{translate("Resolution")}</th>
-                        <th scope="col" className="px-6 py-3 text-left">{translate("Progress")}</th>
-                        <th scope="col" className="px-6 py-3 text-left">{translate("Started")}</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200 dark:divide-slate-800 bg-white dark:bg-slate-900">
-                      {jobs.map((item) => {
-                        const token = getStatusToken(item.status, language);
-                        const isSelected = selectedCombinedJobs.has(item.job_id);
-                        const progressPercent = Math.min(100, Math.max(0, Math.round((item.progress ?? 0) * 100)));
-                        return (
-                          <tr
-                            key={item.job_id}
-                            onClick={() => {
-                              setActiveJobId(item.job_id);
-                              setJob(item);
-                              setIsJobDetailModalOpen(true);
-                            }}
-                            className="cursor-pointer transition hover:bg-slate-50 dark:hover:bg-zinc-800/50 border-b border-slate-100 dark:border-zinc-800/50"
-                          >
-                            <td className="px-6 py-4">
-                              <input
-                                type="checkbox"
-                                checked={isSelected}
-                                onChange={() => toggleCombinedSelection(item.job_id)}
-                                onClick={(event) => event.stopPropagation()}
-                                className="h-4 w-4 rounded border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700 text-indigo-500 focus:ring-indigo-500"
-                              />
-                            </td>
-                            <td className="whitespace-nowrap px-6 py-4 font-mono text-xs text-slate-500 dark:text-slate-400">{item.job_id.slice(0, 12)}</td>
-                            <td className="px-6 py-4">
-                              <div className="flex flex-col gap-1">
-                                <span className={`text-xs font-semibold uppercase tracking-wide ${token.className}`}>{token.label}</span>
-                                <span className="text-[11px] text-slate-500">{stageLabel(item.stage, language)}</span>
-                              </div>
-                            </td>
-                            <td className="px-6 py-4 text-xs text-slate-500 dark:text-slate-400">
-                              {(item.video_provider || "sora2").toUpperCase()}
-                            </td>
-                            <td className="px-6 py-4 text-xs text-slate-500 dark:text-slate-400">
-                              {translate(item.generation_mode === "sequence" ? "Sequence" : "Parallel")}
-                            </td>
-                            <td className="px-6 py-4 text-xs text-slate-500 dark:text-slate-400">{item.resolution}</td>
-                            <td className="px-6 py-4">
-                              <div className="flex items-center gap-2">
-                                <div className="h-2 w-24 rounded-full bg-slate-100 dark:bg-slate-800">
-                                  <div
-                                    className="h-full rounded-full bg-slate-400 transition-all"
-                                    style={{ width: `${progressPercent}%` }}
-                                  />
-                                </div>
-                                <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{progressPercent}%</span>
-                              </div>
-                            </td>
-                            <td className="whitespace-nowrap px-6 py-4 text-xs text-slate-500">{formatTimeDistance(item.started_at)}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+              <WorkflowTable
+                jobs={jobs}
+                language={language}
+                translate={translate}
+                selectedJobIds={selectedCombinedJobs}
+                onSelect={toggleCombinedSelection}
+                onRowClick={(item) => {
+                  setActiveJobId(item.job_id);
+                  setJob(item);
+                  setIsJobDetailModalOpen(true);
+                }}
+              />
             </>
           )}
 
@@ -2861,83 +2110,18 @@ export default function Home() {
                     {translate("Delete Selected")}
                   </button>
               </div>
-              {singleJobs.length === 0 ? (
-                <p className="text-sm text-slate-500 p-4">{translate("Generate a clip to see it listed here.")}</p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800 text-sm">
-                    <thead className="bg-zinc-100 dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                      <tr>
-                        <th scope="col" className="px-6 py-3 text-left">
-                          <span className="sr-only">{translate("Select workflows")}</span>
-                        </th>
-                        <th scope="col" className="px-6 py-3 text-left">{translate("Job ID")}</th>
-                        <th scope="col" className="px-6 py-3 text-left">{translate("Status")}</th>
-                        <th scope="col" className="px-6 py-3 text-left">{translate("Video backend")}</th>
-                        <th scope="col" className="px-6 py-3 text-left">{translate("Resolution")}</th>
-                        <th scope="col" className="px-6 py-3 text-left">{translate("Duration")}</th>
-                        <th scope="col" className="px-6 py-3 text-left">{translate("Progress")}</th>
-                        <th scope="col" className="px-6 py-3 text-left">{translate("Started")}</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200 dark:divide-slate-800 bg-white dark:bg-slate-900">
-                      {singleJobs.map((item) => {
-                        const token = getStatusToken(item.status, language);
-                        const isSelected = selectedSingleJobs.has(item.job_id);
-                        const progressPercent = Math.min(100, Math.max(0, Math.round((item.progress ?? 0) * 100)));
-                        return (
-                          <tr
-                            key={item.job_id}
-                            onClick={() => {
-                              setActiveSingleJobId(item.job_id);
-                              setSingleJob(item);
-                              setIsJobDetailModalOpen(true);
-                            }}
-                            className="cursor-pointer transition hover:bg-slate-50 dark:hover:bg-zinc-800/50 border-b border-slate-100 dark:border-zinc-800/50"
-                          >
-                            <td className="px-6 py-4">
-                              <input
-                                type="checkbox"
-                                checked={isSelected}
-                                onChange={() => toggleSingleSelection(item.job_id)}
-                                onClick={(event) => event.stopPropagation()}
-                                className="h-4 w-4 rounded border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700 text-indigo-500 focus:ring-indigo-500"
-                              />
-                            </td>
-                            <td className="whitespace-nowrap px-6 py-4 font-mono text-xs text-slate-500 dark:text-slate-400">{item.job_id.slice(0, 12)}</td>
-                            <td className="px-6 py-4">
-                              <div className="flex flex-col gap-1">
-                                <span className={`text-xs font-semibold uppercase tracking-wide ${token.className}`}>{token.label}</span>
-                                <span className="text-[11px] text-slate-500">{stageLabel(item.status, language)}</span>
-                              </div>
-                            </td>
-                            <td className="px-6 py-4 text-xs text-slate-500 dark:text-slate-400">
-                              {(item.video_provider || "sora2").toUpperCase()}
-                            </td>
-                            <td className="px-6 py-4 text-xs text-slate-500 dark:text-slate-400">{item.resolution}</td>
-                            <td className="px-6 py-4 text-xs text-slate-500 dark:text-slate-400">
-                              {item.duration}
-                              {translate("s")}
-                            </td>
-                            <td className="px-6 py-4">
-                              <div className="flex items-center gap-2">
-                                <div className="h-2 w-24 rounded-full bg-slate-100 dark:bg-slate-800">
-                                  <div
-                                    className="h-full rounded-full bg-slate-400 transition-all"
-                                    style={{ width: `${progressPercent}%` }}
-                                  />
-                                </div>
-                                <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{progressPercent}%</span>
-                              </div>
-                            </td>
-                            <td className="whitespace-nowrap px-6 py-4 text-xs text-slate-500">{formatTimeDistance(item.started_at)}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+              <SingleJobsTable
+                jobs={singleJobs}
+                language={language}
+                translate={translate}
+                selectedJobIds={selectedSingleJobs}
+                onSelect={toggleSingleSelection}
+                onRowClick={(item) => {
+                  setActiveSingleJobId(item.job_id);
+                  setSingleJob(item);
+                  setIsJobDetailModalOpen(true);
+                }}
+              />
             </>
           )}
 
@@ -2961,88 +2145,18 @@ export default function Home() {
                   {translate("Delete Selected")}
                 </button>
               </div>
-              {insightJobs.length === 0 ? (
-                <p className="text-sm text-slate-500 p-4">
-                  {translate("Upload a video to see analysis jobs here.")}
-                </p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800 text-sm">
-                    <thead className="bg-zinc-100 dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                      <tr>
-                        <th scope="col" className="px-6 py-3 text-left">
-                          <span className="sr-only">{translate("Select workflows")}</span>
-                        </th>
-                        <th scope="col" className="px-6 py-3 text-left">{translate("Job ID")}</th>
-                        <th scope="col" className="px-6 py-3 text-left">{translate("Status")}</th>
-                        <th scope="col" className="px-6 py-3 text-left">{translate("Uploaded video")}</th>
-                        <th scope="col" className="px-6 py-3 text-left">{translate("Progress")}</th>
-                        <th scope="col" className="px-6 py-3 text-left">{translate("Started")}</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200 dark:divide-slate-800 bg-white dark:bg-slate-900">
-                      {insightJobs.map((item) => {
-                        const token = getStatusToken(item.status, language);
-                        const isSelected = selectedInsightJobs.has(item.job_id);
-                        const progressPercent = Math.min(
-                          100,
-                          Math.max(0, Math.round((item.progress ?? 0) * 100)),
-                        );
-                        return (
-                          <tr
-                            key={item.job_id}
-                            onClick={() => {
-                              setActiveInsightJobId(item.job_id);
-                              setInsightJob(item);
-                              setIsJobDetailModalOpen(true);
-                            }}
-                            className="cursor-pointer transition hover:bg-slate-50 dark:hover:bg-zinc-800/50 border-b border-slate-100 dark:border-zinc-800/50"
-                          >
-                            <td className="px-6 py-4">
-                              <input
-                                type="checkbox"
-                                checked={isSelected}
-                                onChange={() => toggleInsightSelection(item.job_id)}
-                                onClick={(event) => event.stopPropagation()}
-                                className="h-4 w-4 rounded border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700 text-indigo-500 focus:ring-indigo-500"
-                              />
-                            </td>
-                            <td className="whitespace-nowrap px-6 py-4 font-mono text-xs text-slate-500 dark:text-slate-400">
-                              {item.job_id.slice(0, 12)}
-                            </td>
-                            <td className="px-6 py-4">
-                              <div className="flex flex-col gap-1">
-                                <span className={`text-xs font-semibold uppercase tracking-wide ${token.className}`}>
-                                  {token.label}
-                                </span>
-                              </div>
-                            </td>
-                            <td className="px-6 py-4 text-xs text-slate-500 dark:text-slate-400">
-                              {item.filename}
-                            </td>
-                            <td className="px-6 py-4">
-                              <div className="flex items-center gap-2">
-                                <div className="h-2 w-24 rounded-full bg-slate-100 dark:bg-slate-800">
-                                  <div
-                                    className="h-full rounded-full bg-slate-400 transition-all"
-                                    style={{ width: `${progressPercent}%` }}
-                                  />
-                                </div>
-                                <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                                  {progressPercent}%
-                                </span>
-                              </div>
-                            </td>
-                            <td className="whitespace-nowrap px-6 py-4 text-xs text-slate-500">
-                              {formatTimeDistance(item.started_at)}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+              <InsightJobsTable
+                jobs={insightJobs}
+                language={language}
+                translate={translate}
+                selectedJobIds={selectedInsightJobs}
+                onSelect={toggleInsightSelection}
+                onRowClick={(item) => {
+                  setActiveInsightJobId(item.job_id);
+                  setInsightJob(item);
+                  setIsJobDetailModalOpen(true);
+                }}
+              />
             </>
           )}
 
@@ -3066,79 +2180,18 @@ export default function Home() {
                   {translate("Delete Selected")}
                 </button>
               </div>
-              {reproduceJobs.length === 0 ? (
-                <p className="text-sm text-slate-500 p-4">
-                  {translate("Upload a video to reproduce segments.")}
-                </p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800 text-sm">
-                    <thead className="bg-zinc-100 dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                      <tr>
-                        <th scope="col" className="px-6 py-3 text-left">
-                          <span className="sr-only">{translate("Select workflows")}</span>
-                        </th>
-                        <th scope="col" className="px-6 py-3 text-left">{translate("Job ID")}</th>
-                        <th scope="col" className="px-6 py-3 text-left">{translate("Status")}</th>
-                        <th scope="col" className="px-6 py-3 text-left">{translate("Uploaded video")}</th>
-                        <th scope="col" className="px-6 py-3 text-left">{translate("Progress")}</th>
-                        <th scope="col" className="px-6 py-3 text-left">{translate("Started")}</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200 dark:divide-slate-800 bg-white dark:bg-slate-900">
-                      {reproduceJobs.map((item) => {
-                        const token = getStatusToken(item.status, language);
-                        const isSelected = selectedReproduceJobs.has(item.job_id);
-                        const progressPercent = Math.min(100, Math.max(0, Math.round((item.progress ?? 0) * 100)));
-                        return (
-                          <tr
-                            key={item.job_id}
-                            onClick={() => {
-                              setActiveReproduceJobId(item.job_id);
-                              setReproduceJob(item);
-                              setIsJobDetailModalOpen(true);
-                            }}
-                            className="cursor-pointer transition hover:bg-slate-50 dark:hover:bg-zinc-800/50 border-b border-slate-100 dark:border-zinc-800/50"
-                          >
-                            <td className="px-6 py-4">
-                              <input
-                                type="checkbox"
-                                checked={isSelected}
-                                onChange={() => toggleReproduceSelection(item.job_id)}
-                                onClick={(event) => event.stopPropagation()}
-                                className="h-4 w-4 rounded border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700 text-indigo-500 focus:ring-indigo-500"
-                              />
-                            </td>
-                            <td className="whitespace-nowrap px-6 py-4 font-mono text-xs text-slate-500 dark:text-slate-400">
-                              {item.job_id.slice(0, 12)}
-                            </td>
-                            <td className="px-6 py-4">
-                              <span className={`text-xs font-semibold uppercase tracking-wide ${token.className}`}>
-                                {token.label}
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 text-xs text-slate-500 dark:text-slate-400">{item.filename}</td>
-                            <td className="px-6 py-4">
-                              <div className="flex items-center gap-2">
-                                <div className="h-2 w-24 rounded-full bg-slate-100 dark:bg-slate-800">
-                                  <div
-                                    className="h-full rounded-full bg-slate-400 transition-all"
-                                    style={{ width: `${progressPercent}%` }}
-                                  />
-                                </div>
-                                <span className="text-xs text-slate-500 dark:text-slate-400">{progressPercent}%</span>
-                              </div>
-                            </td>
-                            <td className="whitespace-nowrap px-6 py-4 text-xs text-slate-500">
-                              {formatTimeDistance(item.started_at)}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+              <ReproduceJobsTable
+                jobs={reproduceJobs}
+                language={language}
+                translate={translate}
+                selectedJobIds={selectedReproduceJobs}
+                onSelect={toggleReproduceSelection}
+                onRowClick={(item) => {
+                  setActiveReproduceJobId(item.job_id);
+                  setReproduceJob(item);
+                  setIsJobDetailModalOpen(true);
+                }}
+              />
 
             </>
           )}
