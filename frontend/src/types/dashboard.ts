@@ -220,7 +220,22 @@ export type RefinementReview = {
   videoProvider?: string;
 };
 
-export type TabId = "combined" | "single" | "insight" | "reproduce";
+export type TabId = "combined" | "guided" | "single" | "insight" | "reproduce";
+
+export type GuidedWorkflowArtifacts = {
+  job_id: string;
+  script_path?: string | null;
+  storyboard_path?: string | null;
+  scene_image_dir?: string | null;
+  concept_art_paths: string[];
+  first_frame_path?: string | null;
+  character_design_path?: string | null;
+};
+
+export type AnimatedWorkflowResponse = {
+  job: JobStatus;
+  artifacts: GuidedWorkflowArtifacts;
+};
 
 export type Language = "en" | "zh";
 

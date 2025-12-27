@@ -50,6 +50,7 @@ export const terminalStatuses = new Set(["completed", "failed"]);
 
 export const TABS: { id: TabId; label: string }[] = [
   { id: "combined", label: "Storyboard workspace" },
+  { id: "guided", label: "Guided animated short" },
   { id: "single", label: "Single clip console" },
   { id: "insight", label: "Video insight" },
   { id: "reproduce", label: "Video reproduce" },
