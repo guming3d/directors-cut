@@ -36,7 +36,9 @@ uvicorn video_agent_workflow:fastapi_app --host 0.0.0.0 --port 8000
 ### Available API routes
 
 - `POST /api/workflows` — start a new video job with a storyboard script
+- `POST /api/animated-workflows` — guided workflow that collects characters, mood, and scene description, generates concept art/first frame, and launches the Sora pipeline
 - `GET /api/workflows` — list recent jobs with progress snapshots
+- `GET /api/animated-workflows/{job_id}/artifacts` — retrieve generated guided assets (script, storyboard, concept art, first frame)
 - `GET /api/workflows/{job_id}` — poll job status, including messages, scene metadata, and final MP4/JSON manifest links
 - `POST /api/workflows/{job_id}/scenes/{scene_order}/remix` — remix a completed scene by supplying a new prompt against the previous Azure video ID
 - `POST /api/workflows/{job_id}/scenes/{scene_order}/select` — choose which scene version should be used when composing the final cut
@@ -83,6 +85,16 @@ uvicorn video_agent_workflow:fastapi_app --host 0.0.0.0 --port 8000
 3. Start the FastAPI service and the frontend dev server.
 4. Paste your storyboard into the dashboard, choose `Parallel` or `Sequence` mode (sequence chains scenes via last-frame references), and launch the job.
 5. Monitor progress in the UI: plan, render, and compose phases update in real time. Remix individual scenes, pick preferred versions, and regenerate the final MP4 directly from the dashboard.
+
+### Guided animated short workflow
+
+Use `POST /api/animated-workflows` when you want the backend to guide the entire process from user inputs:
+
+1. Upload one or more characters (image + name) and describe the scene.
+2. Pick a workflow type (`story_short`, `music_short`, or `direct_video`), basic film info (short/long, aspect ratio, language), emotional keywords, and per-scene duration (default 4s).
+3. The service drafts a storyboard/script, generates character concept art with the Gemini NanoBanana model, and produces a first-frame still anchored to your characters and storyboard.
+4. The first frame is reused as the start image for every scene, the Sora2 pipeline renders clips, and ffmpeg stitches the final video. Assets (script/storyboard/concept art/first frame) are available via `GET /api/animated-workflows/{job_id}/artifacts`.
+5. Configure `GEMINI_API_KEY` and optional `GEMINI_NANOBANANA_*` settings to enable real concept art/first-frame generation; without them the workflow saves placeholder PNGs so the pipeline can continue.
 
 ## Video insight analysis
 

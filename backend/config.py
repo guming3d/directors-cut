@@ -100,6 +100,18 @@ DEFAULT_IMAGE_GENERATOR = (
     _image_generator_env if _image_generator_env in SUPPORTED_IMAGE_GENERATORS else "gpt-image-1"
 )
 
+# Gemini NanoBanana configuration
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_NANOBANANA_MODEL = os.getenv("GEMINI_NANOBANANA_MODEL", "gemini-3-pro-image-preview")
+GEMINI_NANOBANANA_ASPECT_RATIO = os.getenv("GEMINI_NANOBANANA_ASPECT_RATIO")
+GEMINI_NANOBANANA_RESOLUTION = os.getenv("GEMINI_NANOBANANA_RESOLUTION", "1K")
+GEMINI_NANOBANANA_DRY_RUN = (os.getenv("GEMINI_NANOBANANA_DRY_RUN") or "0").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
+
 # Video reproduce segmentation defaults
 SUPPORTED_REPRODUCE_SEGMENTERS = ("content_understanding", "opencv")
 _segmentation_env = (os.getenv("REPRODUCE_SEGMENTATION_BACKEND") or "content_understanding").strip().lower()
@@ -400,6 +412,11 @@ __all__ = [
     "DEFAULT_REPRODUCE_REFERENCE_MODE",
     "DEFAULT_REPRODUCE_SEGMENTATION",
     "DEFAULT_VIDEO_PROVIDER",
+    "GEMINI_API_KEY",
+    "GEMINI_NANOBANANA_ASPECT_RATIO",
+    "GEMINI_NANOBANANA_DRY_RUN",
+    "GEMINI_NANOBANANA_MODEL",
+    "GEMINI_NANOBANANA_RESOLUTION",
     "DIRECTOR_REFINEMENT_DEPLOYMENT",
     "FINAL_VIDEO_PATH",
     "GPT5_REFINEMENT_DEPLOYMENT",

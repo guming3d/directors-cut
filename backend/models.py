@@ -44,6 +44,83 @@ class EncodedImagePayload(BaseModel):
     content_type: Optional[str] = Field(default=None, alias="contentType")
 
 
+class CharacterUpload(BaseModel):
+    """User-supplied character reference with a display name."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    name: str
+    image: EncodedImagePayload
+    description: Optional[str] = None
+    design_notes: Optional[str] = Field(default=None, alias="designNotes")
+
+
+class AnimatedFilmPayload(BaseModel):
+    """End-to-end guided workflow input for animated shorts."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    characters: list[CharacterUpload] = Field(
+        default_factory=list, description="List of characters with reference images."
+    )
+    scene_description: str = Field(
+        ..., alias="sceneDescription", description="Scene or story the user wants to create."
+    )
+    workflow_type: Literal["story_short", "music_short", "direct_video"] = Field(
+        default="story_short",
+        alias="workflowType",
+        description="Preferred animation workflow template.",
+    )
+    film_length: Literal["short", "long"] = Field(
+        default="short",
+        alias="filmLength",
+        description="Rough duration bucket used when building the outline.",
+    )
+    aspect_ratio: Optional[str] = Field(
+        default=None, alias="aspectRatio", description="Target aspect ratio string such as 16:9 or 9:16."
+    )
+    language: str = Field(default="en", description="Dialogue or on-screen language preference.")
+    emotions: list[str] = Field(
+        default_factory=list, description="Emotional keywords to steer tone and visuals."
+    )
+    script: Optional[str] = Field(
+        default=None,
+        description="Optional user-provided script; when omitted a storyboard will be generated.",
+    )
+    storyboard: Optional[str] = None
+    character_notes: Optional[str] = Field(
+        default=None, alias="characterNotes", description="Global character design direction."
+    )
+    scene_duration: int = Field(
+        default=4,
+        alias="sceneDuration",
+        description="Per-scene runtime in seconds (Sora: 4/8/12, Kling/Jimeng: 5/10).",
+    )
+    resolution: Optional[str] = Field(
+        default=None,
+        description="Override for render resolution in WIDTHxHEIGHT format.",
+    )
+    video_provider: Literal["sora2", "kling", "jimeng"] = Field(
+        default="sora2",
+        alias="videoProvider",
+        description="Video backend to use when rendering scenes.",
+    )
+
+    @model_validator(mode="after")
+    def validate_fields(self) -> "AnimatedFilmPayload":
+        if not self.characters:
+            raise ValueError("At least one character image is required.")
+        if not self.scene_description or not self.scene_description.strip():
+            raise ValueError("Scene description is required.")
+        allowed = allowed_durations_for_provider(self.video_provider)
+        if self.scene_duration not in allowed:
+            allowed_str = ", ".join(str(value) for value in allowed)
+            raise ValueError(
+                f"{self.video_provider.upper()} supports scene durations of {allowed_str} seconds."
+            )
+        return self
+
+
 class VideoWorkflowRequest(BaseModel):
     """Configuration for the multi-agent video workflow."""
 
@@ -463,6 +540,21 @@ class JobStatusResponse(BaseModel):
     generation_mode: str = "parallel"
     scene_duration: int = SORA_CLIP_DURATION_SECONDS
     generate_ai_first_frame: bool = False
+
+
+class GuidedWorkflowArtifacts(BaseModel):
+    job_id: str
+    script_path: Optional[str] = None
+    storyboard_path: Optional[str] = None
+    scene_image_dir: Optional[str] = None
+    concept_art_paths: list[str] = Field(default_factory=list)
+    first_frame_path: Optional[str] = None
+    character_design_path: Optional[str] = None
+
+
+class AnimatedWorkflowResponse(BaseModel):
+    job: JobStatusResponse
+    artifacts: GuidedWorkflowArtifacts
 
 
 class SingleVideoVersionModel(BaseModel):

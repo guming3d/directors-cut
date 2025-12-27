@@ -37,7 +37,10 @@ from .config import (
     normalize_video_provider,
 )
 from .models import (
+    AnimatedFilmPayload,
+    AnimatedWorkflowResponse,
     JobStatusResponse,
+    GuidedWorkflowArtifacts,
     RefineSinglePayload,
     RefineWorkflowPayload,
     RefinedPromptResponse,
@@ -71,12 +74,14 @@ from .services import (
     prepare_request_for_job,
     prepare_single_video_job,
     refine_script_for_payload,
+    start_guided_workflow,
     run_recompose_job,
     run_scene_regeneration_job,
     run_scene_remix_job,
     run_single_video_job,
     run_single_video_remix,
     run_workflow_job,
+    load_guided_artifacts,
 )
 from .reproduce import regenerate_segment, reproduce_job_root, run_reproduce_job
 from .stores import (
@@ -257,6 +262,28 @@ async def get_workflow_prompt_template(
     except RuntimeError as exc:  # pragma: no cover - filesystem failure
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return WorkflowPromptTemplateResponse(video_provider=provider, template=template)
+
+
+@fastapi_app.post("/api/animated-workflows", response_model=AnimatedWorkflowResponse)
+async def start_animated_workflow(payload: AnimatedFilmPayload) -> AnimatedWorkflowResponse:
+    job_id, artifacts = await start_guided_workflow(payload)
+    try:
+        job = await WORKFLOW_JOB_STORE.get_status(job_id)
+    except KeyError as exc:  # pragma: no cover - defensive logging
+        raise HTTPException(status_code=404, detail=f"Unknown job: {job_id}") from exc
+    return AnimatedWorkflowResponse(job=job, artifacts=artifacts)
+
+
+@fastapi_app.get(
+    "/api/animated-workflows/{job_id}/artifacts",
+    response_model=GuidedWorkflowArtifacts,
+)
+async def get_animated_workflow_artifacts(job_id: str) -> GuidedWorkflowArtifacts:
+    try:
+        await WORKFLOW_JOB_STORE.get_status(job_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Unknown job: {job_id}") from exc
+    return await load_guided_artifacts(job_id)
 
 
 @fastapi_app.put(

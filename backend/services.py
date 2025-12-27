@@ -10,7 +10,7 @@ import sys
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Sequence
 
 from .config import (
     DEFAULT_SORA_RESOLUTION,
@@ -23,11 +23,19 @@ from .config import (
     logger,
     normalize_video_provider,
 )
-from .images import prepare_sequence_initial_image, resolve_scene_image_dir, save_payload_as_png
+from .images import (
+    prepare_sequence_initial_image,
+    resolve_scene_image_dir,
+    resize_scene_image,
+    save_payload_as_png,
+)
 from .kling import render_kling_clip
 from .jimeng import render_jimeng_clip
 from .models import (
+    AnimatedFilmPayload,
+    CharacterUpload,
     EncodedImagePayload,
+    GuidedWorkflowArtifacts,
     SceneRender,
     SceneVersionEntry,
     SingleVideoJobConfig,
@@ -39,7 +47,8 @@ from .models import (
 from .pipeline import summarize_manifest
 from .progress import mark_completed, report_progress
 from .stores import SINGLE_VIDEO_STORE, WORKFLOW_JOB_STORE
-from .utils import escape_for_concat, normalize_script_text, run_subprocess
+from .nanobanana import aspect_ratio_from_resolution, generate_nanobanana_image
+from .utils import escape_for_concat, normalize_script_text, run_subprocess, slugify, resolution_to_size
 from .workflow import workflow
 from .config import SINGLE_VIDEO_JOBS_DIR, OUTPUT_DIR
 from .prompts import ensure_scene_headers, refine_text_with_gpt5
@@ -226,9 +235,12 @@ async def _ensure_script_headers(job_id: str, request: VideoWorkflowRequest) -> 
     await WORKFLOW_JOB_STORE.add_message(job_id, "planning", note)
 
 
-async def run_workflow_job(job_id: str, request: VideoWorkflowRequest) -> None:
+async def run_workflow_job(
+    job_id: str, request: VideoWorkflowRequest, *, skip_mark_running: bool = False
+) -> None:
     try:
-        await WORKFLOW_JOB_STORE.mark_running(job_id)
+        if not skip_mark_running:
+            await WORKFLOW_JOB_STORE.mark_running(job_id)
         await _ensure_script_headers(job_id, request)
         await workflow.run(request)
     except Exception as exc:  # pragma: no cover - defensive logging
@@ -989,15 +1001,321 @@ async def refine_script_for_payload(payload: StartWorkflowPayload) -> None:
         payload.script = refined_script
 
 
+def _pick_default_emotions(payload: AnimatedFilmPayload) -> list[str]:
+    if payload.emotions:
+        return [item.strip() for item in payload.emotions if item.strip()]
+    if payload.workflow_type == "music_short":
+        return ["atmospheric", "immersive"]
+    if payload.workflow_type == "direct_video":
+        return ["energetic", "cinematic"]
+    return ["warm", "hopeful"]
+
+
+def _select_workflow_beats(payload: AnimatedFilmPayload) -> list[str]:
+    base_map = {
+        "story_short": ["Hook", "Challenge", "Resolution"],
+        "music_short": ["Visual overture", "Rhythm build", "Chorus moment"],
+        "direct_video": ["Opening shot", "Main action", "Signature pose"],
+    }
+    beats = list(base_map.get(payload.workflow_type, base_map["story_short"]))
+    if payload.film_length == "long" and len(beats) == 3:
+        beats.append("Closing beat")
+    return beats
+
+
+def _resolve_workflow_resolution(payload: AnimatedFilmPayload) -> str:
+    if payload.resolution:
+        return payload.resolution.strip()
+    aspect = (payload.aspect_ratio or "").strip()
+    mapping = {
+        "16:9": "1280x720",
+        "9:16": "720x1280",
+        "1:1": "1024x1024",
+        "4:3": "960x720",
+        "3:4": "720x960",
+        "21:9": "1680x720",
+    }
+    return mapping.get(aspect, DEFAULT_SORA_RESOLUTION)
+
+
+def _build_guided_script_and_storyboard(
+    payload: AnimatedFilmPayload, characters: Sequence[CharacterUpload]
+) -> tuple[str, str, int]:
+    beats = _select_workflow_beats(payload)
+    emotions = _pick_default_emotions(payload)
+    character_blurbs = []
+    for character in characters:
+        detail = character.design_notes or character.description or ""
+        segment = f"{character.name}"
+        if detail:
+            segment += f": {detail}"
+        character_blurbs.append(segment)
+    character_summary = "; ".join(character_blurbs) or "Characters supplied by user."
+
+    if payload.script and payload.script.strip():
+        script_body = normalize_script_text(payload.script)
+        if not HEADER_PATTERN.search(script_body):
+            script_body = f"**Scene 1 (User Script)**\n{script_body}"
+    else:
+        script_lines: list[str] = []
+        for idx, beat in enumerate(beats, start=1):
+            script_lines.append(f"**Scene {idx} ({beat})**")
+            script_lines.append(
+                f"Language: {payload.language}. Mood: {', '.join(emotions)}. Aspect ratio: {payload.aspect_ratio or '9:16 portrait'}."
+            )
+            script_lines.append(
+                f"{payload.scene_description.strip()} — focus on the {beat.lower()} beat with characters {character_summary}."
+            )
+            script_lines.append("")
+        script_body = normalize_script_text("\n".join(script_lines))
+
+    if payload.storyboard and payload.storyboard.strip():
+        storyboard_text = normalize_script_text(payload.storyboard)
+    else:
+        storyboard_lines = [
+            f"Workflow type: {payload.workflow_type}",
+            f"Film length: {payload.film_length}",
+            f"Aspect ratio: {payload.aspect_ratio or '9:16 portrait'}",
+            f"Language: {payload.language}",
+            f"Emotions: {', '.join(emotions)}",
+            f"Characters: {character_summary}",
+        ]
+        if payload.character_notes:
+            storyboard_lines.append(f"Character notes: {payload.character_notes}")
+        storyboard_lines.append("Beats:")
+        for idx, beat in enumerate(beats, start=1):
+            storyboard_lines.append(f"- Scene {idx} ({payload.scene_duration}s): {beat}")
+        storyboard_lines.append(f"Scene description: {payload.scene_description.strip()}")
+        storyboard_text = normalize_script_text("\n".join(storyboard_lines))
+
+    return script_body, storyboard_text, len(beats)
+
+
+def _persist_guided_artifacts(job_dir: Path, artifacts: GuidedWorkflowArtifacts) -> GuidedWorkflowArtifacts:
+    manifest_path = job_dir / "guided_artifacts.json"
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(artifacts.model_dump_json(indent=2), encoding="utf-8")
+    return artifacts
+
+
+async def load_guided_artifacts(job_id: str) -> GuidedWorkflowArtifacts:
+    job_dir = job_root(job_id)
+    manifest_path = job_dir / "guided_artifacts.json"
+    if not manifest_path.is_file():
+        return GuidedWorkflowArtifacts(job_id=job_id, concept_art_paths=[])
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if "job_id" not in payload:
+            payload["job_id"] = job_id
+        return GuidedWorkflowArtifacts(**payload)
+    except Exception:  # pragma: no cover - defensive fallback
+        return GuidedWorkflowArtifacts(job_id=job_id, concept_art_paths=[])
+
+
+def _save_character_uploads(job_dir: Path, characters: Sequence[CharacterUpload]) -> list[dict[str, str]]:
+    dest = job_dir / "characters" / "original"
+    dest.mkdir(parents=True, exist_ok=True)
+    saved: list[dict[str, str]] = []
+    for character in characters:
+        filename = dest / f"{slugify(character.name)}.png"
+        save_payload_as_png(character.image, filename)
+        saved.append(
+            {
+                "name": character.name,
+                "path": str(filename),
+                "description": character.description or "",
+                "design_notes": character.design_notes or "",
+            }
+        )
+    return saved
+
+
+async def _generate_character_concepts(
+    job_id: str,
+    payload: AnimatedFilmPayload,
+    saved_characters: list[dict[str, str]],
+    resolution: str,
+) -> list[str]:
+    concept_dir = job_root(job_id) / "characters" / "concept"
+    concept_dir.mkdir(parents=True, exist_ok=True)
+    concept_paths: list[str] = []
+    for character in saved_characters:
+        prompt_segments = [
+            f"Create polished concept art for the character {character['name']} for an animated short film.",
+            f"Scene focus: {payload.scene_description.strip()}",
+        ]
+        detail = character.get("design_notes") or character.get("description")
+        if detail:
+            prompt_segments.append(f"Role and notes: {detail}")
+        if payload.character_notes:
+            prompt_segments.append(f"Global direction: {payload.character_notes}")
+        prompt_segments.append(
+            f"Mood: {', '.join(_pick_default_emotions(payload))}. Keep the character on-model and animation friendly."
+        )
+        prompt = " ".join(prompt_segments)
+        output_path = concept_dir / f"{slugify(character['name'])}_concept.png"
+        await generate_nanobanana_image(
+            prompt,
+            image_paths=[character["path"]],
+            output_path=output_path,
+            aspect_ratio=payload.aspect_ratio,
+            resolution_hint=resolution,
+        )
+        concept_paths.append(str(output_path))
+        await WORKFLOW_JOB_STORE.add_message(
+            job_id, "design", f"Concept art completed for {character['name']}."
+        )
+    return concept_paths
+
+
+async def _generate_first_frame(
+    job_id: str,
+    payload: AnimatedFilmPayload,
+    concept_art_paths: Sequence[str],
+    resolution: str,
+) -> str:
+    first_frame_dir = job_root(job_id) / "first_frames"
+    first_frame_dir.mkdir(parents=True, exist_ok=True)
+    first_frame_path = first_frame_dir / "scene_01_first_frame.png"
+    prompt = (
+        f"Create the opening frame for the animated short. "
+        f"Emphasize the mood ({', '.join(_pick_default_emotions(payload))}) and include the main cast. "
+        f"Scene description: {payload.scene_description.strip()}. "
+        "Use the supplied concept art to keep characters consistent."
+    )
+    await generate_nanobanana_image(
+        prompt,
+        image_paths=concept_art_paths,
+        output_path=first_frame_path,
+        aspect_ratio=payload.aspect_ratio,
+        resolution_hint=resolution,
+    )
+    return str(first_frame_path)
+
+
+async def run_animated_workflow_job(job_id: str, payload: AnimatedFilmPayload) -> None:
+    try:
+        await WORKFLOW_JOB_STORE.mark_running(job_id)
+        await WORKFLOW_JOB_STORE.update_stage(job_id, "intake", "Processing user inputs.", progress=0.02)
+
+        job_dir = job_root(job_id)
+        saved_characters = _save_character_uploads(job_dir, payload.characters)
+        await WORKFLOW_JOB_STORE.add_message(
+            job_id, "intake", f"Saved {len(saved_characters)} character reference(s)."
+        )
+
+        resolution = _resolve_workflow_resolution(payload)
+        script_text, storyboard_text, scene_count = _build_guided_script_and_storyboard(payload, payload.characters)
+        storyboard_path = job_dir / "storyboard.txt"
+        storyboard_path.write_text(storyboard_text, encoding="utf-8")
+        await WORKFLOW_JOB_STORE.update_stage(
+            job_id, "planning", "Storyboard drafted for the guided workflow.", progress=0.08
+        )
+
+        concept_paths = await _generate_character_concepts(job_id, payload, saved_characters, resolution)
+        await WORKFLOW_JOB_STORE.update_stage(
+            job_id, "design", "Character concept art generated.", progress=0.15
+        )
+
+        first_frame_path = await _generate_first_frame(job_id, payload, concept_paths, resolution)
+        await WORKFLOW_JOB_STORE.update_stage(
+            job_id,
+            "design",
+            "First frame prepared from storyboard and character designs.",
+            progress=0.22,
+        )
+
+        scene_image_dir = job_dir / "guided_scene_images"
+        scene_image_dir.mkdir(parents=True, exist_ok=True)
+        target_size = resolution_to_size(resolution)
+        for idx in range(scene_count):
+            dest = scene_image_dir / f"scene{idx + 1}.png"
+            resize_scene_image(Path(first_frame_path), dest, target_size=target_size)
+
+        design_manifest = []
+        for character, concept_path in zip(saved_characters, concept_paths, strict=False):
+            design_manifest.append(
+                {
+                    "name": character["name"],
+                    "reference_path": character["path"],
+                    "concept_art_path": concept_path,
+                    "description": character.get("description") or "",
+                    "design_notes": character.get("design_notes") or "",
+                }
+            )
+        design_manifest_path = job_dir / "character_designs.json"
+        design_manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        design_manifest_path.write_text(json.dumps(design_manifest, indent=2), encoding="utf-8")
+
+        start_payload = StartWorkflowPayload(
+            script=script_text,
+            video_provider=payload.video_provider,
+            resolution=resolution,
+            scene_image_dir=str(scene_image_dir),
+            use_scene_images=True,
+            generate_ai_first_frame=False,
+            scene_duration=payload.scene_duration,
+        )
+        request = prepare_request_for_job(job_id, start_payload)
+        await WORKFLOW_JOB_STORE.set_resolution(job_id, request.resolution)
+        await WORKFLOW_JOB_STORE.set_download_variant(job_id, request.download_variant)
+        await WORKFLOW_JOB_STORE.set_generation_mode(job_id, request.generation_mode)
+        await WORKFLOW_JOB_STORE.set_scene_duration(job_id, request.scene_duration)
+        await WORKFLOW_JOB_STORE.set_generate_ai_first_frame(job_id, request.generate_ai_first_frame)
+        await WORKFLOW_JOB_STORE.set_video_provider(job_id, request.video_provider)
+        try:
+            script_text_final = Path(request.script_path).read_text(encoding="utf-8")
+        except OSError:
+            script_text_final = normalize_script_text(script_text)
+        await WORKFLOW_JOB_STORE.set_script(job_id, script_text_final, request.script_path)
+        await WORKFLOW_JOB_STORE.set_total_scenes(job_id, scene_count)
+        await WORKFLOW_JOB_STORE.update_stage(
+            job_id,
+            "rendering",
+            "Storyboard, concept art, and first frame ready. Starting Sora renders.",
+            progress=0.25,
+        )
+
+        artifacts = GuidedWorkflowArtifacts(
+            job_id=job_id,
+            script_path=request.script_path,
+            storyboard_path=str(storyboard_path),
+            scene_image_dir=str(scene_image_dir),
+            concept_art_paths=concept_paths,
+            first_frame_path=first_frame_path,
+            character_design_path=str(design_manifest_path),
+        )
+        _persist_guided_artifacts(job_dir, artifacts)
+
+        await run_workflow_job(job_id, request, skip_mark_running=True)
+    except asyncio.CancelledError:  # pragma: no cover - propagation only
+        raise
+    except Exception as exc:  # pragma: no cover - defensive logging
+        logger.exception("Guided workflow %s failed: %s", job_id, exc)
+        await WORKFLOW_JOB_STORE.mark_failed(job_id, str(exc))
+
+
+async def start_guided_workflow(payload: AnimatedFilmPayload) -> tuple[str, GuidedWorkflowArtifacts]:
+    job_id = uuid.uuid4().hex
+    await WORKFLOW_JOB_STORE.create_job(job_id)
+    await WORKFLOW_JOB_STORE.update_stage(job_id, "queued", "Guided animated workflow queued.", progress=0.0)
+    asyncio.create_task(run_animated_workflow_job(job_id, payload))
+    artifacts = await load_guided_artifacts(job_id)
+    return job_id, artifacts
+
+
 __all__ = [
     "job_root",
     "prepare_request_for_job",
     "prepare_single_video_job",
     "refine_script_for_payload",
+    "run_animated_workflow_job",
     "run_recompose_job",
-     "run_scene_regeneration_job",
+    "run_scene_regeneration_job",
     "run_scene_remix_job",
     "run_single_video_job",
     "run_single_video_remix",
     "run_workflow_job",
+    "start_guided_workflow",
+    "load_guided_artifacts",
 ]
