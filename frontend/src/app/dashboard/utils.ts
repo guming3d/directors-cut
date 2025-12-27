@@ -84,7 +84,24 @@ export const formatSegmentTimestampDisplay = (seconds?: number | null, fallback?
 
 export const buildAssetUrl = (base: string, path: string | null | undefined) => {
   if (!path) return null;
-  return `${base}${path}`;
+  if (/^https?:\/\//i.test(path)) {
+    return path;
+  }
+
+  const normalizedBase = (base || "").replace(/\/+$/, "");
+  let normalizedPath = path.replace(/\\/g, "/");
+
+  const outputIndex = normalizedPath.indexOf("/output/");
+  if (outputIndex >= 0) {
+    const relative = normalizedPath.slice(outputIndex + "/output".length);
+    normalizedPath = `/static${relative.startsWith("/") ? relative : `/${relative}`}`;
+  }
+
+  if (!normalizedPath.startsWith("/")) {
+    normalizedPath = `/${normalizedPath}`;
+  }
+
+  return `${normalizedBase}${normalizedPath}`;
 };
 
 export const getStatusToken = (status: string | undefined, language: Language) => {

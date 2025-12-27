@@ -225,11 +225,17 @@ export type TabId = "combined" | "guided" | "single" | "insight" | "reproduce";
 export type GuidedWorkflowArtifacts = {
   job_id: string;
   script_path?: string | null;
+  script_url?: string | null;
   storyboard_path?: string | null;
+  storyboard_url?: string | null;
   scene_image_dir?: string | null;
+  scene_image_url?: string | null;
   concept_art_paths: string[];
+  concept_art_urls?: string[];
   first_frame_path?: string | null;
+  first_frame_url?: string | null;
   character_design_path?: string | null;
+  character_design_url?: string | null;
 };
 
 export type AnimatedWorkflowResponse = {

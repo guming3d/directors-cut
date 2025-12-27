@@ -48,7 +48,14 @@ from .pipeline import summarize_manifest
 from .progress import mark_completed, report_progress
 from .stores import SINGLE_VIDEO_STORE, WORKFLOW_JOB_STORE
 from .nanobanana import aspect_ratio_from_resolution, generate_nanobanana_image
-from .utils import escape_for_concat, normalize_script_text, run_subprocess, slugify, resolution_to_size
+from .utils import (
+    build_static_asset_url,
+    escape_for_concat,
+    normalize_script_text,
+    run_subprocess,
+    slugify,
+    resolution_to_size,
+)
 from .workflow import workflow
 from .config import SINGLE_VIDEO_JOBS_DIR, OUTPUT_DIR
 from .prompts import ensure_scene_headers, refine_text_with_gpt5
@@ -1098,18 +1105,41 @@ def _persist_guided_artifacts(job_dir: Path, artifacts: GuidedWorkflowArtifacts)
     return artifacts
 
 
+def _with_guided_artifact_urls(artifacts: GuidedWorkflowArtifacts) -> GuidedWorkflowArtifacts:
+    concept_art_urls = [
+        url
+        for url in (build_static_asset_url(path) for path in artifacts.concept_art_paths)
+        if url
+    ]
+    return artifacts.model_copy(
+        update={
+            "script_url": build_static_asset_url(artifacts.script_path),
+            "storyboard_url": build_static_asset_url(artifacts.storyboard_path),
+            "scene_image_url": build_static_asset_url(artifacts.scene_image_dir),
+            "concept_art_urls": concept_art_urls,
+            "first_frame_url": build_static_asset_url(artifacts.first_frame_path),
+            "character_design_url": build_static_asset_url(artifacts.character_design_path),
+        }
+    )
+
+
 async def load_guided_artifacts(job_id: str) -> GuidedWorkflowArtifacts:
     job_dir = job_root(job_id)
     manifest_path = job_dir / "guided_artifacts.json"
     if not manifest_path.is_file():
-        return GuidedWorkflowArtifacts(job_id=job_id, concept_art_paths=[])
+        return _with_guided_artifact_urls(
+            GuidedWorkflowArtifacts(job_id=job_id, concept_art_paths=[])
+        )
     try:
         payload = json.loads(manifest_path.read_text(encoding="utf-8"))
         if "job_id" not in payload:
             payload["job_id"] = job_id
-        return GuidedWorkflowArtifacts(**payload)
+        artifacts = GuidedWorkflowArtifacts(**payload)
+        return _with_guided_artifact_urls(artifacts)
     except Exception:  # pragma: no cover - defensive fallback
-        return GuidedWorkflowArtifacts(job_id=job_id, concept_art_paths=[])
+        return _with_guided_artifact_urls(
+            GuidedWorkflowArtifacts(job_id=job_id, concept_art_paths=[])
+        )
 
 
 def _save_character_uploads(job_dir: Path, characters: Sequence[CharacterUpload]) -> list[dict[str, str]]:

@@ -545,11 +545,17 @@ class JobStatusResponse(BaseModel):
 class GuidedWorkflowArtifacts(BaseModel):
     job_id: str
     script_path: Optional[str] = None
+    script_url: Optional[str] = None
     storyboard_path: Optional[str] = None
+    storyboard_url: Optional[str] = None
     scene_image_dir: Optional[str] = None
+    scene_image_url: Optional[str] = None
     concept_art_paths: list[str] = Field(default_factory=list)
+    concept_art_urls: list[str] = Field(default_factory=list)
     first_frame_path: Optional[str] = None
+    first_frame_url: Optional[str] = None
     character_design_path: Optional[str] = None
+    character_design_url: Optional[str] = None
 
 
 class AnimatedWorkflowResponse(BaseModel):

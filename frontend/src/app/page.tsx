@@ -953,14 +953,33 @@ export default function Home() {
   const singleDurationOptions = getDurationOptions(singleProviderSelection);
   const currentArtifacts = job?.job_id ? guidedArtifacts[job.job_id] : undefined;
   const isArtifactsLoading = job?.job_id ? Boolean(fetchingArtifacts[job.job_id]) : false;
-  const conceptArtUrls = (currentArtifacts?.concept_art_paths ?? [])
+  const conceptArtSources =
+    currentArtifacts?.concept_art_urls?.length
+      ? currentArtifacts.concept_art_urls
+      : currentArtifacts?.concept_art_paths ?? [];
+  const conceptArtUrls = conceptArtSources
     .map((path) => buildAssetUrl(apiBase, path))
     .filter(Boolean) as string[];
-  const guidedFirstFrameUrl = buildAssetUrl(apiBase, currentArtifacts?.first_frame_path);
-  const guidedStoryboardUrl = buildAssetUrl(apiBase, currentArtifacts?.storyboard_path);
-  const guidedScriptUrl = buildAssetUrl(apiBase, currentArtifacts?.script_path);
-  const guidedDesignUrl = buildAssetUrl(apiBase, currentArtifacts?.character_design_path);
-  const guidedSceneImagesUrl = buildAssetUrl(apiBase, currentArtifacts?.scene_image_dir);
+  const guidedFirstFrameUrl = buildAssetUrl(
+    apiBase,
+    currentArtifacts?.first_frame_url ?? currentArtifacts?.first_frame_path,
+  );
+  const guidedStoryboardUrl = buildAssetUrl(
+    apiBase,
+    currentArtifacts?.storyboard_url ?? currentArtifacts?.storyboard_path,
+  );
+  const guidedScriptUrl = buildAssetUrl(
+    apiBase,
+    currentArtifacts?.script_url ?? currentArtifacts?.script_path,
+  );
+  const guidedDesignUrl = buildAssetUrl(
+    apiBase,
+    currentArtifacts?.character_design_url ?? currentArtifacts?.character_design_path,
+  );
+  const guidedSceneImagesUrl = buildAssetUrl(
+    apiBase,
+    currentArtifacts?.scene_image_url ?? currentArtifacts?.scene_image_dir,
+  );
   const hasGuidedAssets =
     Boolean(
       currentArtifacts &&
