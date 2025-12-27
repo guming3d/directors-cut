@@ -2318,7 +2318,7 @@ export default function Home() {
             <>
               {activeTab === "guided" ? (
                 <p className="mb-3 text-sm text-slate-500 dark:text-slate-400">
-                  {translate("Guided workflows auto-generate storyboard, concept art, and a first frame before Sora renders scenes.")}
+                  {translate("Guided workflows auto-generate storyboard, concept art, and per-scene start frames before rendering scenes.")}
                 </p>
               ) : null}
               <div className="flex items-center justify-end mb-4">

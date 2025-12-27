@@ -21,10 +21,16 @@ def read_text(path: Path) -> str:
 
 
 def slugify(value: str) -> str:
+    import hashlib
     import re
 
-    slug = re.sub(r"[^a-zA-Z0-9]+", "-", value.strip().lower()).strip("-")
-    return slug or "scene"
+    raw = (value or "").strip()
+    cleaned = raw.lower()
+    slug = re.sub(r"[^a-z0-9]+", "-", cleaned).strip("-")
+    if slug:
+        return slug
+    digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:10]
+    return f"item-{digest}"
 
 
 def normalize_script_text(raw: str) -> str:

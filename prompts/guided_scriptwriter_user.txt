@@ -1,0 +1,18 @@
+User idea:
+$scene_description
+
+Workflow type: $workflow_type
+Film length: $film_length
+Aspect ratio: $aspect_ratio
+Per-scene duration: $scene_duration seconds
+Target scene count: $target_scene_count
+Emotions / tone keywords: $emotions
+Dialogue language: $dialogue_language
+
+Cast (name + optional notes):
+$character_list
+
+Art Director bible:
+$art_director_bible
+
+Write the script now. Ensure the result contains exactly $target_scene_count scene blocks and follows the required scene header + per-scene structure.

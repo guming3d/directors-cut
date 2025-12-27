@@ -62,7 +62,7 @@ export const zhTranslations: Record<string, string> = {
   "Language preference": "语言偏好",
   "Guided workflow assets unavailable.": "暂无引导式素材。",
   "Guided workflow failed to start.": "引导式工作流启动失败。",
-  "Guided workflows auto-generate storyboard, concept art, and a first frame before Sora renders scenes.": "引导式流程会自动生成分镜、概念图和第一帧，再交给 Sora 渲染。",
+  "Guided workflows auto-generate storyboard, concept art, and per-scene start frames before rendering scenes.": "引导式流程会自动生成分镜、概念图和每个场景的起始帧，再交给 Sora 渲染。",
   "Upload characters, describe the scene, and we will draft the storyboard, concept art, and first frame automatically.": "上传角色、描述场景，系统会自动生成分镜、概念图和第一帧。",
   "Character": "角色",
   "Duration (seconds)": "时长（秒）",

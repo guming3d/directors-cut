@@ -111,6 +111,10 @@ STATIC_PROMPT_FILES = {
     "first_frame_fallback": PROMPT_TEMPLATE_DIR / "first_frame_fallback.txt",
     "reproduce_segment": PROMPT_TEMPLATE_DIR / "reproduce_segment_prompt.txt",
     "reproduce_stylize": PROMPT_TEMPLATE_DIR / "reproduce_stylize_prompt.txt",
+    "guided_art_director_system": PROMPT_TEMPLATE_DIR / "guided_art_director_system.txt",
+    "guided_art_director_user": PROMPT_TEMPLATE_DIR / "guided_art_director_user.txt",
+    "guided_scriptwriter_system": PROMPT_TEMPLATE_DIR / "guided_scriptwriter_system.txt",
+    "guided_scriptwriter_user": PROMPT_TEMPLATE_DIR / "guided_scriptwriter_user.txt",
 }
 
 
@@ -233,11 +237,11 @@ async def refine_scene_description(title: str, description: str, duration: int) 
             input=[
                 {
                     "role": "system",
-                    "content": [{"type": "text", "text": system_prompt}],
+                    "content": [{"type": "input_text", "text": system_prompt}],
                 },
                 {
                     "role": "user",
-                    "content": [{"type": "text", "text": user_prompt}],
+                    "content": [{"type": "input_text", "text": user_prompt}],
                 }
             ],
             max_output_tokens=max_tokens,
@@ -350,6 +354,62 @@ async def refine_text_with_gpt5(
     return cleaned or content
 
 
+def gpt5_client_ready() -> bool:
+    """Return True when GPT-5 refinement deployment + Azure client are configured."""
+
+    if not GPT5_REFINEMENT_DEPLOYMENT:
+        return False
+    return azure_text_client() is not None
+
+
+async def call_gpt5_with_templates(
+    system_template_key: str,
+    user_template_key: str,
+    *,
+    max_output_tokens: int,
+    **template_values: object,
+) -> str:
+    """Call GPT-5 with prompt templates stored under prompts/.
+
+    Returns an empty string when GPT-5 is not configured or the call fails.
+    """
+
+    deployment = GPT5_REFINEMENT_DEPLOYMENT
+    if not deployment:
+        return ""
+
+    client = azure_text_client()
+    if client is None:
+        return ""
+
+    system_prompt = render_prompt_template(system_template_key, **template_values)
+    user_prompt = render_prompt_template(user_template_key, **template_values)
+
+    def _call() -> str:
+        response = client.responses.create(
+            model=deployment,
+            input=[
+                {"role": "system", "content": [{"type": "input_text", "text": system_prompt}]},
+                {"role": "user", "content": [{"type": "input_text", "text": user_prompt}]},
+            ],
+            max_output_tokens=max_output_tokens,
+        )
+        return extract_response_text(response)
+
+    try:
+        output = await asyncio.to_thread(_call)
+    except Exception as exc:  # pragma: no cover - defensive fallback
+        logger.warning(
+            "GPT-5 template call failed (system=%s user=%s): %s",
+            system_template_key,
+            user_template_key,
+            exc,
+        )
+        return ""
+
+    return output.strip()
+
+
 __all__ = [
     "build_prompt_text",
     "parse_script",
@@ -361,4 +421,6 @@ __all__ = [
     "workflow_template_path",
     "slugify",
     "render_prompt_template",
+    "gpt5_client_ready",
+    "call_gpt5_with_templates",
 ]

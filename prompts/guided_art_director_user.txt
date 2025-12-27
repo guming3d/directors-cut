@@ -1,0 +1,18 @@
+User idea (scene/story request):
+$scene_description
+
+Workflow type: $workflow_type
+Film length: $film_length
+Aspect ratio: $aspect_ratio
+Per-scene duration: $scene_duration seconds
+Target scene count: $target_scene_count
+Dialogue language: $dialogue_language
+Emotions / tone keywords: $emotions
+
+Global character / style notes (may be empty):
+$character_notes
+
+Characters (name + optional notes):
+$character_list
+
+Deliver the Art Director output following the required format. Make it vivid and specific (production-ready), but avoid excessive length.

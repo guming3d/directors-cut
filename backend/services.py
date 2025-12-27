@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import shutil
 import sys
 import uuid
@@ -58,7 +59,13 @@ from .utils import (
 )
 from .workflow import workflow
 from .config import SINGLE_VIDEO_JOBS_DIR, OUTPUT_DIR
-from .prompts import ensure_scene_headers, refine_text_with_gpt5
+from .prompts import (
+    call_gpt5_with_templates,
+    ensure_scene_headers,
+    gpt5_client_ready,
+    parse_script,
+    refine_text_with_gpt5,
+)
 from .config import video_client
 
 
@@ -1045,6 +1052,119 @@ def _resolve_workflow_resolution(payload: AnimatedFilmPayload) -> str:
     return mapping.get(aspect, DEFAULT_SORA_RESOLUTION)
 
 
+def _dialogue_language_label(language_code: str) -> str:
+    return "Chinese" if (language_code or "").strip().lower() == "zh" else "English"
+
+
+def _guided_character_list(characters: Sequence[CharacterUpload]) -> str:
+    lines: list[str] = []
+    for character in characters:
+        notes: list[str] = []
+        if character.description and character.description.strip():
+            notes.append(character.description.strip())
+        if character.design_notes and character.design_notes.strip():
+            notes.append(character.design_notes.strip())
+        if notes:
+            lines.append(f"- {character.name}: {' | '.join(notes)}")
+        else:
+            lines.append(f"- {character.name}")
+    return "\n".join(lines).strip()
+
+
+def _guided_target_scene_count(payload: AnimatedFilmPayload) -> int:
+    """Estimate a scene count that fits the film_length bucket."""
+
+    duration = max(1, int(payload.scene_duration))
+    target_total = 24 if payload.film_length == "short" else 72
+    min_scenes = 1 if payload.workflow_type == "direct_video" else 2
+    count = max(min_scenes, target_total // duration)
+    return int(min(max(count, min_scenes), 12))
+
+
+async def _build_guided_storyboard_text(payload: AnimatedFilmPayload, resolution: str) -> str:
+    if payload.storyboard and payload.storyboard.strip():
+        return normalize_script_text(payload.storyboard)
+
+    if not gpt5_client_ready():
+        _, storyboard_text, _ = _build_guided_script_and_storyboard(payload, payload.characters)
+        return storyboard_text
+
+    emotions = ", ".join(_pick_default_emotions(payload))
+    aspect_ratio = payload.aspect_ratio or aspect_ratio_from_resolution(resolution)
+    dialogue_language = _dialogue_language_label(payload.language)
+    target_scene_count = _guided_target_scene_count(payload)
+
+    director_notes = await call_gpt5_with_templates(
+        "guided_art_director_system",
+        "guided_art_director_user",
+        max_output_tokens=2400,
+        output_language="Chinese" if dialogue_language == "Chinese" else "English",
+        scene_description=payload.scene_description.strip(),
+        workflow_type=payload.workflow_type,
+        film_length=payload.film_length,
+        aspect_ratio=aspect_ratio,
+        scene_duration=payload.scene_duration,
+        target_scene_count=target_scene_count,
+        dialogue_language=dialogue_language,
+        emotions=emotions,
+        character_notes=(payload.character_notes or "").strip(),
+        character_list=_guided_character_list(payload.characters),
+    )
+    if director_notes:
+        return normalize_script_text(director_notes)
+
+    _, storyboard_text, _ = _build_guided_script_and_storyboard(payload, payload.characters)
+    return storyboard_text
+
+
+async def _build_guided_script_text(
+    payload: AnimatedFilmPayload,
+    resolution: str,
+    storyboard_text: str,
+) -> str:
+    if payload.script and payload.script.strip():
+        script_body = normalize_script_text(payload.script)
+        if not HEADER_PATTERN.search(script_body):
+            script_body = f"**Scene 1 (User Script)**\n{script_body}"
+        return script_body
+
+    if not gpt5_client_ready():
+        script_body, _, _ = _build_guided_script_and_storyboard(payload, payload.characters)
+        return script_body
+
+    emotions = ", ".join(_pick_default_emotions(payload))
+    aspect_ratio = payload.aspect_ratio or aspect_ratio_from_resolution(resolution)
+    dialogue_language = _dialogue_language_label(payload.language)
+    target_scene_count = _guided_target_scene_count(payload)
+
+    script_text = await call_gpt5_with_templates(
+        "guided_scriptwriter_system",
+        "guided_scriptwriter_user",
+        max_output_tokens=5200,
+        scene_description=payload.scene_description.strip(),
+        workflow_type=payload.workflow_type,
+        film_length=payload.film_length,
+        aspect_ratio=aspect_ratio,
+        scene_duration=payload.scene_duration,
+        target_scene_count=target_scene_count,
+        emotions=emotions,
+        dialogue_language=dialogue_language,
+        character_list=_guided_character_list(payload.characters),
+        art_director_bible=storyboard_text.strip(),
+    )
+
+    normalized = normalize_script_text(script_text) if script_text else ""
+    if normalized:
+        normalized, has_headers, _ = await ensure_scene_headers(
+            normalized, use_gpt5=False, video_provider=payload.video_provider
+        )
+        if has_headers:
+            return normalized
+
+    script_body, _, _ = _build_guided_script_and_storyboard(payload, payload.characters)
+    return script_body
+
+
 def _build_guided_script_and_storyboard(
     payload: AnimatedFilmPayload, characters: Sequence[CharacterUpload]
 ) -> tuple[str, str, int]:
@@ -1146,8 +1266,8 @@ def _save_character_uploads(job_dir: Path, characters: Sequence[CharacterUpload]
     dest = job_dir / "characters" / "original"
     dest.mkdir(parents=True, exist_ok=True)
     saved: list[dict[str, str]] = []
-    for character in characters:
-        filename = dest / f"{slugify(character.name)}.png"
+    for index, character in enumerate(characters, start=1):
+        filename = dest / f"character_{index:02d}_{slugify(character.name)}.png"
         save_payload_as_png(character.image, filename)
         saved.append(
             {
@@ -1165,11 +1285,15 @@ async def _generate_character_concepts(
     payload: AnimatedFilmPayload,
     saved_characters: list[dict[str, str]],
     resolution: str,
+    director_bible: str = "",
 ) -> list[str]:
     concept_dir = job_root(job_id) / "characters" / "concept"
     concept_dir.mkdir(parents=True, exist_ok=True)
     concept_paths: list[str] = []
-    for character in saved_characters:
+    director_hint = (director_bible or "").strip()
+    if len(director_hint) > 1200:
+        director_hint = director_hint[:1200] + "…"
+    for index, character in enumerate(saved_characters, start=1):
         prompt_segments = [
             f"Create polished concept art for the character {character['name']} for an animated short film.",
             f"Scene focus: {payload.scene_description.strip()}",
@@ -1179,11 +1303,13 @@ async def _generate_character_concepts(
             prompt_segments.append(f"Role and notes: {detail}")
         if payload.character_notes:
             prompt_segments.append(f"Global direction: {payload.character_notes}")
+        if director_hint:
+            prompt_segments.append(f"Art director bible excerpt: {director_hint}")
         prompt_segments.append(
             f"Mood: {', '.join(_pick_default_emotions(payload))}. Keep the character on-model and animation friendly."
         )
         prompt = " ".join(prompt_segments)
-        output_path = concept_dir / f"{slugify(character['name'])}_concept.png"
+        output_path = concept_dir / f"character_{index:02d}_{slugify(character['name'])}_concept.png"
         await generate_nanobanana_image(
             prompt,
             image_paths=[character["path"]],
@@ -1198,29 +1324,106 @@ async def _generate_character_concepts(
     return concept_paths
 
 
-async def _generate_first_frame(
+def _extract_key_frame(description_lines: Sequence[str]) -> str:
+    for line in description_lines:
+        stripped = (line or "").strip()
+        lowered = stripped.lower()
+        if lowered.startswith("key frame:"):
+            return stripped.split(":", 1)[1].strip()
+        if lowered.startswith("keyframe:"):
+            return stripped.split(":", 1)[1].strip()
+    return ""
+
+
+def _extract_scene_cast(description_lines: Sequence[str]) -> list[str]:
+    for line in description_lines:
+        stripped = (line or "").strip()
+        if not stripped:
+            continue
+        lowered = stripped.lower()
+        if not lowered.startswith("cast:"):
+            continue
+        value = stripped.split(":", 1)[1].strip()
+        if not value:
+            return []
+        tokens = re.split(r"[，,;；/|]+", value)
+        cleaned = [token.strip() for token in tokens if token.strip()]
+        return cleaned
+    return []
+
+
+def _truncate_text(value: str, max_chars: int) -> str:
+    cleaned = (value or "").strip()
+    if len(cleaned) <= max_chars:
+        return cleaned
+    return cleaned[: max(0, max_chars - 1)] + "…"
+
+
+async def _generate_guided_scene_images(
     job_id: str,
     payload: AnimatedFilmPayload,
+    script_text: str,
+    director_bible: str,
     concept_art_paths: Sequence[str],
+    character_reference_paths: Sequence[str],
     resolution: str,
-) -> str:
+) -> tuple[Path, str, int]:
+    drafts = parse_script(script_text)
+    if not drafts:
+        fallback_script = f"**Scene 1 (Guided Scene)**\n{payload.scene_description.strip()}"
+        drafts = parse_script(fallback_script)
+
+    scene_image_dir = job_root(job_id) / "guided_scene_images"
+    scene_image_dir.mkdir(parents=True, exist_ok=True)
+
+    target_size = resolution_to_size(resolution)
+    emotions = ", ".join(_pick_default_emotions(payload))
+    aspect_ratio = payload.aspect_ratio or aspect_ratio_from_resolution(resolution)
+    director_hint = _truncate_text(director_bible, 1200)
+    character_names = [character.name.strip() for character in payload.characters if character.name.strip()]
+    reference_paths = list(character_reference_paths) + list(concept_art_paths or [])
+
+    for idx, draft in enumerate(drafts, start=1):
+        key_frame = _extract_key_frame(draft.description_lines)
+        if not key_frame:
+            key_frame = _truncate_text("\n".join(draft.description_lines).strip(), 900)
+        scene_cast = _extract_scene_cast(draft.description_lines) or character_names
+        prompt = (
+            "Generate a single cinematic still frame (a screenshot from a high-quality 3D animated film). "
+            f"Scene {idx}: {draft.title}. "
+            f"Aspect ratio {aspect_ratio}. Mood: {emotions}. "
+            f"Key frame: {key_frame}. "
+            f"Include ALL these characters in-frame: {', '.join(name for name in scene_cast if name)}. "
+            "Use the provided reference images to keep characters on-model and consistent. "
+            + (f"Art director bible excerpt: {director_hint}. " if director_hint else "")
+            + "No text, no subtitles, no watermarks, no logos."
+        )
+        raw_path = scene_image_dir / f"scene{idx}_raw.png"
+        dest_path = scene_image_dir / f"scene{idx}.png"
+        await generate_nanobanana_image(
+            prompt,
+            image_paths=reference_paths,
+            output_path=raw_path,
+            aspect_ratio=aspect_ratio,
+            resolution_hint=resolution,
+        )
+        resize_scene_image(raw_path, dest_path, target_size=target_size)
+        try:
+            raw_path.unlink()
+        except OSError:
+            pass
+        await WORKFLOW_JOB_STORE.add_message(
+            job_id, "design", f"Generated scene start image for Scene {idx}."
+        )
+
     first_frame_dir = job_root(job_id) / "first_frames"
     first_frame_dir.mkdir(parents=True, exist_ok=True)
     first_frame_path = first_frame_dir / "scene_01_first_frame.png"
-    prompt = (
-        f"Create the opening frame for the animated short. "
-        f"Emphasize the mood ({', '.join(_pick_default_emotions(payload))}) and include the main cast. "
-        f"Scene description: {payload.scene_description.strip()}. "
-        "Use the supplied concept art to keep characters consistent."
-    )
-    await generate_nanobanana_image(
-        prompt,
-        image_paths=concept_art_paths,
-        output_path=first_frame_path,
-        aspect_ratio=payload.aspect_ratio,
-        resolution_hint=resolution,
-    )
-    return str(first_frame_path)
+    scene1_path = scene_image_dir / "scene1.png"
+    if scene1_path.is_file():
+        shutil.copy2(scene1_path, first_frame_path)
+
+    return scene_image_dir, str(first_frame_path), len(drafts)
 
 
 async def run_animated_workflow_job(job_id: str, payload: AnimatedFilmPayload) -> None:
@@ -1235,32 +1438,43 @@ async def run_animated_workflow_job(job_id: str, payload: AnimatedFilmPayload) -
         )
 
         resolution = _resolve_workflow_resolution(payload)
-        script_text, storyboard_text, scene_count = _build_guided_script_and_storyboard(payload, payload.characters)
+        storyboard_text = await _build_guided_storyboard_text(payload, resolution)
+        script_text = await _build_guided_script_text(payload, resolution, storyboard_text)
+        scene_count = len(parse_script(script_text)) or _guided_target_scene_count(payload)
         storyboard_path = job_dir / "storyboard.txt"
         storyboard_path.write_text(storyboard_text, encoding="utf-8")
         await WORKFLOW_JOB_STORE.update_stage(
-            job_id, "planning", "Storyboard drafted for the guided workflow.", progress=0.08
+            job_id, "planning", "Art direction and scene script drafted for the guided workflow.", progress=0.08
         )
 
-        concept_paths = await _generate_character_concepts(job_id, payload, saved_characters, resolution)
+        concept_paths = await _generate_character_concepts(
+            job_id,
+            payload,
+            saved_characters,
+            resolution,
+            director_bible=storyboard_text,
+        )
         await WORKFLOW_JOB_STORE.update_stage(
             job_id, "design", "Character concept art generated.", progress=0.15
         )
 
-        first_frame_path = await _generate_first_frame(job_id, payload, concept_paths, resolution)
+        scene_image_dir, first_frame_path, detected_scene_count = await _generate_guided_scene_images(
+            job_id,
+            payload,
+            script_text=script_text,
+            director_bible=storyboard_text,
+            concept_art_paths=concept_paths,
+            character_reference_paths=[item["path"] for item in saved_characters],
+            resolution=resolution,
+        )
+        scene_count = detected_scene_count
         await WORKFLOW_JOB_STORE.update_stage(
             job_id,
             "design",
-            "First frame prepared from storyboard and character designs.",
+            "Per-scene start frames prepared from the script and character references.",
             progress=0.22,
         )
-
-        scene_image_dir = job_dir / "guided_scene_images"
-        scene_image_dir.mkdir(parents=True, exist_ok=True)
-        target_size = resolution_to_size(resolution)
-        for idx in range(scene_count):
-            dest = scene_image_dir / f"scene{idx + 1}.png"
-            resize_scene_image(Path(first_frame_path), dest, target_size=target_size)
+        scene_image_dir_str = str(scene_image_dir)
 
         design_manifest = []
         for character, concept_path in zip(saved_characters, concept_paths, strict=False):
@@ -1281,7 +1495,7 @@ async def run_animated_workflow_job(job_id: str, payload: AnimatedFilmPayload) -
             script=script_text,
             video_provider=payload.video_provider,
             resolution=resolution,
-            scene_image_dir=str(scene_image_dir),
+            scene_image_dir=scene_image_dir_str,
             use_scene_images=True,
             generate_ai_first_frame=False,
             scene_duration=payload.scene_duration,
@@ -1302,7 +1516,7 @@ async def run_animated_workflow_job(job_id: str, payload: AnimatedFilmPayload) -
         await WORKFLOW_JOB_STORE.update_stage(
             job_id,
             "rendering",
-            "Storyboard, concept art, and first frame ready. Starting Sora renders.",
+            "Storyboard, concept art, and per-scene start frames ready. Starting renders.",
             progress=0.25,
         )
 
@@ -1310,7 +1524,7 @@ async def run_animated_workflow_job(job_id: str, payload: AnimatedFilmPayload) -
             job_id=job_id,
             script_path=request.script_path,
             storyboard_path=str(storyboard_path),
-            scene_image_dir=str(scene_image_dir),
+            scene_image_dir=scene_image_dir_str,
             concept_art_paths=concept_paths,
             first_frame_path=first_frame_path,
             character_design_path=str(design_manifest_path),

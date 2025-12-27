@@ -92,8 +92,8 @@ Use `POST /api/animated-workflows` when you want the backend to guide the entire
 
 1. Upload one or more characters (image + name) and describe the scene.
 2. Pick a workflow type (`story_short`, `music_short`, or `direct_video`), basic film info (short/long, aspect ratio, language), emotional keywords, and per-scene duration (default 4s).
-3. The service drafts a storyboard/script, generates character concept art with the Gemini NanoBanana model, and produces a first-frame still anchored to your characters and storyboard.
-4. The first frame is reused as the start image for every scene, the Sora2 pipeline renders clips, and ffmpeg stitches the final video. Assets (script/storyboard/concept art/first frame) are available via `GET /api/animated-workflows/{job_id}/artifacts`.
+3. The service uses GPT-5 prompts (tunable via `prompts/guided_*.txt`) to draft art direction (character + scenario bible) and a detailed scene script, then generates character concept art and per-scene start frames with the Gemini NanoBanana model.
+4. Per-scene start frames are saved as `scene1.png`, `scene2.png`, ... and passed into the video pipeline before rendering and composing the final cut. Assets (script/storyboard/concept art/first frame) are available via `GET /api/animated-workflows/{job_id}/artifacts`.
 5. Configure `GEMINI_API_KEY` and optional `GEMINI_NANOBANANA_*` settings to enable real concept art/first-frame generation; without them the workflow saves placeholder PNGs so the pipeline can continue.
 
 ## Video insight analysis
