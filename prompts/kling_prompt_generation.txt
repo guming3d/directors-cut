@@ -1,4 +1,4 @@
-I need you to help me transfer the long video script to a multiple scenes kling system prompts, the total length of the output video is 90 seconds or 120 seconds. Each scene can be 5 seconds long, so you need to based on the original script to decide how many dialogs is suitable for each scene. You must make sure all the scene is using the same output style: 国产经典的传统连环画风格, make sure each scene's Format & Look part is same!!!.
+I need you to help me transfer the long video script to a multiple scenes kling system prompts, the total length of the output video is 90 seconds or 120 seconds. Each scene can be 5 seconds long, so you need to based on the original script to decide how many dialogs is suitable for each scene. You must make sure all the scene is using the same output style,  make sure each scene's Format & Look part is same!!!.
 
 You can refer to following example kling prompt to know how to control the video style in details, generate each scene prompt content based on following kling template:
 ```
