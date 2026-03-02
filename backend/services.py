@@ -18,7 +18,9 @@ from .config import (
     RESOLUTION_PATTERN,
     ROOT,
     SCENE_IMAGE_DIR,
+    SORA_BLOCK_RETRIES,
     SORA_CLIENT,
+    SORA_TRANSIENT_RETRIES,
     allowed_durations_for_provider,
     logger,
     normalize_video_provider,
@@ -39,6 +41,8 @@ from .models import (
 from .pipeline import summarize_manifest
 from .progress import mark_completed, report_progress
 from .stores import SINGLE_VIDEO_STORE, WORKFLOW_JOB_STORE
+from .provider_errors import classify_sora_failure, format_sora_failure_message
+from .sora_runner import SoraExecutionError, run_sora_subprocess_with_retry
 from .utils import escape_for_concat, normalize_script_text, run_subprocess
 from .workflow import workflow
 from .config import SINGLE_VIDEO_JOBS_DIR, OUTPUT_DIR
@@ -278,8 +282,19 @@ async def run_single_video_job(config: SingleVideoJobConfig) -> None:
     except asyncio.CancelledError:  # pragma: no cover - propagation only
         raise
     except Exception as exc:  # pragma: no cover - defensive logging
-        logger.exception("Single video job %s failed: %s", job_id, exc)
-        await SINGLE_VIDEO_STORE.mark_failed(job_id, str(exc))
+        if isinstance(exc, SoraExecutionError):
+            error_text = str(exc)
+        elif config.video_provider == "sora2":
+            classified = classify_sora_failure(str(exc))
+            error_text = format_sora_failure_message(
+                f"Single video job {job_id}",
+                classified,
+                attempts=1,
+            )
+        else:
+            error_text = str(exc)
+        logger.exception("Single video job %s failed: %s", job_id, error_text)
+        await SINGLE_VIDEO_STORE.mark_failed(job_id, error_text)
 
 
 async def _render_single_with_sora(
@@ -306,12 +321,23 @@ async def _render_single_with_sora(
     if config.reference_image_path:
         cmd.extend(["--input-image", str(config.reference_image_path)])
 
-    stdout, stderr = await run_subprocess(cmd, cwd=ROOT, env=env)
-
     client_log_path = config.video_path.with_suffix(".client.log")
-    client_log_path.write_text(
-        f"STDOUT:\n{stdout}\nSTDERR:\n{stderr}\n",
-        encoding="utf-8",
+
+    async def _report_retry(message: str) -> None:
+        try:
+            await SINGLE_VIDEO_STORE.update_progress(config.job_id, 0.1, message)
+        except KeyError:  # pragma: no cover - best-effort updates
+            logger.debug("Skipping retry progress update for missing single job %s", config.job_id)
+
+    await run_sora_subprocess_with_retry(
+        cmd,
+        cwd=ROOT,
+        env=env,
+        operation_label=f"Single video job {config.job_id}",
+        moderation_attempts=SORA_BLOCK_RETRIES,
+        transient_attempts=SORA_TRANSIENT_RETRIES,
+        log_path=client_log_path,
+        on_retry=_report_retry,
     )
 
     if not config.video_path.is_file():
@@ -588,8 +614,14 @@ async def run_single_video_remix(job_id: str, prompt: str) -> None:
     except asyncio.CancelledError:  # pragma: no cover - propagation only
         raise
     except Exception as exc:  # pragma: no cover - defensive logging
-        logger.exception("Remix job for single video %s failed: %s", job_id, exc)
-        await SINGLE_VIDEO_STORE.mark_failed(job_id, f"Remix failed: {exc}")
+        classified = classify_sora_failure(str(exc))
+        error_text = format_sora_failure_message(
+            f"Single video remix {job_id}",
+            classified,
+            attempts=1,
+        )
+        logger.exception("Remix job for single video %s failed: %s", job_id, error_text)
+        await SINGLE_VIDEO_STORE.mark_failed(job_id, error_text)
 
 
 async def run_scene_remix_job(job_id: str, scene_order: int, prompt: str) -> None:
@@ -693,11 +725,17 @@ async def run_scene_remix_job(job_id: str, scene_order: int, prompt: str) -> Non
     except asyncio.CancelledError:  # pragma: no cover - propagation only
         raise
     except Exception as exc:  # pragma: no cover - defensive logging
-        logger.exception("Remix job for %s scene %s failed: %s", job_id, scene_order, exc)
+        classified = classify_sora_failure(str(exc))
+        error_text = format_sora_failure_message(
+            f"Scene {scene_order} remix",
+            classified,
+            attempts=1,
+        )
+        logger.exception("Remix job for %s scene %s failed: %s", job_id, scene_order, error_text)
         await WORKFLOW_JOB_STORE.add_message(
             job_id,
             "failed",
-            f"Remix for scene {scene_order} failed: {exc}",
+            error_text,
         )
 
 
@@ -841,11 +879,19 @@ async def run_scene_regeneration_job(job_id: str, scene_order: int, prompt_overr
     ]
 
     try:
-        stdout, stderr = await run_subprocess(cmd, cwd=ROOT, env=env)
         client_log_path = video_path.with_suffix(".regen.log")
-        client_log_path.write_text(
-            f"STDOUT:\n{stdout}\nSTDERR:\n{stderr}\n",
-            encoding="utf-8",
+        async def _report_retry(message: str) -> None:
+            await WORKFLOW_JOB_STORE.add_message(job_id, "rendering", message)
+
+        await run_sora_subprocess_with_retry(
+            cmd,
+            cwd=ROOT,
+            env=env,
+            operation_label=f"Scene {scene_order} regeneration",
+            moderation_attempts=SORA_BLOCK_RETRIES,
+            transient_attempts=SORA_TRANSIENT_RETRIES,
+            log_path=client_log_path,
+            on_retry=_report_retry,
         )
 
         if not video_path.is_file():
@@ -887,11 +933,20 @@ async def run_scene_regeneration_job(job_id: str, scene_order: int, prompt_overr
     except asyncio.CancelledError:  # pragma: no cover - propagation only
         raise
     except Exception as exc:  # pragma: no cover - defensive logging
-        logger.exception("Regeneration job for %s scene %s failed: %s", job_id, scene_order, exc)
+        if isinstance(exc, SoraExecutionError):
+            error_text = str(exc)
+        else:
+            classified = classify_sora_failure(str(exc))
+            error_text = format_sora_failure_message(
+                f"Scene {scene_order} regeneration",
+                classified,
+                attempts=1,
+            )
+        logger.exception("Regeneration job for %s scene %s failed: %s", job_id, scene_order, error_text)
         await WORKFLOW_JOB_STORE.add_message(
             job_id,
             "failed",
-            f"Regeneration for scene {scene_order} failed: {exc}",
+            error_text,
         )
 
 

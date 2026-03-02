@@ -69,6 +69,19 @@ def escape_for_concat(path: Path) -> str:
     return f"file '{escaped}'"
 
 
+class SubprocessExecutionError(RuntimeError):
+    """Raised when a subprocess exits with a non-zero status."""
+
+    def __init__(self, cmd: Sequence[str], returncode: int, stdout: str, stderr: str) -> None:
+        self.cmd = tuple(cmd)
+        self.returncode = int(returncode)
+        self.stdout = stdout
+        self.stderr = stderr
+        output = (stderr or stdout).strip()
+        summary = output if output else "No process output captured."
+        super().__init__(f"Command {' '.join(cmd)} failed ({returncode}): {summary}")
+
+
 async def run_subprocess(
     cmd: Sequence[str], cwd: Path | None = None, env: dict[str, str] | None = None
 ) -> tuple[str, str]:
@@ -83,9 +96,7 @@ async def run_subprocess(
     stdout = stdout_bytes.decode(errors="ignore")
     stderr = stderr_bytes.decode(errors="ignore")
     if process.returncode != 0:
-        raise RuntimeError(
-            f"Command {' '.join(cmd)} failed ({process.returncode}): {stderr or stdout}"
-        )
+        raise SubprocessExecutionError(cmd, process.returncode, stdout, stderr)
     return stdout, stderr
 
 
@@ -146,6 +157,7 @@ __all__ = [
     "read_text",
     "resolution_to_size",
     "run_subprocess",
+    "SubprocessExecutionError",
     "slugify",
     "utc_now",
 ]

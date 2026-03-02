@@ -134,6 +134,19 @@ def _float_env(name: str, default: str) -> float:
         return float(default)
 
 
+try:
+    _sora_transient_retries = int(os.getenv("SORA_TRANSIENT_RETRIES", "4"))
+except ValueError:
+    _sora_transient_retries = 4
+SORA_TRANSIENT_RETRIES = max(1, _sora_transient_retries)
+SORA_RETRY_BASE_DELAY_SECONDS = max(0.5, _float_env("SORA_RETRY_BASE_DELAY", "2"))
+SORA_RETRY_MAX_DELAY_SECONDS = max(
+    SORA_RETRY_BASE_DELAY_SECONDS,
+    _float_env("SORA_RETRY_MAX_DELAY", "30"),
+)
+SORA_RETRY_JITTER_SECONDS = max(0.0, _float_env("SORA_RETRY_JITTER", "0.5"))
+
+
 KLING_API_BASE_URL = (os.getenv("KLING_API_BASE_URL") or "https://api-beijing.klingai.com").rstrip("/")
 KLING_API_KEY = os.getenv("KLING_API_KEY")
 KLING_ACCESS_KEY = os.getenv("KLING_ACCESS_KEY")
@@ -456,6 +469,10 @@ __all__ = [
     "SORA_ALLOWED_DURATIONS",
     "SORA_PROMPT_GUIDE_URL",
     "SORA_BLOCK_RETRIES",
+    "SORA_TRANSIENT_RETRIES",
+    "SORA_RETRY_BASE_DELAY_SECONDS",
+    "SORA_RETRY_MAX_DELAY_SECONDS",
+    "SORA_RETRY_JITTER_SECONDS",
     "STATIC_URL_PREFIX",
     "TMP_DIR",
     "WORKFLOW_DB_PATH",

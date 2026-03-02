@@ -9,7 +9,7 @@ from typing import Optional, Sequence
 
 from agent_framework import Executor, WorkflowContext, handler
 
-from .config import ROOT, SCENE_IMAGE_DIR, logger
+from .config import ROOT, SORA_TRANSIENT_RETRIES, logger
 from .first_frames import generate_first_frame_image
 from .images import prepare_scene_start_images, prepare_scene_tail_image
 from .kling import render_kling_clip
@@ -36,6 +36,7 @@ from .prompts import (
     refine_scene_description,
 )
 from .stores import WORKFLOW_JOB_STORE
+from .sora_runner import run_sora_subprocess_with_retry
 from .utils import (
     escape_for_concat,
     extract_last_frame,
@@ -188,11 +189,6 @@ class Sora2Agent(Executor):
 
     def __init__(self) -> None:
         super().__init__(id="sora2_agent")
-
-    @staticmethod
-    def _is_moderation_block(message: str) -> bool:
-        lowered = message.lower()
-        return "moderation_blocked" in lowered or "blocked by our moderation system" in lowered
 
     @handler
     async def handle(
@@ -492,48 +488,19 @@ class Sora2Agent(Executor):
         if input_reference:
             cmd.extend(["--input-image", input_reference])
 
-        attempts = max(1, request.blocked_retry_attempts)
-        attempt = 0
-        stdout = ""
-        stderr = ""
-        last_error: RuntimeError | None = None
-        while attempt < attempts:
-            attempt += 1
-            try:
-                stdout, stderr = await run_subprocess(cmd, cwd=ROOT, env=env)
-                break
-            except asyncio.CancelledError:  # pragma: no cover - propagation only
-                raise
-            except RuntimeError as exc:
-                last_error = exc
-                message = str(exc)
-                if not self._is_moderation_block(message):
-                    raise
-                if attempt >= attempts:
-                    await report_progress(
-                        request,
-                        "failed",
-                        f"{plan.label} was blocked by moderation after {attempts} attempt(s).",
-                    )
-                    raise RuntimeError(
-                        f"{plan.label} was blocked by moderation after {attempts} attempt(s)."
-                    ) from exc
-                await report_progress(
-                    request,
-                    "rendering",
-                    f"{plan.label} blocked by moderation; retrying ({attempt}/{attempts}).",
-                )
-                logger.warning(
-                    "Moderation blocked %s (attempt %s/%s); retrying.", plan.label, attempt, attempts
-                )
-                await asyncio.sleep(1.0)
-        else:  # pragma: no cover - defensive guard
-            raise last_error or RuntimeError(f"{plan.label} failed to render.")
-
         client_log_path = video_path.with_suffix(".client.log")
-        client_log_path.write_text(
-            f"STDOUT:\n{stdout}\nSTDERR:\n{stderr}\n",
-            encoding="utf-8",
+        async def _report_retry(message: str) -> None:
+            await report_progress(request, "rendering", message)
+
+        await run_sora_subprocess_with_retry(
+            cmd,
+            cwd=ROOT,
+            env=env,
+            operation_label=plan.label,
+            moderation_attempts=max(1, request.blocked_retry_attempts),
+            transient_attempts=SORA_TRANSIENT_RETRIES,
+            log_path=client_log_path,
+            on_retry=_report_retry,
         )
 
         if not video_path.is_file():
