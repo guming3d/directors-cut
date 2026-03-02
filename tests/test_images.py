@@ -1,8 +1,17 @@
+import base64
 from pathlib import Path
 
+import pytest
 from PIL import Image
 
-from backend.images import prepare_scene_start_images, prepare_scene_tail_image
+from backend import images as image_module
+from backend.images import (
+    decode_image_payload,
+    prepare_scene_start_images,
+    prepare_scene_tail_image,
+    save_payload_as_png,
+)
+from backend.models import EncodedImagePayload
 
 
 def test_prepare_scene_start_images_resizes(tmp_path):
@@ -38,3 +47,38 @@ def test_prepare_scene_tail_image(tmp_path):
     assert prepared_path.is_file()
     with Image.open(prepared_path) as resized:
         assert resized.size == (1280, 720)
+
+
+def test_rejects_non_image_data_url(tmp_path):
+    upload = EncodedImagePayload(
+        filename="payload.txt",
+        dataUrl="data:text/plain;base64,SGVsbG8=",
+        contentType="text/plain",
+    )
+    with pytest.raises(ValueError, match="Unsupported upload type"):
+        save_payload_as_png(upload, tmp_path / "bad.png")
+
+
+def test_rejects_invalid_image_bytes(tmp_path):
+    payload = base64.b64encode(b"not-a-real-image").decode("ascii")
+    upload = EncodedImagePayload(
+        filename="fake.png",
+        dataUrl=f"data:image/png;base64,{payload}",
+        contentType="image/png",
+    )
+    target = tmp_path / "fake.png"
+    with pytest.raises(ValueError, match="not a valid image"):
+        save_payload_as_png(upload, target)
+    assert not target.exists()
+
+
+def test_rejects_oversized_inline_payload(monkeypatch):
+    monkeypatch.setattr(image_module, "JSON_IMAGE_MAX_UPLOAD_BYTES", 8)
+    payload = base64.b64encode(b"123456789").decode("ascii")
+    upload = EncodedImagePayload(
+        filename="large.png",
+        dataUrl=f"data:image/png;base64,{payload}",
+        contentType="image/png",
+    )
+    with pytest.raises(ValueError, match="exceeds"):
+        decode_image_payload(upload)

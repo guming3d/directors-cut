@@ -54,6 +54,34 @@ def job_root(job_id: str) -> Path:
     return OUTPUT_DIR / job_id
 
 
+async def _safe_workflow_add_message(job_id: str, stage: str, text: str) -> None:
+    try:
+        await WORKFLOW_JOB_STORE.add_message(job_id, stage, text)
+    except KeyError:  # pragma: no cover - best-effort for deleted jobs
+        logger.debug("Skipping workflow message update for missing job %s", job_id)
+
+
+async def _safe_workflow_mark_failed(job_id: str, error: str) -> None:
+    try:
+        await WORKFLOW_JOB_STORE.mark_failed(job_id, error)
+    except KeyError:  # pragma: no cover - best-effort for deleted jobs
+        logger.debug("Skipping workflow failure update for missing job %s", job_id)
+
+
+async def _safe_single_add_message(job_id: str, stage: str, text: str) -> None:
+    try:
+        await SINGLE_VIDEO_STORE.add_message(job_id, stage, text)
+    except KeyError:  # pragma: no cover - best-effort for deleted jobs
+        logger.debug("Skipping single-video message update for missing job %s", job_id)
+
+
+async def _safe_single_mark_failed(job_id: str, error: str) -> None:
+    try:
+        await SINGLE_VIDEO_STORE.mark_failed(job_id, error)
+    except KeyError:  # pragma: no cover - best-effort for deleted jobs
+        logger.debug("Skipping single-video failure update for missing job %s", job_id)
+
+
 def prepare_request_for_job(job_id: str, payload: StartWorkflowPayload) -> VideoWorkflowRequest:
     job_dir = job_root(job_id)
     job_dir.mkdir(parents=True, exist_ok=True)
@@ -101,15 +129,13 @@ def prepare_request_for_job(job_id: str, payload: StartWorkflowPayload) -> Video
         raise ValueError("Sequence generation mode accepts only one uploaded reference image.")
     if generation_mode == "sequence" and uploads:
         uploads = uploads[:1]
-    scene_image_override = payload.scene_image_dir
-
     scene_image_dir_path = SCENE_IMAGE_DIR
     if use_scene_images:
         try:
             scene_image_dir_path = resolve_scene_image_dir(
                 job_dir,
                 uploads,
-                scene_image_override,
+                None,
             )
         except FileNotFoundError as exc:
             raise ValueError(str(exc)) from exc
@@ -227,7 +253,7 @@ async def _ensure_script_headers(job_id: str, request: VideoWorkflowRequest) -> 
         if request.refine_with_gpt5
         else "Storyboard missing scene headers; DirectorAgent will parse as-is."
     )
-    await WORKFLOW_JOB_STORE.add_message(job_id, "planning", note)
+    await _safe_workflow_add_message(job_id, "planning", note)
 
 
 async def run_workflow_job(job_id: str, request: VideoWorkflowRequest) -> None:
@@ -237,7 +263,7 @@ async def run_workflow_job(job_id: str, request: VideoWorkflowRequest) -> None:
         await workflow.run(request)
     except Exception as exc:  # pragma: no cover - defensive logging
         logger.exception("Workflow %s failed: %s", job_id, exc)
-        await WORKFLOW_JOB_STORE.mark_failed(job_id, str(exc))
+        await _safe_workflow_mark_failed(job_id, str(exc))
 
 
 async def run_single_video_job(config: SingleVideoJobConfig) -> None:
@@ -294,7 +320,7 @@ async def run_single_video_job(config: SingleVideoJobConfig) -> None:
         else:
             error_text = str(exc)
         logger.exception("Single video job %s failed: %s", job_id, error_text)
-        await SINGLE_VIDEO_STORE.mark_failed(job_id, error_text)
+        await _safe_single_mark_failed(job_id, error_text)
 
 
 async def _render_single_with_sora(
@@ -515,7 +541,7 @@ async def _render_scene_regen_with_jimeng(
 async def run_single_video_remix(job_id: str, prompt: str) -> None:
     prompt_text = prompt.strip()
     if not prompt_text:
-        await SINGLE_VIDEO_STORE.add_message(job_id, "failed", "Remix prompt cannot be empty.")
+        await _safe_single_add_message(job_id, "failed", "Remix prompt cannot be empty.")
         return
     try:
         job_state = await SINGLE_VIDEO_STORE.get_job_state(job_id)
@@ -524,7 +550,7 @@ async def run_single_video_remix(job_id: str, prompt: str) -> None:
         return
 
     if job_state.video_provider in {"kling", "jimeng"}:
-        await SINGLE_VIDEO_STORE.add_message(
+        await _safe_single_add_message(
             job_id,
             "failed",
             "Selected backend does not support remix operations. Please generate a new version instead.",
@@ -533,7 +559,7 @@ async def run_single_video_remix(job_id: str, prompt: str) -> None:
 
     base_version = get_active_single_version(job_state)
     if not base_version or not base_version.video_id:
-        await SINGLE_VIDEO_STORE.add_message(
+        await _safe_single_add_message(
             job_id,
             "failed",
             "This job is missing Azure video metadata; render a clip before requesting a remix.",
@@ -621,7 +647,7 @@ async def run_single_video_remix(job_id: str, prompt: str) -> None:
             attempts=1,
         )
         logger.exception("Remix job for single video %s failed: %s", job_id, error_text)
-        await SINGLE_VIDEO_STORE.mark_failed(job_id, error_text)
+        await _safe_single_mark_failed(job_id, error_text)
 
 
 async def run_scene_remix_job(job_id: str, scene_order: int, prompt: str) -> None:
@@ -629,7 +655,7 @@ async def run_scene_remix_job(job_id: str, scene_order: int, prompt: str) -> Non
 
     prompt_text = prompt.strip()
     if not prompt_text:
-        await WORKFLOW_JOB_STORE.add_message(job_id, "failed", "Remix prompt cannot be empty.")
+        await _safe_workflow_add_message(job_id, "failed", "Remix prompt cannot be empty.")
         return
     try:
         scene = await WORKFLOW_JOB_STORE.get_scene(job_id, scene_order)
@@ -637,13 +663,13 @@ async def run_scene_remix_job(job_id: str, scene_order: int, prompt: str) -> Non
         base_version = scene.get_version(scene.selected_version_id)
     except KeyError as exc:  # pragma: no cover - defensive logging
         logger.warning("Remix request dropped for missing scene %s/%s: %s", job_id, scene_order, exc)
-        await WORKFLOW_JOB_STORE.add_message(
+        await _safe_workflow_add_message(
             job_id, "failed", f"Unable to remix scene {scene_order}; render not found."
         )
         return
 
     if video_provider in {"kling", "jimeng"}:
-        await WORKFLOW_JOB_STORE.add_message(
+        await _safe_workflow_add_message(
             job_id,
             "failed",
             "Selected backend does not support remix operations. Please regenerate the scene instead.",
@@ -651,7 +677,7 @@ async def run_scene_remix_job(job_id: str, scene_order: int, prompt: str) -> Non
         return
 
     if not base_version.video_id:
-        await WORKFLOW_JOB_STORE.add_message(
+        await _safe_workflow_add_message(
             job_id,
             "failed",
             f"Scene {scene_order} is missing Azure video metadata; regenerate before remixing.",
@@ -732,7 +758,7 @@ async def run_scene_remix_job(job_id: str, scene_order: int, prompt: str) -> Non
             attempts=1,
         )
         logger.exception("Remix job for %s scene %s failed: %s", job_id, scene_order, error_text)
-        await WORKFLOW_JOB_STORE.add_message(
+        await _safe_workflow_add_message(
             job_id,
             "failed",
             error_text,
@@ -765,7 +791,7 @@ async def run_scene_regeneration_job(job_id: str, scene_order: int, prompt_overr
         prompt_path = base_prompt_path
 
     if not prompt_path or not prompt_path.is_file():
-        await WORKFLOW_JOB_STORE.add_message(
+        await _safe_workflow_add_message(
             job_id,
             "failed",
             f"Cannot regenerate {scene.label}; prompt file missing.",
@@ -812,7 +838,7 @@ async def run_scene_regeneration_job(job_id: str, scene_order: int, prompt_overr
             )
         except Exception as exc:  # pragma: no cover - defensive logging
             logger.exception("Kling regeneration job for %s scene %s failed: %s", job_id, scene_order, exc)
-            await WORKFLOW_JOB_STORE.add_message(
+            await _safe_workflow_add_message(
                 job_id,
                 "failed",
                 f"Regeneration for scene {scene_order} failed: {exc}",
@@ -852,7 +878,7 @@ async def run_scene_regeneration_job(job_id: str, scene_order: int, prompt_overr
             )
         except Exception as exc:  # pragma: no cover - defensive logging
             logger.exception("Jimeng regeneration job for %s scene %s failed: %s", job_id, scene_order, exc)
-            await WORKFLOW_JOB_STORE.add_message(
+            await _safe_workflow_add_message(
                 job_id,
                 "failed",
                 f"Regeneration for scene {scene_order} failed: {exc}",
@@ -881,7 +907,7 @@ async def run_scene_regeneration_job(job_id: str, scene_order: int, prompt_overr
     try:
         client_log_path = video_path.with_suffix(".regen.log")
         async def _report_retry(message: str) -> None:
-            await WORKFLOW_JOB_STORE.add_message(job_id, "rendering", message)
+            await _safe_workflow_add_message(job_id, "rendering", message)
 
         await run_sora_subprocess_with_retry(
             cmd,
@@ -943,7 +969,7 @@ async def run_scene_regeneration_job(job_id: str, scene_order: int, prompt_overr
                 attempts=1,
             )
         logger.exception("Regeneration job for %s scene %s failed: %s", job_id, scene_order, error_text)
-        await WORKFLOW_JOB_STORE.add_message(
+        await _safe_workflow_add_message(
             job_id,
             "failed",
             error_text,
@@ -974,7 +1000,7 @@ async def run_recompose_job(job_id: str) -> None:
         if version is None and scene.versions:
             version = scene.versions[-1]
         if version is None or not version.video_path:
-            await WORKFLOW_JOB_STORE.add_message(
+            await _safe_workflow_add_message(
                 job_id,
                 "failed",
                 f"Cannot recompose; scene {scene.order} has no completed versions.",
@@ -1019,7 +1045,7 @@ async def run_recompose_job(job_id: str) -> None:
         )
     except Exception as exc:  # pragma: no cover - defensive logging
         logger.exception("Recompose failed for job %s: %s", job_id, exc)
-        await WORKFLOW_JOB_STORE.add_message(
+        await _safe_workflow_add_message(
             job_id,
             "failed",
             f"Recompose failed: {exc}",
@@ -1030,8 +1056,16 @@ async def run_recompose_job(job_id: str) -> None:
     manifest = summarize_manifest(renders, final_video, total_seconds, status.resolution)
     manifest_path = final_video.with_suffix(".json")
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-    await WORKFLOW_JOB_STORE.mark_completed(job_id, str(final_video), manifest)
-    await WORKFLOW_JOB_STORE.add_message(job_id, "completed", "Regenerated final video with selected scene versions.")
+    try:
+        await WORKFLOW_JOB_STORE.mark_completed(job_id, str(final_video), manifest)
+    except KeyError:  # pragma: no cover - best-effort for deleted jobs
+        logger.debug("Skipping recompose completion update for missing job %s", job_id)
+        return
+    await _safe_workflow_add_message(
+        job_id,
+        "completed",
+        "Regenerated final video with selected scene versions.",
+    )
 
 
 async def refine_script_for_payload(payload: StartWorkflowPayload) -> None:

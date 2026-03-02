@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Iterator, Optional
 
 import httpx
 
@@ -65,12 +65,13 @@ class AzureContentUnderstandingClient:
         timeout: Optional[float] = None,
     ) -> dict[str, Any]:
         path = Path(video_path)
-        payload = await asyncio.to_thread(path.read_bytes)
-        return await self.analyze_bytes(
-            payload,
-            content_type=content_type,
-            poll_interval=poll_interval,
-            timeout=timeout,
+        if not path.is_file():
+            raise FileNotFoundError(f"Video file not found: {path}")
+        operation_url = await self._begin_analyze_file(path, content_type)
+        return await self._poll_operation(
+            operation_url,
+            poll_interval or self._poll_interval,
+            timeout or self._poll_timeout,
         )
 
     async def analyze_bytes(
@@ -108,6 +109,32 @@ class AzureContentUnderstandingClient:
         logger.debug("Azure Content Understanding operation: %s", operation_url)
         return operation_url
 
+    async def _begin_analyze_file(self, path: Path, content_type: str) -> str:
+        url = (
+            f"{self._endpoint}/contentunderstanding/analyzers/{self._analyzer_id}:analyze"
+            f"?api-version={self._api_version}"
+        )
+        headers = self._base_headers | {"Content-Type": content_type}
+        logger.debug("Submitting video insight request to %s", url)
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            response = await client.post(
+                url,
+                headers=headers,
+                content=self._iter_file_chunks(path),
+            )
+            response.raise_for_status()
+        operation_url = (
+            response.headers.get("operation-location")
+            or response.headers.get("Operation-Location")
+            or ""
+        )
+        if not operation_url:
+            raise ContentUnderstandingError(
+                "Azure Content Understanding response missing operation-location header."
+            )
+        logger.debug("Azure Content Understanding operation: %s", operation_url)
+        return operation_url
+
     async def _poll_operation(self, operation_url: str, poll_interval: float, timeout: float) -> dict[str, Any]:
         start = asyncio.get_event_loop().time()
         async with httpx.AsyncClient(timeout=self._timeout) as client:
@@ -135,3 +162,12 @@ class AzureContentUnderstandingClient:
             "Ocp-Apim-Subscription-Key": self._api_key,
             "x-ms-useragent": self._user_agent,
         }
+
+    @staticmethod
+    def _iter_file_chunks(path: Path, chunk_size: int = 1024 * 1024) -> Iterator[bytes]:
+        with path.open("rb") as handle:
+            while True:
+                chunk = handle.read(chunk_size)
+                if not chunk:
+                    break
+                yield chunk

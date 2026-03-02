@@ -41,3 +41,11 @@ def test_video_workflow_request_rejects_invalid_kling_duration():
             video_provider="kling",
             scene_duration=4,
         )
+
+
+def test_workflow_payload_rejects_scene_image_dir_override():
+    with pytest.raises(ValidationError):
+        StartWorkflowPayload(
+            script="**Scene 1 (Test)**\nDescription",
+            scene_image_dir="/tmp/unsafe",
+        )

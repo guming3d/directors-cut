@@ -33,6 +33,14 @@ Run the workflow API:
 uvicorn video_agent_workflow:fastapi_app --host 0.0.0.0 --port 8000
 ```
 
+Or start backend + frontend together from the repo root:
+
+```bash
+./start-dev.sh
+# or: npm run dev:all
+```
+If no auth variables are configured, this script sets `SORA_WORKFLOW_REQUIRE_AUTH=0` for local development only.
+
 ### Available API routes
 
 - `POST /api/workflows` — start a new video job with a storyboard script

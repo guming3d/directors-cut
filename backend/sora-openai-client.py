@@ -15,9 +15,14 @@ from PIL import Image
 load_dotenv(override=True)
 
 # Resolve endpoint, deployment, and API key using the same environment defaults
-endpoint = os.getenv(
-    "ENDPOINT_URL", "https://ai-minggu9321ai222939745136.openai.azure.com/"
-).rstrip("/")
+endpoint_raw = (
+    os.getenv("ENDPOINT_URL")
+    or os.getenv("AZURE_OPENAI_ENDPOINT")
+    or ""
+).strip()
+if not endpoint_raw:
+    raise RuntimeError("Set ENDPOINT_URL or AZURE_OPENAI_ENDPOINT before running.")
+endpoint = endpoint_raw.rstrip("/")
 deployment = os.getenv("DEPLOYMENT_NAME", "sora-2")
 api_key = os.getenv("AZURE_OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
 

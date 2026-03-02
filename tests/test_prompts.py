@@ -75,3 +75,19 @@ def test_update_workflow_template_text_rejects_empty(tmp_path, monkeypatch):
 
     prompts._read_prompt_file.cache_clear()
     prompts._workflow_template_for_provider.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_refine_text_with_gpt5_raises_on_client_failure(monkeypatch):
+    class _FailingResponses:
+        def create(self, **kwargs):
+            raise RuntimeError("upstream timeout")
+
+    class _FailingClient:
+        responses = _FailingResponses()
+
+    monkeypatch.setattr(prompts, "GPT5_REFINEMENT_DEPLOYMENT", "gpt-5-test")
+    monkeypatch.setattr(prompts, "azure_text_client", lambda: _FailingClient())
+
+    with pytest.raises(RuntimeError, match="GPT-5 refinement failed"):
+        await prompts.refine_text_with_gpt5("hello world", mode="single")

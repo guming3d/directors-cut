@@ -8,14 +8,21 @@ import shutil
 import tempfile
 import uuid
 import zipfile
+from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Query
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.background import BackgroundTask
 
+from .auth import (
+    auth_challenge_header,
+    auth_settings,
+    authorize_request,
+    validate_auth_configuration,
+)
 from .config import (
     CONTENT_UNDERSTANDING_MAX_UPLOAD_BYTES,
     DEFAULT_IMAGE_GENERATOR,
@@ -88,10 +95,52 @@ from .stores import (
 from .utils import normalize_script_text, slugify
 
 
+@asynccontextmanager
+async def _app_lifespan(_: FastAPI):
+    validate_auth_configuration()
+    yield
+
+
 fastapi_app = FastAPI(
     title="Sora Agent Workflow API",
     description="Async workflow orchestrator for Azure Sora multi-agent pipeline.",
+    lifespan=_app_lifespan,
 )
+
+
+_AUTH_EXEMPT_PATHS = {"/api/auth/session"}
+
+
+def _auth_methods() -> list[str]:
+    settings = auth_settings()
+    methods: list[str] = []
+    if settings.username and settings.password:
+        methods.append("basic")
+    if settings.bearer_token:
+        methods.append("bearer")
+    return methods
+
+
+def _auth_unauthorized_response() -> JSONResponse:
+    challenge = auth_challenge_header()
+    return JSONResponse(
+        status_code=401,
+        content={"detail": "Authentication required."},
+        headers={"WWW-Authenticate": challenge},
+    )
+
+
+@fastapi_app.middleware("http")
+async def _enforce_api_auth(request: Request, call_next):
+    path = request.url.path
+    if request.method == "OPTIONS":
+        return await call_next(request)
+    if not path.startswith("/api/") or path in _AUTH_EXEMPT_PATHS:
+        return await call_next(request)
+    if authorize_request(request.headers):
+        return await call_next(request)
+    return _auth_unauthorized_response()
+
 
 fastapi_app.add_middleware(
     CORSMiddleware,
@@ -211,6 +260,22 @@ async def get_active_provider() -> dict[str, object]:
     return {
         "active": DEFAULT_VIDEO_PROVIDER,
         "available": list(SUPPORTED_VIDEO_PROVIDERS),
+    }
+
+
+@fastapi_app.get("/api/auth/session")
+async def get_auth_session(request: Request) -> dict[str, object]:
+    settings = auth_settings()
+    if settings.required and not authorize_request(request.headers, settings):
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication required.",
+            headers={"WWW-Authenticate": auth_challenge_header(settings)},
+        )
+    return {
+        "authenticated": True,
+        "required": settings.required,
+        "methods": _auth_methods(),
     }
 
 

@@ -210,6 +210,18 @@ except ValueError:
     _max_upload_mb = 200
 CONTENT_UNDERSTANDING_MAX_UPLOAD_BYTES = max(1, _max_upload_mb) * 1024 * 1024
 
+try:
+    _max_inline_image_mb = int(os.getenv("JSON_IMAGE_MAX_UPLOAD_MB", "20"))
+except ValueError:
+    _max_inline_image_mb = 20
+JSON_IMAGE_MAX_UPLOAD_BYTES = max(1, _max_inline_image_mb) * 1024 * 1024
+
+try:
+    _subprocess_timeout = float(os.getenv("SUBPROCESS_TIMEOUT_SECONDS", "1800"))
+except (TypeError, ValueError):
+    _subprocess_timeout = 1800.0
+DEFAULT_SUBPROCESS_TIMEOUT_SECONDS = max(1.0, _subprocess_timeout)
+
 # Azure configuration
 DIRECTOR_REFINEMENT_DEPLOYMENT = (
     os.getenv("DIRECTOR_REFINEMENT_DEPLOYMENT")
@@ -389,7 +401,14 @@ def extract_response_text(response: Any) -> str:
 def allowed_origins() -> list[str]:
     configured = os.getenv("SORA_WORKFLOW_ALLOWED_ORIGINS")
     if not configured:
-        return ["*"]
+        return [
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+            "http://localhost:3001",
+            "http://127.0.0.1:3001",
+            "http://localhost:3002",
+            "http://127.0.0.1:3002",
+        ]
     values = [origin.strip() for origin in configured.split(",")]
     return [origin for origin in values if origin]
 
@@ -405,6 +424,8 @@ __all__ = [
     "AZURE_TEXT_API_VERSION",
     "AZURE_TEXT_ENDPOINT",
     "CONTENT_UNDERSTANDING_MAX_UPLOAD_BYTES",
+    "JSON_IMAGE_MAX_UPLOAD_BYTES",
+    "DEFAULT_SUBPROCESS_TIMEOUT_SECONDS",
     "CONTENT_UNDERSTANDING_POLL_INTERVAL",
     "CONTENT_UNDERSTANDING_POLL_TIMEOUT",
     "DATA_URL_PATTERN",

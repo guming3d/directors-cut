@@ -311,14 +311,14 @@ async def refine_text_with_gpt5(
         user_prompt = render_prompt_template("refine_single_user", prompt=normalized)
         max_tokens = 2000
 
-    question = f"{system_prompt}\n\n---\n{user_prompt}\n---"
+    request_text = f"{system_prompt}\n\n---\n{user_prompt}\n---"
 
     def _call() -> str:
-        logger.info(
-            "GPT-5 refinement request (mode=%s, model=%s): %s",
+        logger.debug(
+            "Submitting GPT-5 refinement request (mode=%s, model=%s, chars=%d).",
             mode,
             deployment,
-            question,
+            len(request_text),
         )
         messages = [
             {
@@ -326,7 +326,7 @@ async def refine_text_with_gpt5(
                 "content": [
                     {
                         "type": "input_text",
-                        "text": question,
+                        "text": request_text,
                     }
                 ],
             }
@@ -337,14 +337,18 @@ async def refine_text_with_gpt5(
             max_output_tokens=max_tokens,
         )
         output_text = extract_response_text(response)
-        logger.info("GPT-5 refinement response (mode=%s): %s", mode, output_text)
+        logger.debug(
+            "Received GPT-5 refinement response (mode=%s, chars=%d).",
+            mode,
+            len(output_text),
+        )
         return output_text
 
     try:
         refined = await asyncio.to_thread(_call)
     except Exception as exc:  # pragma: no cover - defensive fallback
         logger.error("GPT-5 refinement failed (%s mode): %s", mode, exc)
-        return "failure calling to GPT-5"
+        raise RuntimeError(f"GPT-5 refinement failed ({mode} mode).") from exc
 
     cleaned = refined.strip()
     return cleaned or content

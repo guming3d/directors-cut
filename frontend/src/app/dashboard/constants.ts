@@ -96,9 +96,8 @@ export const getReferenceModeLabel = (value: string): string => {
   return option ? option.label : value;
 };
 
-export const AUTH_USERNAME = "user";
-export const AUTH_PASSWORD = "sora2isgreat";
 export const AUTH_STORAGE_KEY = "sora2-authenticated";
+export const AUTH_HEADER_STORAGE_KEY = "sora2-auth-header";
 export const DEFAULT_WORKFLOW_PROMPT_TEMPLATE = [
   "**Scene 1 (Scene 1 title)**",
   "Scene 1 kling prompt content",

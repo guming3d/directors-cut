@@ -38,7 +38,13 @@
    ```bash
    uvicorn sora_agent_workflow:fastapi_app --host 0.0.0.0 --port 8000
    ```
-4. 生成的文件位于 `output/<job_id>/`，并通过 `/static/...` 提供访问。
+4. 如需一条命令同时启动后端和前端，在仓库根目录运行：
+   ```bash
+   ./start-dev.sh
+   # 或 npm run dev:all
+   ```
+   若未配置任何鉴权变量，脚本会仅在本地开发场景下自动设置 `SORA_WORKFLOW_REQUIRE_AUTH=0`。
+5. 生成的文件位于 `output/<job_id>/`，并通过 `/static/...` 提供访问。
 
 ### 切换 Sora2、Kling、Jimeng
 

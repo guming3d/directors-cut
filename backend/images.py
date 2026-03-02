@@ -8,10 +8,11 @@ import shutil
 from pathlib import Path
 from typing import Optional, Sequence
 
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 
 from .config import (
     DATA_URL_PATTERN,
+    JSON_IMAGE_MAX_UPLOAD_BYTES,
     SCENE_IMAGE_DIR,
     SCENE_IMAGE_PATTERN,
     SCENE_IMAGE_RESAMPLE,
@@ -28,12 +29,23 @@ def decode_image_payload(upload: EncodedImagePayload) -> tuple[Optional[str], by
     match = DATA_URL_PATTERN.match(data_url)
     if not match:
         raise ValueError("Unsupported image encoding; expected data URL with base64 content.")
+    mime = (match.group("mime") or upload.content_type or "").strip().lower()
+    if not mime.startswith("image/"):
+        raise ValueError("Unsupported upload type; expected image data URL content.")
     encoded = match.group("data")
+    approximate_bytes = (len(encoded) * 3) // 4
+    if approximate_bytes > JSON_IMAGE_MAX_UPLOAD_BYTES:
+        raise ValueError(
+            f"Image payload exceeds {JSON_IMAGE_MAX_UPLOAD_BYTES // (1024 * 1024)}MB limit."
+        )
     try:
         data = base64.b64decode(encoded, validate=True)
     except (base64.binascii.Error, ValueError) as exc:  # type: ignore[attr-defined]
         raise ValueError("Failed to decode base64 image content.") from exc
-    mime = match.group("mime") or upload.content_type
+    if len(data) > JSON_IMAGE_MAX_UPLOAD_BYTES:
+        raise ValueError(
+            f"Image payload exceeds {JSON_IMAGE_MAX_UPLOAD_BYTES // (1024 * 1024)}MB limit."
+        )
     return mime, data
 
 
@@ -45,8 +57,10 @@ def save_payload_as_png(upload: EncodedImagePayload, dest: Path) -> Path:
             mode = "RGBA" if "A" in img.getbands() else "RGB"
             converted = img.convert(mode)
             converted.save(dest, format="PNG")
-    except Exception:
-        dest.write_bytes(data)
+    except UnidentifiedImageError as exc:
+        raise ValueError("Uploaded payload is not a valid image file.") from exc
+    except OSError as exc:
+        raise ValueError("Unable to process uploaded image payload.") from exc
     logger.debug("Saved image upload %s (%s) -> %s", upload.filename, mime, dest)
     return dest
 
@@ -73,7 +87,10 @@ def resolve_scene_image_dir(
         )
         if base_dir.is_dir():
             for item in base_dir.iterdir():
-                if item.is_file():
+                if item.is_file() and (
+                    SCENE_IMAGE_PATTERN.fullmatch(item.name)
+                    or SCENE_TAIL_PATTERN.fullmatch(item.name)
+                ):
                     shutil.copy2(item, dest_dir / item.name)
         elif override_dir:
             logger.warning(

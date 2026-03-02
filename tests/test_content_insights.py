@@ -7,6 +7,7 @@ import shutil
 import pytest
 
 from backend.config import OUTPUT_DIR
+from backend.content_insights.client import AzureContentUnderstandingClient
 from backend.content_insights.parser import summarize_content_understanding_result
 from backend.models import VideoInsightKeyFrame, VideoInsightSegment
 from backend.stores import VideoInsightJobStore
@@ -86,6 +87,18 @@ def test_extract_segments_handles_value_objects() -> None:
     assert segments[0].start_seconds == 1.5
     assert segments[0].end_seconds == 4.2
     assert segments[0].summary == "Segment summary text."
+
+
+def test_iter_file_chunks_streams_payload(tmp_path) -> None:
+    video_path = tmp_path / "clip.mp4"
+    payload = b"abc" * 1024
+    video_path.write_bytes(payload)
+
+    chunks = list(AzureContentUnderstandingClient._iter_file_chunks(video_path, chunk_size=512))
+
+    assert b"".join(chunks) == payload
+    assert all(len(chunk) <= 512 for chunk in chunks)
+    assert len(chunks) > 1
 
 
 @pytest.mark.asyncio

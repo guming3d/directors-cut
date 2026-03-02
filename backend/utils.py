@@ -7,7 +7,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Sequence
 
-from .config import OUTPUT_DIR, SCENE_IMAGE_SIZE, STATIC_URL_PREFIX, logger
+from .config import (
+    DEFAULT_SUBPROCESS_TIMEOUT_SECONDS,
+    OUTPUT_DIR,
+    SCENE_IMAGE_SIZE,
+    STATIC_URL_PREFIX,
+    logger,
+)
 
 
 def utc_now() -> datetime:
@@ -82,8 +88,26 @@ class SubprocessExecutionError(RuntimeError):
         super().__init__(f"Command {' '.join(cmd)} failed ({returncode}): {summary}")
 
 
+class SubprocessTimeoutError(RuntimeError):
+    """Raised when a subprocess exceeds the configured timeout."""
+
+    def __init__(self, cmd: Sequence[str], timeout_seconds: float, stdout: str, stderr: str) -> None:
+        self.cmd = tuple(cmd)
+        self.timeout_seconds = float(timeout_seconds)
+        self.stdout = stdout
+        self.stderr = stderr
+        output = (stderr or stdout).strip()
+        summary = output if output else "No process output captured."
+        super().__init__(
+            f"Command {' '.join(cmd)} timed out after {timeout_seconds:.1f}s: {summary}"
+        )
+
+
 async def run_subprocess(
-    cmd: Sequence[str], cwd: Path | None = None, env: dict[str, str] | None = None
+    cmd: Sequence[str],
+    cwd: Path | None = None,
+    env: dict[str, str] | None = None,
+    timeout_seconds: float | None = None,
 ) -> tuple[str, str]:
     process = await asyncio.create_subprocess_exec(
         *cmd,
@@ -92,7 +116,19 @@ async def run_subprocess(
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    stdout_bytes, stderr_bytes = await process.communicate()
+    timeout = (
+        max(0.1, float(timeout_seconds))
+        if timeout_seconds is not None
+        else DEFAULT_SUBPROCESS_TIMEOUT_SECONDS
+    )
+    try:
+        stdout_bytes, stderr_bytes = await asyncio.wait_for(process.communicate(), timeout=timeout)
+    except asyncio.TimeoutError as exc:
+        process.kill()
+        stdout_bytes, stderr_bytes = await process.communicate()
+        stdout = stdout_bytes.decode(errors="ignore")
+        stderr = stderr_bytes.decode(errors="ignore")
+        raise SubprocessTimeoutError(cmd, timeout, stdout, stderr) from exc
     stdout = stdout_bytes.decode(errors="ignore")
     stderr = stderr_bytes.decode(errors="ignore")
     if process.returncode != 0:
@@ -158,6 +194,7 @@ __all__ = [
     "resolution_to_size",
     "run_subprocess",
     "SubprocessExecutionError",
+    "SubprocessTimeoutError",
     "slugify",
     "utc_now",
 ]

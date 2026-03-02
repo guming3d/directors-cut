@@ -610,7 +610,7 @@ class VideoReproduceJobResponse(BaseModel):
 
 
 class StartWorkflowPayload(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
     script: str = Field(
         ..., description="Storyboard script content for the Director agent to process."
@@ -626,10 +626,6 @@ class StartWorkflowPayload(BaseModel):
     resolution: Optional[str] = Field(
         default=None,
         description="Optional override for render resolution in WIDTHxHEIGHT format.",
-    )
-    scene_image_dir: Optional[str] = Field(
-        default=None,
-        description="Optional override for the directory containing scene start screen images.",
     )
     use_scene_images: Optional[bool] = Field(
         default=None,
@@ -674,6 +670,11 @@ class StartWorkflowPayload(BaseModel):
             raise ValueError(
                 f"{self.video_provider.upper()} supports scene durations of {allowed_str} seconds."
             )
+        uploads = self.scene_images or []
+        if len(uploads) > 32:
+            raise ValueError("A maximum of 32 scene reference images can be uploaded per workflow.")
+        if self.generation_mode == "sequence" and len(uploads) > 1:
+            raise ValueError("Sequence mode accepts at most one uploaded reference image.")
         return self
 
 
@@ -722,6 +723,13 @@ class SingleVideoPayload(BaseModel):
             allowed_str = ", ".join(str(value) for value in allowed)
             raise ValueError(
                 f"{self.video_provider.upper()} supports single clip durations of {allowed_str} seconds."
+            )
+        upload_count = len(self.reference_images or []) + (1 if self.reference_image else 0)
+        if upload_count > 4:
+            raise ValueError("A maximum of 4 reference images can be uploaded per request.")
+        if self.video_provider != "kling" and upload_count > 1:
+            raise ValueError(
+                f"{self.video_provider.upper()} supports at most one reference image per request."
             )
         return self
 

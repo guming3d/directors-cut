@@ -105,6 +105,12 @@ update_backend() {
   if [[ -n "${OPENAI_API_KEY:-}" ]]; then
     BACKEND_SECRETS+=("openai-api-key=$OPENAI_API_KEY")
   fi
+  if [[ -n "${SORA_WORKFLOW_PASSWORD:-}" ]]; then
+    BACKEND_SECRETS+=("sora-workflow-password=$SORA_WORKFLOW_PASSWORD")
+  fi
+  if [[ -n "${SORA_WORKFLOW_API_TOKEN:-}" ]]; then
+    BACKEND_SECRETS+=("sora-workflow-api-token=$SORA_WORKFLOW_API_TOKEN")
+  fi
   if [[ -n "${KLING_ACCESS_KEY:-}" ]]; then
     BACKEND_SECRETS+=("kling-access-key=$KLING_ACCESS_KEY")
   fi
@@ -139,7 +145,10 @@ update_backend() {
     --type external \
     --target-port 8000 >/dev/null
 
-  BACKEND_ENV_VARS=("AZURE_OPENAI_API_KEY=secretref:sora-openai-api-key")
+  BACKEND_ENV_VARS=(
+    "AZURE_OPENAI_API_KEY=secretref:sora-openai-api-key"
+    "SORA_WORKFLOW_REQUIRE_AUTH=${SORA_WORKFLOW_REQUIRE_AUTH:-1}"
+  )
   local -a optional_backend_envs=(
     AZURE_OPENAI_ENDPOINT
     ENDPOINT_URL
@@ -157,8 +166,11 @@ update_backend() {
     CONTENT_UNDERSTANDING_MAX_UPLOAD_MB
     CONTENT_UNDERSTANDING_POLL_INTERVAL
     CONTENT_UNDERSTANDING_POLL_TIMEOUT
+    JSON_IMAGE_MAX_UPLOAD_MB
+    SUBPROCESS_TIMEOUT_SECONDS
     SORA_WORKFLOW_ALLOWED_ORIGINS
     SORA_WORKFLOW_THREADS
+    SORA_WORKFLOW_USERNAME
     VIDEO_DOWNLOAD_VARIANT
     SORA_WORKFLOW_ALLOWED_LANGUAGES
     SORA_WORKFLOW_MODE
@@ -194,6 +206,12 @@ update_backend() {
   fi
   if [[ -n "${OPENAI_API_KEY:-}" ]]; then
     BACKEND_ENV_VARS+=("OPENAI_API_KEY=secretref:openai-api-key")
+  fi
+  if [[ -n "${SORA_WORKFLOW_PASSWORD:-}" ]]; then
+    BACKEND_ENV_VARS+=("SORA_WORKFLOW_PASSWORD=secretref:sora-workflow-password")
+  fi
+  if [[ -n "${SORA_WORKFLOW_API_TOKEN:-}" ]]; then
+    BACKEND_ENV_VARS+=("SORA_WORKFLOW_API_TOKEN=secretref:sora-workflow-api-token")
   fi
   if [[ -n "${AZURE_CONTENT_UNDERSTANDING_API_KEY:-}" ]]; then
     BACKEND_ENV_VARS+=("AZURE_CONTENT_UNDERSTANDING_API_KEY=secretref:content-understanding-api-key")

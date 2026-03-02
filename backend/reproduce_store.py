@@ -422,6 +422,7 @@ class VideoReproduceJobStore:
             job = self._require(job_id)
             job.status = "completed"
             job.progress = 1.0
+            job.error = None
             job.completed_at = utc_now()
             job.add_message("completed", "Video reproduce workflow finished.")
             self._persist(job)

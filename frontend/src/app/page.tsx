@@ -23,9 +23,8 @@ import {
 } from "@heroicons/react/24/outline";
 import Image from "next/image";
 import {
-  AUTH_PASSWORD,
+  AUTH_HEADER_STORAGE_KEY,
   AUTH_STORAGE_KEY,
-  AUTH_USERNAME,
   DEFAULT_WORKFLOW_PROMPT_TEMPLATE,
   IMAGE_GENERATOR_OPTIONS,
   REFERENCE_FRAME_OPTIONS,
@@ -107,6 +106,8 @@ export default function Home() {
 
   const [language, setLanguage] = useState<Language>("zh");
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authHeader, setAuthHeader] = useState<string | null>(null);
+  const [isAuthReady, setIsAuthReady] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [authError, setAuthError] = useState<string | null>(null);
@@ -157,6 +158,51 @@ export default function Home() {
       setApiBase(origin);
     }
   }, [apiBase]);
+
+  const clearAuthSession = useCallback(() => {
+    setIsAuthenticated(false);
+    setAuthHeader(null);
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem(AUTH_STORAGE_KEY);
+      window.localStorage.removeItem(AUTH_HEADER_STORAGE_KEY);
+    }
+  }, []);
+
+  const verifyAuthSession = useCallback(
+    async (header: string | null): Promise<{ ok: boolean; error?: string }> => {
+      try {
+        const headers = new Headers();
+        if (header) {
+          headers.set("Authorization", header);
+        }
+        const response = await fetch(`${apiBase}/api/auth/session`, { headers });
+        if (!response.ok) {
+          return { ok: false, error: "Invalid username or password." };
+        }
+        return { ok: true };
+      } catch (err) {
+        console.error(err);
+        return { ok: false, error: "Unable to contact backend authentication endpoint." };
+      }
+    },
+    [apiBase],
+  );
+
+  const apiFetch = useCallback(
+    async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const headers = new Headers(init?.headers ?? {});
+      if (authHeader && !headers.has("Authorization")) {
+        headers.set("Authorization", authHeader);
+      }
+      const response = await fetch(input, { ...init, headers });
+      if (response.status === 401) {
+        clearAuthSession();
+        setAuthError("Authentication required. Sign in again.");
+      }
+      return response;
+    },
+    [authHeader, clearAuthSession],
+  );
 
   // Combined workflow state
   const [script, setScript] = useState(DEFAULT_WORKFLOW_PROMPT_TEMPLATE);
@@ -234,7 +280,7 @@ export default function Home() {
       setWorkflowTemplateLoading(true);
       setWorkflowTemplateError(null);
       try {
-        const response = await fetch(
+        const response = await apiFetch(
           `${apiBase}/api/prompts/workflow?videoProvider=${encodeURIComponent(provider)}`,
         );
         if (!response.ok) {
@@ -254,7 +300,7 @@ export default function Home() {
         setWorkflowTemplateLoading(false);
       }
     },
-    [apiBase],
+    [apiBase, apiFetch],
   );
 
   // Video insight state
@@ -298,7 +344,7 @@ export default function Home() {
 
   const loadCombinedJobs = useCallback(async () => {
     try {
-      const response = await fetch(`${apiBase}/api/workflows`);
+      const response = await apiFetch(`${apiBase}/api/workflows`);
       if (!response.ok) {
         throw new Error(await response.text());
       }
@@ -332,11 +378,11 @@ export default function Home() {
         "Unable to load existing workflows. Start one below or verify the API URL.",
       );
     }
-  }, [apiBase]);
+  }, [apiBase, apiFetch]);
 
   const loadSingleJobs = useCallback(async () => {
     try {
-      const response = await fetch(`${apiBase}/api/single-videos`);
+      const response = await apiFetch(`${apiBase}/api/single-videos`);
       if (!response.ok) {
         throw new Error(await response.text());
       }
@@ -368,11 +414,11 @@ export default function Home() {
       console.error(err);
       setSingleError("Unable to load single-video jobs. Verify the API endpoint.");
     }
-  }, [apiBase]);
+  }, [apiBase, apiFetch]);
 
   const loadInsightJobs = useCallback(async () => {
     try {
-      const response = await fetch(`${apiBase}/api/video-insights`);
+      const response = await apiFetch(`${apiBase}/api/video-insights`);
       if (!response.ok) {
         throw new Error(await response.text());
       }
@@ -404,11 +450,11 @@ export default function Home() {
       console.error(err);
       setInsightError("Unable to load video insights. Verify the API endpoint.");
     }
-  }, [apiBase]);
+  }, [apiBase, apiFetch]);
 
   const loadReproduceJobs = useCallback(async () => {
     try {
-      const response = await fetch(`${apiBase}/api/reproduce`);
+      const response = await apiFetch(`${apiBase}/api/reproduce`);
       if (!response.ok) {
         throw new Error(await response.text());
       }
@@ -440,7 +486,7 @@ export default function Home() {
       console.error(err);
       setReproduceError("Unable to load reproduce jobs. Verify the API endpoint.");
     }
-  }, [apiBase]);
+  }, [apiBase, apiFetch]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -486,7 +532,7 @@ export default function Home() {
     let disposed = false;
     const fetchProvider = async () => {
       try {
-        const response = await fetch(`${apiBase}/api/providers/active`);
+        const response = await apiFetch(`${apiBase}/api/providers/active`);
         if (!response.ok) {
           throw new Error(await response.text());
         }
@@ -517,7 +563,7 @@ export default function Home() {
     return () => {
       disposed = true;
     };
-  }, [isAuthenticated, apiBase]);
+  }, [isAuthenticated, apiBase, apiFetch]);
 
   useEffect(() => {
     setWorkflowVideoProvider((current) => {
@@ -555,7 +601,7 @@ export default function Home() {
 
     const fetchStatus = async () => {
       try {
-        const response = await fetch(`${apiBase}/api/workflows/${activeJobId}`);
+        const response = await apiFetch(`${apiBase}/api/workflows/${activeJobId}`);
         if (!response.ok) {
           throw new Error(await response.text());
         }
@@ -596,7 +642,7 @@ export default function Home() {
         clearTimeout(timeout);
       }
     };
-  }, [activeJobId, isAuthenticated, apiBase]);
+  }, [activeJobId, isAuthenticated, apiBase, apiFetch]);
 
   useEffect(() => {
     setScenePromptEdits({});
@@ -691,7 +737,7 @@ export default function Home() {
 
     const fetchStatus = async () => {
       try {
-        const response = await fetch(`${apiBase}/api/single-videos/${activeSingleJobId}`);
+        const response = await apiFetch(`${apiBase}/api/single-videos/${activeSingleJobId}`);
         if (!response.ok) {
           throw new Error(await response.text());
         }
@@ -732,7 +778,7 @@ export default function Home() {
         clearInterval(interval);
       }
     };
-  }, [activeSingleJobId, isAuthenticated, apiBase]);
+  }, [activeSingleJobId, isAuthenticated, apiBase, apiFetch]);
 
   useEffect(() => {
     if (!activeInsightJobId || !isAuthenticated) return;
@@ -741,7 +787,7 @@ export default function Home() {
 
     const fetchStatus = async () => {
       try {
-        const response = await fetch(`${apiBase}/api/video-insights/${activeInsightJobId}`);
+        const response = await apiFetch(`${apiBase}/api/video-insights/${activeInsightJobId}`);
         if (!response.ok) {
           throw new Error(await response.text());
         }
@@ -775,7 +821,7 @@ export default function Home() {
         clearInterval(interval);
       }
     };
-  }, [activeInsightJobId, isAuthenticated, apiBase]);
+  }, [activeInsightJobId, isAuthenticated, apiBase, apiFetch]);
 
   useEffect(() => {
     if (!activeReproduceJobId || !isAuthenticated) return;
@@ -784,7 +830,7 @@ export default function Home() {
 
     const fetchStatus = async () => {
       try {
-        const response = await fetch(`${apiBase}/api/reproduce/${activeReproduceJobId}`);
+        const response = await apiFetch(`${apiBase}/api/reproduce/${activeReproduceJobId}`);
         if (!response.ok) {
           throw new Error(await response.text());
         }
@@ -822,7 +868,7 @@ export default function Home() {
         clearInterval(interval);
       }
     };
-  }, [activeReproduceJobId, isAuthenticated, apiBase]);
+  }, [activeReproduceJobId, isAuthenticated, apiBase, apiFetch]);
 
 
   const singleProgressPercent = useMemo(() => {
@@ -1011,31 +1057,63 @@ export default function Home() {
 
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const stored = window.localStorage.getItem(AUTH_STORAGE_KEY);
-    if (stored === "true") {
-      setIsAuthenticated(true);
-    }
-  }, []);
+    let canceled = false;
+    const bootstrapAuth = async () => {
+      if (typeof window === "undefined") {
+        if (!canceled) {
+          setIsAuthReady(true);
+        }
+        return;
+      }
+      const storedHeader = window.localStorage.getItem(AUTH_HEADER_STORAGE_KEY);
+      const result = await verifyAuthSession(storedHeader);
+      if (canceled) {
+        return;
+      }
+      if (result.ok) {
+        setIsAuthenticated(true);
+        setAuthHeader(storedHeader);
+        setAuthError(null);
+        window.localStorage.setItem(AUTH_STORAGE_KEY, "true");
+      } else {
+        clearAuthSession();
+        setAuthError(result.error ?? null);
+      }
+      setIsAuthReady(true);
+    };
+    void bootstrapAuth();
+    return () => {
+      canceled = true;
+    };
+  }, [clearAuthSession, verifyAuthSession]);
 
-  const handleLogin = (event: FormEvent<HTMLFormElement>) => {
+  const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (username.trim() === AUTH_USERNAME && password === AUTH_PASSWORD) {
+    const user = username.trim();
+    const secret = password;
+    if (!user || !secret) {
+      setAuthError("Enter username and password.");
+      return;
+    }
+    const encoded = typeof window !== "undefined" ? window.btoa(`${user}:${secret}`) : "";
+    const header = `Basic ${encoded}`;
+    const result = await verifyAuthSession(header);
+    if (result.ok) {
       setIsAuthenticated(true);
+      setAuthHeader(header);
       setAuthError(null);
       if (typeof window !== "undefined") {
         window.localStorage.setItem(AUTH_STORAGE_KEY, "true");
+        window.localStorage.setItem(AUTH_HEADER_STORAGE_KEY, header);
       }
     } else {
-      setAuthError("Invalid username or password.");
+      setAuthError(result.error ?? "Invalid username or password.");
     }
   };
 
   const handleLogout = () => {
-    setIsAuthenticated(false);
-    if (typeof window !== "undefined") {
-      window.localStorage.removeItem(AUTH_STORAGE_KEY);
-    }
+    clearAuthSession();
+    setAuthError(null);
     setUsername("");
     setPassword("");
     setActiveVideoProvider(null);
@@ -1105,7 +1183,7 @@ export default function Home() {
 
   const requestWorkflowRefinement = async (content: string, providerOverride?: string) => {
     const provider = providerOverride ?? workflowProviderSelection;
-    const response = await fetch(`${apiBase}/api/refine/workflow`, {
+    const response = await apiFetch(`${apiBase}/api/refine/workflow`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1121,7 +1199,7 @@ export default function Home() {
   };
 
   const requestSingleRefinement = async (content: string) => {
-    const response = await fetch(`${apiBase}/api/refine/single`, {
+    const response = await apiFetch(`${apiBase}/api/refine/single`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ prompt: content }),
@@ -1162,7 +1240,7 @@ export default function Home() {
     const previousRefinedText = refinementReview.refinedText;
     let templateUpdated = false;
     try {
-      const response = await fetch(`${apiBase}/api/prompts/workflow`, {
+      const response = await apiFetch(`${apiBase}/api/prompts/workflow`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ template: workflowTemplateDraft, videoProvider: provider }),
@@ -1228,7 +1306,7 @@ export default function Home() {
         payload.sceneImages = uploads;
       }
 
-      const response = await fetch(`${apiBase}/api/workflows`, {
+      const response = await apiFetch(`${apiBase}/api/workflows`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -1283,7 +1361,7 @@ export default function Home() {
         };
       }
 
-      const response = await fetch(`${apiBase}/api/single-videos`, {
+      const response = await apiFetch(`${apiBase}/api/single-videos`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -1323,7 +1401,7 @@ export default function Home() {
     setCombinedError(null);
     setRemixSubmitting((prev) => ({ ...prev, [sceneOrder]: true }));
     try {
-      const response = await fetch(`${apiBase}/api/workflows/${job.job_id}/scenes/${sceneOrder}/remix`, {
+      const response = await apiFetch(`${apiBase}/api/workflows/${job.job_id}/scenes/${sceneOrder}/remix`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt }),
@@ -1364,7 +1442,7 @@ export default function Home() {
     setSceneRegenerating((prev) => ({ ...prev, [sceneOrder]: true }));
     try {
       const hasOverride = Boolean(trimmedOverride);
-      const response = await fetch(`${apiBase}/api/workflows/${job.job_id}/scenes/${sceneOrder}/regenerate`, {
+      const response = await apiFetch(`${apiBase}/api/workflows/${job.job_id}/scenes/${sceneOrder}/regenerate`, {
         method: "POST",
         headers: hasOverride ? { "Content-Type": "application/json" } : undefined,
         body: hasOverride ? JSON.stringify({ prompt: trimmedOverride }) : undefined,
@@ -1401,7 +1479,7 @@ export default function Home() {
     setCombinedError(null);
     setSelectionSubmitting((prev) => ({ ...prev, [versionId]: true }));
     try {
-      const response = await fetch(`${apiBase}/api/workflows/${job.job_id}/scenes/${sceneOrder}/select`, {
+      const response = await apiFetch(`${apiBase}/api/workflows/${job.job_id}/scenes/${sceneOrder}/select`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ versionId }),
@@ -1424,7 +1502,7 @@ export default function Home() {
     setCombinedError(null);
     setIsRecomposing(true);
     try {
-      const response = await fetch(`${apiBase}/api/workflows/${job.job_id}/recompose`, {
+      const response = await apiFetch(`${apiBase}/api/workflows/${job.job_id}/recompose`, {
         method: "POST",
       });
       if (!response.ok) {
@@ -1479,7 +1557,7 @@ export default function Home() {
     setAssetDownloadError(null);
     setIsDownloadingAssets(true);
     try {
-      const response = await fetch(`${apiBase}/api/workflows/${job.job_id}/assets.zip`);
+      const response = await apiFetch(`${apiBase}/api/workflows/${job.job_id}/assets.zip`);
       if (!response.ok) {
         throw new Error(await response.text());
       }
@@ -1554,7 +1632,7 @@ export default function Home() {
       if (trimmedNotes) {
         formData.append("notes", trimmedNotes);
       }
-      const response = await fetch(`${apiBase}/api/video-insights`, {
+      const response = await apiFetch(`${apiBase}/api/video-insights`, {
         method: "POST",
         body: formData,
       });
@@ -1609,7 +1687,7 @@ export default function Home() {
       formData.append("imageGenerator", reproduceImageGenerator);
       formData.append("segmentationBackend", reproduceSegmentation);
       formData.append("frameReferenceMode", reproduceReferenceMode);
-      const response = await fetch(`${apiBase}/api/reproduce`, {
+      const response = await apiFetch(`${apiBase}/api/reproduce`, {
         method: "POST",
         body: formData,
       });
@@ -1650,7 +1728,7 @@ export default function Home() {
     let encounteredError: string | null = null;
     for (const jobId of selectedReproduceJobs) {
       try {
-        const response = await fetch(`${apiBase}/api/reproduce/${jobId}`, {
+        const response = await apiFetch(`${apiBase}/api/reproduce/${jobId}`, {
           method: "DELETE",
         });
         if (!response.ok) {
@@ -1667,7 +1745,7 @@ export default function Home() {
       setReproduceError(encounteredError);
     }
     await loadReproduceJobs();
-  }, [selectedReproduceJobs, apiBase, loadReproduceJobs]);
+  }, [selectedReproduceJobs, apiBase, loadReproduceJobs, apiFetch]);
 
   const handleSegmentPromptChange = (order: number, value: string) => {
     setSegmentPrompts((previous) => ({ ...previous, [order]: value }));
@@ -1684,7 +1762,7 @@ export default function Home() {
       setReproduceFormError(null);
       setRegeneratingSegment(order);
       try {
-        const response = await fetch(
+        const response = await apiFetch(
           `${apiBase}/api/reproduce/${reproduceJob.job_id}/segments/${order}/regenerate`,
           {
             method: "POST",
@@ -1716,7 +1794,7 @@ export default function Home() {
         await loadReproduceJobs();
       }
     },
-    [apiBase, reproduceJob, segmentPrompts, loadReproduceJobs],
+    [apiBase, reproduceJob, segmentPrompts, loadReproduceJobs, apiFetch],
   );
 
   const handleSingleRemixSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -1734,7 +1812,7 @@ export default function Home() {
     setSingleError(null);
     setSingleRemixSubmitting(true);
     try {
-      const response = await fetch(`${apiBase}/api/single-videos/${singleJob.job_id}/remix`, {
+      const response = await apiFetch(`${apiBase}/api/single-videos/${singleJob.job_id}/remix`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt: trimmed }),
@@ -1793,7 +1871,7 @@ export default function Home() {
     setSingleError(null);
     setSingleSelectionSubmitting((prev) => ({ ...prev, [versionId]: true }));
     try {
-      const response = await fetch(`${apiBase}/api/single-videos/${singleJob.job_id}/select`, {
+      const response = await apiFetch(`${apiBase}/api/single-videos/${singleJob.job_id}/select`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ versionId }),
@@ -1858,7 +1936,7 @@ export default function Home() {
     let deletionError: string | null = null;
     for (const jobId of Array.from(selectedCombinedJobs)) {
       try {
-        const response = await fetch(`${apiBase}/api/workflows/${jobId}`, {
+        const response = await apiFetch(`${apiBase}/api/workflows/${jobId}`, {
           method: "DELETE",
         });
         if (!response.ok) {
@@ -1883,7 +1961,7 @@ export default function Home() {
     let deletionError: string | null = null;
     for (const jobId of Array.from(selectedSingleJobs)) {
       try {
-        const response = await fetch(`${apiBase}/api/single-videos/${jobId}`, {
+        const response = await apiFetch(`${apiBase}/api/single-videos/${jobId}`, {
           method: "DELETE",
         });
         if (!response.ok) {
@@ -1908,7 +1986,7 @@ export default function Home() {
     await Promise.all(
       jobIds.map(async (jobId) => {
         try {
-          const response = await fetch(`${apiBase}/api/video-insights/${jobId}`, {
+          const response = await apiFetch(`${apiBase}/api/video-insights/${jobId}`, {
             method: "DELETE",
           });
           if (!response.ok) {
@@ -1929,6 +2007,14 @@ export default function Home() {
     await loadInsightJobs();
   };
 
+  if (!isAuthReady) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-950 px-4 py-10 text-slate-900 dark:text-slate-100">
+        <p className="text-sm text-slate-500 dark:text-slate-300">{translate("Checking session...")}</p>
+      </div>
+    );
+  }
+
   if (!isAuthenticated) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-950 px-4 py-10 text-slate-900 dark:text-slate-100">
@@ -1945,7 +2031,7 @@ export default function Home() {
           </div>
           <div className="space-y-2 text-center">
             <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{translate("Sign in to continue")}</h1>
-            <p className="text-sm text-slate-500 dark:text-slate-400">{translate("Use the provided username and password to access the dashboard.")}</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400">{translate("Use backend API credentials to access the dashboard.")}</p>
           </div>
           <form className="mt-6 space-y-4" onSubmit={handleLogin}>
             <div>

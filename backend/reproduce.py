@@ -293,8 +293,11 @@ async def regenerate_segment(job_id: str, order: int, prompt: str) -> None:
     final_video = await _render_final_video(job_id, job_dir)
     await VIDEO_REPRODUCE_STORE.set_final_video(job_id, str(final_video))
     if state.status == "failed":
+        await VIDEO_REPRODUCE_STORE.mark_completed(job_id)
         await VIDEO_REPRODUCE_STORE.add_message(
-            job_id, "running", "Queued re-run after failed segment regenerated."
+            job_id,
+            "completed",
+            "Recovered from failed state after segment regeneration and final video rebuild.",
         )
 
 
