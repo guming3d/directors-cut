@@ -137,6 +137,8 @@ def _workflow_state_to_record(job: WorkflowJobState) -> dict[str, Any]:
         "generation_mode": job.generation_mode,
         "scene_duration": job.scene_duration,
         "generate_ai_first_frame": job.generate_ai_first_frame,
+        "character_ref_paths": list(job.character_ref_paths),
+        "visual_style": job.visual_style,
     }
 
 
@@ -163,6 +165,8 @@ def _workflow_state_from_record(payload: dict[str, Any]) -> WorkflowJobState:
         generation_mode=payload.get("generation_mode", "parallel"),
         scene_duration=int(payload.get("scene_duration", SORA_CLIP_DURATION_SECONDS)),
         generate_ai_first_frame=bool(payload.get("generate_ai_first_frame", False)),
+        character_ref_paths=list(payload.get("character_ref_paths", [])),
+        visual_style=payload.get("visual_style", "3d_animation"),
     )
 
 
@@ -292,6 +296,12 @@ class WorkflowJobStore:
         async with self._lock:
             job = self._require(job_id)
             job.generate_ai_first_frame = enabled
+            self._persist(job)
+
+    async def update_character_refs(self, job_id: str, paths: list[str]) -> None:
+        async with self._lock:
+            job = self._require(job_id)
+            job.character_ref_paths = list(paths)
             self._persist(job)
 
     async def set_script(self, job_id: str, script_text: str, script_path: Optional[str] = None) -> None:
@@ -552,6 +562,8 @@ class WorkflowJobStore:
             generation_mode=job.generation_mode,
             scene_duration=job.scene_duration,
             generate_ai_first_frame=job.generate_ai_first_frame,
+            character_ref_paths=list(job.character_ref_paths),
+            visual_style=job.visual_style,
         )
 
     async def get_status(self, job_id: str) -> JobStatusResponse:

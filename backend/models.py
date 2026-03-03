@@ -32,6 +32,15 @@ from .config import (
 from .utils import utc_now
 
 
+@dataclass
+class CharacterReference:
+    """A character extracted from the storyboard with an optional reference image."""
+
+    name: str
+    description: str
+    image_path: Optional[str] = None
+
+
 class EncodedImagePayload(BaseModel):
     """Base64-encoded image sent from the frontend."""
 
@@ -129,6 +138,14 @@ class VideoWorkflowRequest(BaseModel):
         default=False,
         description="Indicates whether GPT-5 storyboard refinement was requested.",
     )
+    character_ref_dir: Optional[str] = Field(
+        default=None,
+        description="Directory to store generated character reference images.",
+    )
+    visual_style: str = Field(
+        default="3d_animation",
+        description="Visual style for all generated images and video.",
+    )
 
     @model_validator(mode="after")
     def validate_scene_duration(self) -> "VideoWorkflowRequest":
@@ -219,6 +236,8 @@ class WorkflowJobState:
     generation_mode: str = "parallel"
     scene_duration: int = SORA_CLIP_DURATION_SECONDS
     generate_ai_first_frame: bool = False
+    character_ref_paths: list[str] = field(default_factory=list)
+    visual_style: str = "3d_animation"
 
     def add_message(self, stage: str, text: str) -> None:
         self.messages.append(ProgressMessage(timestamp=utc_now(), stage=stage, text=text))
@@ -463,6 +482,8 @@ class JobStatusResponse(BaseModel):
     generation_mode: str = "parallel"
     scene_duration: int = SORA_CLIP_DURATION_SECONDS
     generate_ai_first_frame: bool = False
+    character_ref_paths: list[str] = Field(default_factory=list)
+    visual_style: str = "3d_animation"
 
 
 class SingleVideoVersionModel(BaseModel):
@@ -660,6 +681,11 @@ class StartWorkflowPayload(BaseModel):
         default=SORA_CLIP_DURATION_SECONDS,
         alias="sceneDuration",
         description="Scene runtime in seconds (Sora: 4/8/12, Kling/Jimeng: 5/10).",
+    )
+    visual_style: Literal["2d_animation", "3d_animation", "realistic"] = Field(
+        default="3d_animation",
+        alias="visualStyle",
+        description="Visual style for all generated images and video: 2d_animation, 3d_animation, or realistic.",
     )
 
     @model_validator(mode="after")
@@ -875,6 +901,7 @@ def get_active_single_version(job: SingleVideoJobState) -> Optional[SingleVideoV
 
 
 __all__ = [
+    "CharacterReference",
     "EncodedImagePayload",
     "JobMessageModel",
     "JobStatusResponse",

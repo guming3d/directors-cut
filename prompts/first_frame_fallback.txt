@@ -1,3 +1,3 @@
-Create a single still frame that opens the scene below. Match the $resolution resolution, keep characters consistent, and avoid motion blur. Lean into strong lighting and framing that sets the tone for the first second of the clip.
+Create a single still frame that opens the scene below. Match the $resolution resolution. Visual style: $visual_style. Keep characters visually consistent with any provided reference images, and avoid motion blur. Lean into strong lighting and framing that sets the tone for the first second of the clip.
 
 $prompt_text

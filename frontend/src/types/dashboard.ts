@@ -229,3 +229,5 @@ export type DurationOption = "4" | "5" | "8" | "10" | "12";
 export type ImageGeneratorOption = "gpt-image-1" | "kling" | "original";
 
 export type ReproduceSegmentationOption = "content_understanding" | "opencv";
+
+export type VisualStyle = "2d_animation" | "3d_animation" | "realistic";

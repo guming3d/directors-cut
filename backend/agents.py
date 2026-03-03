@@ -9,12 +9,15 @@ from typing import Optional, Sequence
 
 from agent_framework import Executor, WorkflowContext, handler
 
+from .characters import prepare_character_refs
 from .config import ROOT, SORA_TRANSIENT_RETRIES, logger
 from .first_frames import generate_first_frame_image
+from .prompts import get_visual_style_description
 from .images import prepare_scene_start_images, prepare_scene_tail_image
 from .kling import render_kling_clip
 from .jimeng import render_jimeng_clip
 from .models import (
+    CharacterReference,
     ScenePlan,
     ScenePlanBatch,
     SceneRender,
@@ -55,6 +58,9 @@ class DirectorAgent(Executor):
     async def _prepare_script_text(self, request: VideoWorkflowRequest) -> str:
         script_path = Path(request.script_path)
         raw_script = read_text(script_path)
+        style_desc = get_visual_style_description(request.visual_style)
+        style_instruction = f"IMPORTANT VISUAL STYLE: All scenes must use the following visual style consistently:\n{style_desc}\n\n"
+        raw_script = style_instruction + raw_script
         script_text, has_headers, used_refinement = await ensure_scene_headers(
             raw_script, request.refine_with_gpt5, request.video_provider
         )
@@ -173,6 +179,37 @@ class DirectorAgent(Executor):
                 f"Prepared {len(plans)} prompt file(s); scene start images disabled.",
                 progress=0.2,
             )
+        character_refs: list[CharacterReference] = []
+        if request.generate_ai_first_frame:
+            try:
+                await report_progress(
+                    request,
+                    "planning",
+                    "Extracting characters for visual consistency.",
+                )
+                char_ref_dir = Path(
+                    request.character_ref_dir
+                    or (Path(request.output_dir) / "character_refs")
+                )
+                character_refs = await prepare_character_refs(
+                    script_text, request.resolution, char_ref_dir, request.visual_style
+                )
+                ref_paths = [r.image_path for r in character_refs if r.image_path]
+                if character_refs:
+                    await report_progress(
+                        request,
+                        "planning",
+                        f"Generated {len(ref_paths)} character reference image(s) for {len(character_refs)} character(s).",
+                    )
+                    if request.job_id:
+                        await WORKFLOW_JOB_STORE.update_character_refs(request.job_id, ref_paths)
+                else:
+                    logger.info("No characters extracted from script; skipping character reference generation.")
+            except Exception as exc:
+                logger.warning("Character reference generation failed (non-fatal): %s", exc, exc_info=True)
+
+        await ctx.set_shared_state("character_refs", character_refs)
+
         total_assigned = sum(plan.duration_seconds for plan in plans)
         await ctx.set_shared_state("scene_manifest", plans)
         await ctx.set_shared_state("scene_images", scene_images)
@@ -196,12 +233,15 @@ class Sora2Agent(Executor):
     ) -> None:
         request: VideoWorkflowRequest = await ctx.get_shared_state("request")  # type: ignore
         scene_images: Sequence[str] = await ctx.get_shared_state("scene_images")  # type: ignore
+        character_refs: list[CharacterReference] = (
+            await ctx.get_shared_state("character_refs")
+        ) or []
         scenes_dir = Path(request.scenes_dir)
         scenes_dir.mkdir(parents=True, exist_ok=True)
         if request.generation_mode == "sequence":
-            renders = await self._render_sequence(batch, ctx, request, scenes_dir, scene_images)
+            renders = await self._render_sequence(batch, ctx, request, scenes_dir, scene_images, character_refs)
         else:
-            renders = await self._render_parallel(batch, ctx, request, scenes_dir, scene_images)
+            renders = await self._render_parallel(batch, ctx, request, scenes_dir, scene_images, character_refs)
 
         await ctx.send_message(
             SceneRenderBatch(
@@ -217,6 +257,7 @@ class Sora2Agent(Executor):
         request: VideoWorkflowRequest,
         scenes_dir: Path,
         scene_images: Sequence[str],
+        character_refs: list[CharacterReference] | None = None,
     ) -> list[SceneRender]:
         semaphore = asyncio.Semaphore(max(1, request.thread_count))
         provider_label = request.video_provider.upper()
@@ -232,7 +273,7 @@ class Sora2Agent(Executor):
         async def render_scene(plan: ScenePlan) -> tuple[str, ScenePlan | SceneRender, Exception | None]:
             async with semaphore:
                 try:
-                    render = await self._invoke_scene(plan, request, scenes_dir, scene_images)
+                    render = await self._invoke_scene(plan, request, scenes_dir, scene_images, character_refs=character_refs)
                     return ("ok", render, None)
                 except asyncio.CancelledError:  # pragma: no cover - propagation only
                     raise
@@ -283,6 +324,7 @@ class Sora2Agent(Executor):
         request: VideoWorkflowRequest,
         scenes_dir: Path,
         scene_images: Sequence[str],
+        character_refs: list[CharacterReference] | None = None,
     ) -> list[SceneRender]:
         provider_label = request.video_provider.upper()
         await report_progress(
@@ -304,6 +346,7 @@ class Sora2Agent(Executor):
                     scenes_dir,
                     scene_images,
                     reference_override=next_reference,
+                    character_refs=character_refs,
                 )
                 renders.append(render)
                 await record_scene_completion(request, render)
@@ -347,6 +390,7 @@ class Sora2Agent(Executor):
         request: VideoWorkflowRequest,
         scene_images: Sequence[str],
         reference_override: Optional[str],
+        character_refs: list[CharacterReference] | None = None,
     ) -> tuple[Optional[str], Optional[str]]:
         input_reference = reference_override
         first_frame_path: Optional[str] = None
@@ -357,7 +401,9 @@ class Sora2Agent(Executor):
                 f"Generating AI first frame for {plan.label}.",
             )
             try:
-                first_frame_path = await generate_first_frame_image(plan, request)
+                first_frame_path = await generate_first_frame_image(
+                    plan, request, character_refs=character_refs
+                )
                 input_reference = first_frame_path
             except Exception as exc:
                 logger.error("First-frame generation failed for %s: %s", plan.label, exc)
@@ -379,12 +425,13 @@ class Sora2Agent(Executor):
         scenes_dir: Path,
         scene_images: Sequence[str],
         reference_override: Optional[str] = None,
+        character_refs: list[CharacterReference] | None = None,
     ) -> SceneRender:
         if request.video_provider == "kling":
-            return await self._invoke_kling(plan, request, scenes_dir, scene_images, reference_override)
+            return await self._invoke_kling(plan, request, scenes_dir, scene_images, reference_override, character_refs)
         if request.video_provider == "jimeng":
-            return await self._invoke_jimeng(plan, request, scenes_dir, scene_images, reference_override)
-        return await self._invoke_sora(plan, request, scenes_dir, scene_images, reference_override)
+            return await self._invoke_jimeng(plan, request, scenes_dir, scene_images, reference_override, character_refs)
+        return await self._invoke_sora(plan, request, scenes_dir, scene_images, reference_override, character_refs)
 
     async def _invoke_jimeng(
         self,
@@ -393,6 +440,7 @@ class Sora2Agent(Executor):
         scenes_dir: Path,
         scene_images: Sequence[str],
         reference_override: Optional[str] = None,
+        character_refs: list[CharacterReference] | None = None,
     ) -> SceneRender:
         scene_basename = f"scene_{plan.order:02d}.mp4"
         video_path = scenes_dir / scene_basename
@@ -403,7 +451,7 @@ class Sora2Agent(Executor):
         )
 
         input_reference, first_frame_path = await self._prepare_reference_image(
-            plan, request, scene_images, reference_override
+            plan, request, scene_images, reference_override, character_refs
         )
         result = await render_jimeng_clip(
             prompt_text=plan.prompt_text,
@@ -453,6 +501,7 @@ class Sora2Agent(Executor):
         scenes_dir: Path,
         scene_images: Sequence[str],
         reference_override: Optional[str] = None,
+        character_refs: list[CharacterReference] | None = None,
     ) -> SceneRender:
         scene_basename = f"scene_{plan.order:02d}.mp4"
         video_path = scenes_dir / scene_basename
@@ -483,7 +532,7 @@ class Sora2Agent(Executor):
         ]
 
         input_reference, first_frame_path = await self._prepare_reference_image(
-            plan, request, scene_images, reference_override
+            plan, request, scene_images, reference_override, character_refs
         )
         if input_reference:
             cmd.extend(["--input-image", input_reference])
@@ -538,6 +587,7 @@ class Sora2Agent(Executor):
         scenes_dir: Path,
         scene_images: Sequence[str],
         reference_override: Optional[str] = None,
+        character_refs: list[CharacterReference] | None = None,
     ) -> SceneRender:
         scene_basename = f"scene_{plan.order:02d}.mp4"
         video_path = scenes_dir / scene_basename
@@ -548,7 +598,7 @@ class Sora2Agent(Executor):
         )
 
         input_reference, first_frame_path = await self._prepare_reference_image(
-            plan, request, scene_images, reference_override
+            plan, request, scene_images, reference_override, character_refs
         )
         tail_reference: Optional[str] = None
         try:

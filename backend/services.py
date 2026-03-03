@@ -149,6 +149,8 @@ def prepare_request_for_job(job_id: str, payload: StartWorkflowPayload) -> Video
         )
         use_scene_images = False
 
+    character_ref_dir = job_dir / "character_refs"
+
     request = VideoWorkflowRequest(
         script_path=str(script_path),
         output_dir=str(job_dir),
@@ -170,6 +172,8 @@ def prepare_request_for_job(job_id: str, payload: StartWorkflowPayload) -> Video
         generate_ai_first_frame=generate_ai_first_frame,
         first_frame_dir=str(first_frame_dir),
         video_provider=video_provider,
+        character_ref_dir=str(character_ref_dir),
+        visual_style=payload.visual_style,
     )
     return request
 

@@ -31,4 +31,6 @@ Scene 2 kling prompt content
 Scene 3 kling prompt content
 ```
 
+IMPORTANT - Character Consistency: When multiple scenes feature the same character, describe that character with identical visual details (age, hair color/style, clothing, build, distinguishing features) in every scene prompt. Do NOT vary a character's appearance between scenes unless the script explicitly calls for a costume change. Repeat the full character description in each scene where they appear.
+
 Following is the Input script:

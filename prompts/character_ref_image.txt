@@ -1,0 +1,1 @@
+Character reference sheet for "$character_name". Full-body front-facing portrait on a plain neutral gray background. The character: $character_description. Visual style: $visual_style. Clean studio lighting, sharp focus, no motion blur. The image should serve as a visual reference for maintaining character consistency across multiple video scenes. Resolution: $resolution.

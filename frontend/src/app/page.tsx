@@ -32,6 +32,7 @@ import {
   SORA_DURATION_OPTIONS,
   TABS,
   VIDEO_PROVIDER_OPTIONS,
+  VISUAL_STYLE_OPTIONS,
   getDurationOptions,
   getImageGeneratorLabel,
   getReferenceModeLabel,
@@ -64,6 +65,7 @@ import {
   VideoInsightJob,
   VideoReproduceJob,
   VideoReproduceSegment,
+  VisualStyle,
 } from "@/types/dashboard";
 
 const RAW_API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "").replace(/\/$/, "");
@@ -211,6 +213,7 @@ export default function Home() {
   const [generationMode, setGenerationMode] = useState<"parallel" | "sequence">("parallel");
   const [combinedResolution, setCombinedResolution] = useState<(typeof resolutionOptions)[number]>(resolutionOptions[0]);
   const [sceneDuration, setSceneDuration] = useState<DurationOption>(SORA_DURATION_OPTIONS[1]);
+  const [visualStyle, setVisualStyle] = useState<VisualStyle>("3d_animation");
   const [sceneImageFiles, setSceneImageFiles] = useState<File[]>([]);
   const [sceneImagePreviews, setSceneImagePreviews] = useState<string[]>([]);
   const [jobs, setJobs] = useState<JobStatus[]>([]);
@@ -1295,6 +1298,7 @@ export default function Home() {
       payload.generationMode = generationMode;
       payload.refineWithGpt5 = shouldRefine;
       payload.sceneDuration = Number(sceneDuration);
+      payload.visualStyle = visualStyle;
       if (useSceneImages && sceneImageFiles.length) {
         const uploads = await Promise.all(
           sceneImageFiles.map(async (file) => ({
@@ -2332,6 +2336,34 @@ export default function Home() {
                     </option>
                   ))}
                 </select>
+              </div>
+              <div className="space-y-2">
+                <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Visual style")}</span>
+                <div className="flex gap-2">
+                  {VISUAL_STYLE_OPTIONS.map((option) => {
+                    const isActive = visualStyle === option.value;
+                    return (
+                      <label
+                        key={option.value}
+                        className={`flex-1 cursor-pointer rounded-md border px-3 py-2 text-center text-sm font-semibold transition ${
+                          isActive
+                            ? "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm"
+                            : "border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200"
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="visual-style"
+                          value={option.value}
+                          checked={isActive}
+                          onChange={() => setVisualStyle(option.value)}
+                          className="sr-only"
+                        />
+                        {translate(option.label)}
+                      </label>
+                    );
+                  })}
+                </div>
               </div>
               <div className="space-y-2">
                 <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Scene duration")}</span>

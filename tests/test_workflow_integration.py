@@ -42,6 +42,7 @@ async def test_workflow_runs_with_stubbed_agents(tmp_path, monkeypatch):
         scenes_dir: Path,
         scene_images,
         reference_override=None,
+        character_refs=None,
     ) -> SceneRender:
         scenes_dir.mkdir(parents=True, exist_ok=True)
         video_path = scenes_dir / f"scene_{plan.order:02d}.mp4"
@@ -115,6 +116,7 @@ async def test_skips_refinement_when_flag_disabled(tmp_path, monkeypatch):
         scenes_dir: Path,
         scene_images,
         reference_override=None,
+        character_refs=None,
     ) -> SceneRender:
         scenes_dir.mkdir(parents=True, exist_ok=True)
         video_path = scenes_dir / f"scene_{plan.order:02d}.mp4"

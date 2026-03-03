@@ -101,6 +101,33 @@ WORKFLOW_TEMPLATE_FILES = {
     "jimeng": PROMPT_TEMPLATE_DIR / "jimeng_prompt_generation.txt",
 }
 
+VISUAL_STYLE_DESCRIPTIONS: dict[str, str] = {
+    "2d_animation": (
+        "Rendered in vivid 2D cel-shaded animation style with bold outlines, flat color fills, "
+        "and hand-drawn textures. Use bright, saturated palettes with clean vector-like shapes. "
+        "Characters have expressive anime-influenced proportions."
+    ),
+    "3d_animation": (
+        "Rendered in high-quality 3D animation with soft, realistic lighting and depth of field. "
+        "Character design uses a blend of anime-style facial proportions with realistic textures "
+        "and lighting. Smooth subsurface scattering on skin, detailed hair strands, and subtle "
+        "ambient occlusion."
+    ),
+    "realistic": (
+        "Photorealistic live-action cinematography. Shot on digital cinema cameras with natural "
+        "lighting, accurate skin tones, real fabric textures, and physically correct depth of field. "
+        "No stylization — aim for documentary or feature-film realism."
+    ),
+}
+
+DEFAULT_VISUAL_STYLE = "3d_animation"
+
+
+def get_visual_style_description(style: str) -> str:
+    """Return the descriptive text for a visual style, falling back to the default."""
+    return VISUAL_STYLE_DESCRIPTIONS.get(style, VISUAL_STYLE_DESCRIPTIONS[DEFAULT_VISUAL_STYLE])
+
+
 STATIC_PROMPT_FILES = {
     "refine_scene_system": PROMPT_TEMPLATE_DIR / "refine_scene_system.txt",
     "refine_scene_user": PROMPT_TEMPLATE_DIR / "refine_scene_user.txt",
@@ -111,6 +138,8 @@ STATIC_PROMPT_FILES = {
     "first_frame_fallback": PROMPT_TEMPLATE_DIR / "first_frame_fallback.txt",
     "reproduce_segment": PROMPT_TEMPLATE_DIR / "reproduce_segment_prompt.txt",
     "reproduce_stylize": PROMPT_TEMPLATE_DIR / "reproduce_stylize_prompt.txt",
+    "character_extract_system": PROMPT_TEMPLATE_DIR / "character_extract_system.txt",
+    "character_ref_image": PROMPT_TEMPLATE_DIR / "character_ref_image.txt",
 }
 
 
@@ -233,11 +262,11 @@ async def refine_scene_description(title: str, description: str, duration: int) 
             input=[
                 {
                     "role": "system",
-                    "content": [{"type": "text", "text": system_prompt}],
+                    "content": [{"type": "input_text", "text": system_prompt}],
                 },
                 {
                     "role": "user",
-                    "content": [{"type": "text", "text": user_prompt}],
+                    "content": [{"type": "input_text", "text": user_prompt}],
                 }
             ],
             max_output_tokens=max_tokens,

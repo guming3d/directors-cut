@@ -5,6 +5,7 @@ import {
   ReferenceFrameMode,
   ReproduceSegmentationOption,
   TabId,
+  VisualStyle,
 } from "@/types/dashboard";
 import {
   ArrowPathIcon,
@@ -71,6 +72,12 @@ export const IMAGE_GENERATOR_OPTIONS: { value: ImageGeneratorOption; label: stri
 export const SEGMENTATION_OPTIONS: { value: ReproduceSegmentationOption; label: string }[] = [
   { value: "content_understanding", label: "Azure Content Understanding" },
   { value: "opencv", label: "OpenCV (PySceneDetect)" },
+];
+
+export const VISUAL_STYLE_OPTIONS: { value: VisualStyle; label: string }[] = [
+  { value: "3d_animation", label: "3D Animation" },
+  { value: "2d_animation", label: "2D Animation" },
+  { value: "realistic", label: "Realistic" },
 ];
 
 export const REFERENCE_FRAME_OPTIONS: { value: ReferenceFrameMode; label: string }[] = [
