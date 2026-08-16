@@ -105,11 +105,33 @@ update_backend() {
   if [[ -n "${OPENAI_API_KEY:-}" ]]; then
     BACKEND_SECRETS+=("openai-api-key=$OPENAI_API_KEY")
   fi
+  if [[ -n "${KLING_ACCESS_KEY:-}" ]]; then
+    BACKEND_SECRETS+=("kling-access-key=$KLING_ACCESS_KEY")
+  fi
+  if [[ -n "${KLING_SECRET_KEY:-}" ]]; then
+    BACKEND_SECRETS+=("kling-secret-key=$KLING_SECRET_KEY")
+  fi
+  if [[ -n "${KLING_API_KEY:-}" ]]; then
+    BACKEND_SECRETS+=("kling-api-key=$KLING_API_KEY")
+  fi
 
   az containerapp secret set \
     --name "$AZURE_CONTAINERAPPS_BACKEND" \
     --resource-group "$AZURE_RESOURCE_GROUP" \
     --secrets "${BACKEND_SECRETS[@]}" >/dev/null
+
+  az containerapp registry set \
+    --name "$AZURE_CONTAINERAPPS_BACKEND" \
+    --resource-group "$AZURE_RESOURCE_GROUP" \
+    --server "$REGISTRY_SERVER" \
+    --username "$REGISTRY_USERNAME" \
+    --password "$REGISTRY_PASSWORD" >/dev/null
+
+  az containerapp ingress update \
+    --name "$AZURE_CONTAINERAPPS_BACKEND" \
+    --resource-group "$AZURE_RESOURCE_GROUP" \
+    --type external \
+    --target-port 8000 >/dev/null
 
   BACKEND_ENV_VARS=("AZURE_OPENAI_API_KEY=secretref:sora-openai-api-key")
   [[ -n "${AZURE_OPENAI_ENDPOINT:-}" ]] && BACKEND_ENV_VARS+=("AZURE_OPENAI_ENDPOINT=$AZURE_OPENAI_ENDPOINT")
@@ -117,10 +139,29 @@ update_backend() {
   [[ -n "${DEPLOYMENT_NAME:-}" ]] && BACKEND_ENV_VARS+=("DEPLOYMENT_NAME=$DEPLOYMENT_NAME")
   [[ -n "${AZURE_OPENAI_CHAT_DEPLOYMENT_NAME:-}" ]] && BACKEND_ENV_VARS+=("AZURE_OPENAI_CHAT_DEPLOYMENT_NAME=$AZURE_OPENAI_CHAT_DEPLOYMENT_NAME")
   [[ -n "${AZURE_OPENAI_RESPONSES_DEPLOYMENT_NAME:-}" ]] && BACKEND_ENV_VARS+=("AZURE_OPENAI_RESPONSES_DEPLOYMENT_NAME=$AZURE_OPENAI_RESPONSES_DEPLOYMENT_NAME")
+  [[ -n "${AZURE_OPENAI_GPT5_DEPLOYMENT:-}" ]] && BACKEND_ENV_VARS+=("AZURE_OPENAI_GPT5_DEPLOYMENT=$AZURE_OPENAI_GPT5_DEPLOYMENT")
+  [[ -n "${AZURE_OPENAI_RESPONSES_DEPLOYMENT:-}" ]] && BACKEND_ENV_VARS+=("AZURE_OPENAI_RESPONSES_DEPLOYMENT=$AZURE_OPENAI_RESPONSES_DEPLOYMENT")
   [[ -n "${SORA_WORKFLOW_ALLOWED_ORIGINS:-}" ]] && BACKEND_ENV_VARS+=("SORA_WORKFLOW_ALLOWED_ORIGINS=$SORA_WORKFLOW_ALLOWED_ORIGINS")
   [[ -n "${SORA_WORKFLOW_THREADS:-}" ]] && BACKEND_ENV_VARS+=("SORA_WORKFLOW_THREADS=$SORA_WORKFLOW_THREADS")
   [[ -n "${VIDEO_DOWNLOAD_VARIANT:-}" ]] && BACKEND_ENV_VARS+=("VIDEO_DOWNLOAD_VARIANT=$VIDEO_DOWNLOAD_VARIANT")
   [[ -n "${AZURE_OPENAI_API_VERSION:-}" ]] && BACKEND_ENV_VARS+=("AZURE_OPENAI_API_VERSION=$AZURE_OPENAI_API_VERSION")
+  [[ -n "${KLING_API_BASE_URL:-}" ]] && BACKEND_ENV_VARS+=("KLING_API_BASE_URL=$KLING_API_BASE_URL")
+  [[ -n "${KLING_TOKEN_TTL:-}" ]] && BACKEND_ENV_VARS+=("KLING_TOKEN_TTL=$KLING_TOKEN_TTL")
+  [[ -n "${KLING_MODEL_NAME:-}" ]] && BACKEND_ENV_VARS+=("KLING_MODEL_NAME=$KLING_MODEL_NAME")
+  [[ -n "${KLING_MODE:-}" ]] && BACKEND_ENV_VARS+=("KLING_MODE=$KLING_MODE")
+  [[ -n "${KLING_CFG_SCALE:-}" ]] && BACKEND_ENV_VARS+=("KLING_CFG_SCALE=$KLING_CFG_SCALE")
+  [[ -n "${KLING_POLL_INTERVAL:-}" ]] && BACKEND_ENV_VARS+=("KLING_POLL_INTERVAL=$KLING_POLL_INTERVAL")
+  [[ -n "${KLING_POLL_TIMEOUT:-}" ]] && BACKEND_ENV_VARS+=("KLING_POLL_TIMEOUT=$KLING_POLL_TIMEOUT")
+  [[ -n "${KLING_DOWNLOAD_CHUNK_SIZE:-}" ]] && BACKEND_ENV_VARS+=("KLING_DOWNLOAD_CHUNK_SIZE=$KLING_DOWNLOAD_CHUNK_SIZE")
+  if [[ -n "${KLING_ACCESS_KEY:-}" ]]; then
+    BACKEND_ENV_VARS+=("KLING_ACCESS_KEY=secretref:kling-access-key")
+  fi
+  if [[ -n "${KLING_SECRET_KEY:-}" ]]; then
+    BACKEND_ENV_VARS+=("KLING_SECRET_KEY=secretref:kling-secret-key")
+  fi
+  if [[ -n "${KLING_API_KEY:-}" ]]; then
+    BACKEND_ENV_VARS+=("KLING_API_KEY=secretref:kling-api-key")
+  fi
   if [[ -n "${OPENAI_API_KEY:-}" ]]; then
     BACKEND_ENV_VARS+=("OPENAI_API_KEY=secretref:openai-api-key")
   fi
@@ -129,13 +170,8 @@ update_backend() {
     --name "$AZURE_CONTAINERAPPS_BACKEND" \
     --resource-group "$AZURE_RESOURCE_GROUP" \
     --image "$BACKEND_IMAGE" \
-    --target-port 8000 \
-    --ingress external \
     --min-replicas 1 \
     --max-replicas 2 \
-    --registry-server "$REGISTRY_SERVER" \
-    --registry-username "$REGISTRY_USERNAME" \
-    --registry-password "$REGISTRY_PASSWORD" \
     --cpu 2.0 \
     --memory 4Gi \
     --set-env-vars "${BACKEND_ENV_VARS[@]}" >/dev/null
@@ -155,17 +191,25 @@ update_frontend() {
     "$ROOT_DIR/frontend"
   docker push "$FRONTEND_IMAGE"
 
+  az containerapp registry set \
+    --name "$AZURE_CONTAINERAPPS_FRONTEND" \
+    --resource-group "$AZURE_RESOURCE_GROUP" \
+    --server "$REGISTRY_SERVER" \
+    --username "$REGISTRY_USERNAME" \
+    --password "$REGISTRY_PASSWORD" >/dev/null
+
+  az containerapp ingress update \
+    --name "$AZURE_CONTAINERAPPS_FRONTEND" \
+    --resource-group "$AZURE_RESOURCE_GROUP" \
+    --type external \
+    --target-port 3000 >/dev/null
+
   az containerapp update \
     --name "$AZURE_CONTAINERAPPS_FRONTEND" \
     --resource-group "$AZURE_RESOURCE_GROUP" \
     --image "$FRONTEND_IMAGE" \
-    --target-port 3000 \
-    --ingress external \
     --min-replicas 1 \
     --max-replicas 2 \
-    --registry-server "$REGISTRY_SERVER" \
-    --registry-username "$REGISTRY_USERNAME" \
-    --registry-password "$REGISTRY_PASSWORD" \
     --cpu 1.0 \
     --memory 2Gi \
     --set-env-vars "NEXT_PUBLIC_API_BASE_URL=$FRONTEND_API_BASE_URL" >/dev/null

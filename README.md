@@ -1,34 +1,50 @@
 # Sora Agent Workflow
 
-Full-stack toolkit for running the Azure Sora2 multi-agent video workflow with a FastAPI backend and a Next.js dashboard. The backend orchestrates the Director → Sora → Composer agents to generate per-scene clips, monitor progress, and stitch the final video. The frontend lets users paste storyboard scripts, launch jobs, and watch live status updates, scene previews, and the completed compilation.
+Full-stack toolkit for running the Azure Sora2/Kling multi-agent video workflow with a FastAPI backend and a Next.js dashboard. The backend orchestrates Director → Sora → Composer agents to generate per-scene clips, monitor progress, and stitch the final video. The frontend lets users paste storyboard scripts, launch jobs, and watch live status updates, scene previews, and the completed compilation.
 
 ## Prerequisites
 
 - Python 3.10+
 - Node.js 18.17+ (or 20+) and npm
 - `ffmpeg`/`ffprobe` available on your system `PATH`
-- Access to the Azure Sora/OpenAI credentials expected by `sora-openai-client.py`
+- Azure Sora/OpenAI credentials (and optional Kling credentials) expected by `sora-openai-client.py`
 - Optional environment variables:
   - `SORA_WORKFLOW_ALLOWED_ORIGINS` — comma-separated list of origins permitted by CORS
-  - `SORA_WORKFLOW_THREADS` — default concurrent Sora render jobs (fallback: `3`)
+  - `SORA_WORKFLOW_THREADS` — concurrent render jobs (default: `3`)
+  - `SORA_BLOCK_RETRIES` — retries for moderated scenes (default: `3`)
   - `VIDEO_DOWNLOAD_VARIANT` — override the variant name sent to the Sora client
+  - `VIDEO_PROVIDER` — `sora2` (default) or `kling` to choose the backend
 
-## Backend (FastAPI) Setup
+## Project layout
 
-```bash
-cd /home/minggu/projects_code/sora2-workflow-agent
-python -m venv .venv
-source .venv/bin/activate
-pip install -U agent_framework openai python-dotenv pillow fastapi uvicorn[standard]
-```
+- `sora_agent_workflow.py`: CLI entrypoint and FastAPI application
+- `sora-openai-client.py`: direct Sora client for single renders
+- `sora_workflow/`: core agents, services, prompts, and configuration
+- `frontend/`: Next.js dashboard (app router, TypeScript)
+- `Chapters/`: storyboard script samples
+- `scene_start_screen/` and `images_references/`: optional start and reference images for scenes
+- `output/`: generated clips, logs, manifests, and TinyDB state (not committed)
 
-Run the workflow API:
+## Backend setup and usage
 
-```bash
-uvicorn sora_agent_workflow:fastapi_app --host 0.0.0.0 --port 8000
-```
+1. Create a virtual environment and install dependencies:
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate
+   pip install -r requirements.txt
+   ```
+2. Copy `.env.example` to `.env` and supply your credentials (Azure/OpenAI keys, `SORA_WORKFLOW_ALLOWED_ORIGINS`, `VIDEO_PROVIDER`, and optionally Kling values such as `KLING_API_BASE_URL`, `KLING_ACCESS_KEY`, and `KLING_SECRET_KEY`).
+3. Start the FastAPI service:
+   ```bash
+   uvicorn sora_agent_workflow:fastapi_app --host 0.0.0.0 --port 8000
+   ```
+4. Generated artifacts live under `output/<job_id>/` and are served via `/static/...`.
 
-Key routes:
+### Switching between Sora2 and Kling
+
+Set `VIDEO_PROVIDER=sora2` (default) or `VIDEO_PROVIDER=kling` to pick the backend. For Kling, configure `KLING_API_BASE_URL`, `KLING_ACCESS_KEY`, and `KLING_SECRET_KEY`; optional knobs (`KLING_MODEL_NAME`, `KLING_MODE`, `KLING_CFG_SCALE`, `KLING_POLL_INTERVAL`, `KLING_POLL_TIMEOUT`, `KLING_TOKEN_TTL`, legacy `KLING_API_KEY`) remain available. Run `python verify_kling_token.py` to confirm your token setup and expiration. Kling image-to-video runs can include optional `scene1_tail.png`, `scene2_tail.png`, etc., in `scene_start_screen/` to guide the final frame.
+
+### Available API routes
 
 - `POST /api/workflows` — start a new video job with a storyboard script
 - `GET /api/workflows` — list recent jobs with progress snapshots
@@ -36,55 +52,63 @@ Key routes:
 - `POST /api/workflows/{job_id}/scenes/{scene_order}/remix` — remix a completed scene by supplying a new prompt against the previous Azure video ID
 - `POST /api/workflows/{job_id}/scenes/{scene_order}/select` — choose which scene version should be used when composing the final cut
 - `POST /api/workflows/{job_id}/recompose` — regenerate the final video using the currently selected scene versions
+- `GET /api/providers/active` — report the default backend (`sora2` or `kling`) configured for new workloads
 - `GET /static/...` — static hosting of generated assets (final video, scene clips, logs)
 
-Generated artifacts are stored under `output/<job_id>/`.
+## Frontend setup and usage
 
-## Frontend (Next.js) Setup
+1. Install dependencies:
+   ```bash
+   cd frontend
+   npm install
+   ```
+2. Create `frontend/.env.local` with your backend URL (adjust host/port as needed):
+   ```bash
+   NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000
+   ```
+3. Start the dev server:
+   ```bash
+   npm run dev
+   ```
+   Open http://localhost:3000/ to access the dashboard. The app automatically polls the API for new and in-progress jobs.
+4. For production builds:
+   ```bash
+   npm run build
+   npm run start
+   ```
 
+## Typical workflow
+
+1. Prepare a storyboard file (e.g., `Chapters/video_script.txt`) using `**Scene N (Title)**` headings.
+2. Optionally add start-frame images under `scene_start_screen/scene#.png` and reference images under `images_references/`.
+3. Start the FastAPI service and the frontend dev server.
+4. Paste your storyboard into the dashboard, choose `Parallel` or `Sequence` mode (sequence chains scenes via last-frame references), and launch the job.
+5. Monitor progress in the UI: plan, render, and compose phases update in real time. Remix individual scenes, pick preferred versions, and regenerate the final MP4 directly from the dashboard.
+
+## Testing
+
+Run the backend tests from the repo root:
 ```bash
-cd /home/minggu/projects_code/sora2-workflow-agent/frontend
+pytest -q
 ```
 
-Create a `.env.local` with the backend URL (adjust host/port as needed):
+## Deployment (Azure Container Apps)
 
-```bash
-NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000
-```
-
-Install dependencies (if not already installed) and launch the dev server:
-
-```bash
-npm install
-npm run dev
-```
-
-Then open http://localhost:3000/ to access the dashboard. The app will automatically poll the configured API for new and in-progress jobs.
-
-For production builds:
-
-```bash
-npm run build
-npm run start
-```
-
-## Typical Workflow
-
-1. Start the FastAPI service (`uvicorn ...` command above).
-2. Ensure your Azure/OpenAI credentials and any required environment variables for `sora-openai-client.py` are set.
-3. Run the Next.js UI (`npm run dev`) and paste a storyboard script using `**Scene N (Title)**` style headings.
-4. Choose `Parallel` or `Sequence` mode before launching: sequence mode seeds the first scene with a single image and chains the remaining scenes via last-frame references for tighter continuity.
-5. Monitor progress in the dashboard: planning, rendering, and composing phases update in real time; remix individual scenes, pick the preferred version, and regenerate the final MP4 directly from the UI.
-
-## Azure Container Apps Deployment
-
-1. Populate `.env` (or `.env.example`) with your Azure subscription ID, target region, and preferred resource names. The sample values in `.env` already use a single container registry (`soraworkflowacr9321`) and matching Container App names you can reuse.
-2. Run `./deploy.sh` from the repo root to provision the resource group, registry, Container Apps environment, and both frontend/backend apps in the specified registry. The script builds the Docker images locally, pushes them to the registry, and wires secrets/CORS automatically.
-3. Use `./update.sh` to roll out new images. Supply `--component backend` or `--component frontend` to limit the update, or `--image-tag mytag` to pin a custom tag (defaults to the current Git SHA fallback timestamp).
-4. After deployment, the script prints the externally reachable FQDNs for both services so you can verify them inside the Azure portal or hit them directly.
+1. Populate `.env` with your Azure subscription ID, target region, registry, and Container App names. Sample values are included in `.env.example`.
+2. Deploy both frontend and backend:
+   ```bash
+   ./deploy.sh
+   ```
+3. Roll out new images when updating:
+   ```bash
+   ./update.sh
+   ```
+   Use `--component backend` or `--component frontend` to limit the update, or `--image-tag <tag>` to override the default tag (current Git SHA fallback timestamp).
 
 ## Troubleshooting
 
-- Missing clips or prompts usually indicate misformatted script headers; verify they follow `**Scene 1 (Title)**` syntax.
-- If the UI cannot reach the backend, confirm `NEXT_PUBLIC_API_BASE_URL` points to the FastAPI origin and CORS allows the frontend host.
-- Scene rendering requires the prepared `scene_start_screen/scene#.png` assets; the workflow will fail if counts mismatch.
+- Misformatted storyboard headers (not matching `**Scene 1 (Title)**`) often cause missing clips or prompts.
+- If the UI cannot reach the backend, confirm `NEXT_PUBLIC_API_BASE_URL` and CORS (`SORA_WORKFLOW_ALLOWED_ORIGINS`).
+- Ensure `scene_start_screen/scene#.png` assets exist when using sequence mode; mismatched counts will fail the workflow.
+- Moderation blocks are retried up to `SORA_BLOCK_RETRIES`; regenerate a scene or use **Compose Available Scenes** to stitch completed clips.
+- Kling errors that reference `/v1/videos/...` usually mean missing keys, token lifetime, or base URL. Verify credentials with `python verify_kling_token.py`. Remix actions stay disabled for Kling—use regenerate instead and provide optional `_tail` images for final-frame guidance.

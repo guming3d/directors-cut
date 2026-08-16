@@ -2,3 +2,6 @@ frontend/node_modules/
 .env
 output/
 __pycache__/
+Chapters/
+images_references/
+
