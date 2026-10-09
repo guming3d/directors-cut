@@ -71,7 +71,7 @@ class AzureImageGenerator:
                     prompt=prompt,
                     image=fh,
                     size=azure_size,
-                    input_fidelity="high",
+                    # gpt-image-2.5 rejects input_fidelity (HTTP 400), so it is not sent.
                     background="auto",
                 )
             data = getattr(response, "data", None) or []

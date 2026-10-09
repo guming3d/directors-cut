@@ -49,3 +49,34 @@ def test_text_client_uses_openai_v1_client_for_foundry_endpoint(monkeypatch):
     client = config.azure_text_client()
 
     assert type(client) is OpenAI
+
+
+def test_image_edit_omits_input_fidelity_unsupported_by_gpt_image_2_5(monkeypatch, tmp_path):
+    import asyncio
+    import base64
+    import io
+
+    from PIL import Image
+
+    from backend import image_generation
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (1024, 1536)).save(buffer, format="PNG")
+    payload = base64.b64encode(buffer.getvalue()).decode()
+    calls: list[dict] = []
+
+    class _Images:
+        def edit(self, **kwargs):
+            calls.append(kwargs)
+            return type("R", (), {"data": [type("D", (), {"b64_json": payload})()]})()
+
+    class _Client:
+        images = _Images()
+
+    monkeypatch.setattr(image_generation, "azure_image_client", lambda: _Client())
+    source = tmp_path / "frame.png"
+    source.write_bytes(buffer.getvalue())
+
+    asyncio.run(AzureImageGenerator().generate(prompt="restyle", resolution="720x1280", image_path=source))
+
+    assert "input_fidelity" not in calls[0]
