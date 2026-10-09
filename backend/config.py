@@ -167,7 +167,7 @@ try:
 except ValueError:
     _kling_token_ttl = 1800
 KLING_TOKEN_TTL_SECONDS = max(300, _kling_token_ttl)
-KLING_DEFAULT_MODEL_NAME = os.getenv("KLING_MODEL_NAME", "kling-v1")
+KLING_DEFAULT_MODEL_NAME = os.getenv("KLING_MODEL_NAME") or "kling-v3"
 KLING_DEFAULT_MODE = os.getenv("KLING_MODE", "std")
 KLING_POLL_INTERVAL_SECONDS = max(1.0, _float_env("KLING_POLL_INTERVAL", "3"))
 KLING_POLL_TIMEOUT_SECONDS = max(60.0, _float_env("KLING_POLL_TIMEOUT", "900"))
