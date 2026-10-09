@@ -109,7 +109,6 @@ export const zhTranslations: Record<string, string> = {
   "Since session start": "自会话开始以来",
   "Select workflows": "选择工作流",
   "Selected": "已选择",
-  "Some scenes finished before an error. Compose the available clips or regenerate blocked scenes, then try again.": "部分场景完成后出现错误。可先合成已完成的片段，或重新生成被阻止的场景后再试。",
   "Sequence": "串行",
   "Sign in to continue": "登录以继续",
   "Sign in": "登录",

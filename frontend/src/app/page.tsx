@@ -3044,14 +3044,6 @@ export default function Home() {
                       {translate(finalVideoUrl ? "Regenerate Final Video" : "Compose Available Scenes")}
                     </button>
                   </div>
-                  {!finalVideoUrl && (
-                    <div className="flex items-center gap-2 rounded-md border border-amber-200 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
-                      <ExclamationTriangleIcon className="h-4 w-4" />
-                      {translate(
-                        "Some scenes finished before an error. Compose the available clips or regenerate blocked scenes, then try again.",
-                      )}
-                    </div>
-                  )}
                   {finalVideoUrl ? (
                     <>
                       <video
