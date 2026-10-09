@@ -9,6 +9,7 @@ pillow>=10.4.0
 scenedetect>=0.6.7.1
 opencv-python-headless>=4.10.0
 PyJWT>=2.9.0
+azure-identity>=1.19
 boto3>=1.36
 python-dotenv>=1.0.1
 uvicorn[standard]>=0.31.0

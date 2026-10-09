@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import re
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Awaitable, Callable, Optional
 
 from dotenv import load_dotenv
 from openai import AsyncOpenAI, AzureOpenAI, OpenAI
@@ -304,6 +305,15 @@ FOUNDRY_IMAGE_ENDPOINT = (
 FOUNDRY_IMAGE_API_KEY = os.getenv("FOUNDRY_GPT_IMAGE_API_KEY")
 AZURE_IMAGE_DEPLOYMENT = os.getenv("FOUNDRY_GPT_IMAGE_DEPLOYMENT") or "gpt-image-2.5-sunburst"
 FOUNDRY_IMAGE_TIMEOUT_SECONDS = max(30.0, _float_env("FOUNDRY_GPT_IMAGE_TIMEOUT", "300"))
+# How the Sora resource is called: "key" sends AZURE_OPENAI_API_KEY; "entra"
+# signs in with Microsoft Entra ID (az login locally, managed identity in Azure).
+# Use "entra" when key-based authentication is disabled on the resource.
+SUPPORTED_AZURE_OPENAI_AUTH_MODES = ("key", "entra")
+_azure_openai_auth_env = (os.getenv("AZURE_OPENAI_AUTH") or "key").strip().lower()
+AZURE_OPENAI_AUTH = (
+    _azure_openai_auth_env if _azure_openai_auth_env in SUPPORTED_AZURE_OPENAI_AUTH_MODES else "key"
+)
+AZURE_OPENAI_ENTRA_SCOPE = "https://cognitiveservices.azure.com/.default"
 _TEXT_CLIENT: AzureOpenAI | OpenAI | None = None
 _VIDEO_CLIENT: AsyncOpenAI | None = None
 _IMAGE_CLIENT: OpenAI | None = None
@@ -386,17 +396,40 @@ def azure_text_client() -> AzureOpenAI | OpenAI | None:
     return client
 
 
+def entra_token_provider() -> Callable[[], Awaitable[str]]:
+    """Return an async Entra ID bearer-token provider for Azure OpenAI.
+
+    Uses the sync credential (requests transport) in a worker thread, so no
+    async HTTP stack is needed. Tokens are cached and refreshed by azure-identity.
+    """
+
+    from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+
+    sync_provider = get_bearer_token_provider(DefaultAzureCredential(), AZURE_OPENAI_ENTRA_SCOPE)
+
+    async def provider() -> str:
+        return await asyncio.to_thread(sync_provider)
+
+    return provider
+
+
 def video_client() -> AsyncOpenAI:
     global _VIDEO_CLIENT  # type: ignore[assignment]
     if _VIDEO_CLIENT is not None:
         return _VIDEO_CLIENT
     endpoint = (os.getenv("ENDPOINT_URL") or os.getenv("AZURE_OPENAI_ENDPOINT") or "").rstrip("/")
-    api_key = os.getenv("AZURE_OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
     if not endpoint:
         raise RuntimeError("Configure ENDPOINT_URL or AZURE_OPENAI_ENDPOINT before using remix features.")
-    if not api_key:
-        raise RuntimeError("Configure AZURE_OPENAI_API_KEY or OPENAI_API_KEY before using remix features.")
-    _VIDEO_CLIENT = AsyncOpenAI(api_key=api_key, base_url=f"{endpoint}/openai/v1/", timeout=900.0)
+    if AZURE_OPENAI_AUTH == "entra":
+        credential: str | Callable[[], Awaitable[str]] = entra_token_provider()
+    else:
+        api_key = os.getenv("AZURE_OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise RuntimeError(
+                "Configure AZURE_OPENAI_API_KEY (or set AZURE_OPENAI_AUTH=entra) before using remix features."
+            )
+        credential = api_key
+    _VIDEO_CLIENT = AsyncOpenAI(api_key=credential, base_url=f"{endpoint}/openai/v1/", timeout=900.0)
     return _VIDEO_CLIENT
 
 
@@ -491,6 +524,8 @@ __all__ = [
     "AZURE_CONTENT_UNDERSTANDING_API_VERSION",
     "AZURE_CONTENT_UNDERSTANDING_ENDPOINT",
     "AZURE_IMAGE_DEPLOYMENT",
+    "AZURE_OPENAI_AUTH",
+    "AZURE_OPENAI_ENTRA_SCOPE",
     "AZURE_TEXT_API_KEY",
     "AZURE_TEXT_API_VERSION",
     "AZURE_TEXT_ENDPOINT",
@@ -594,6 +629,7 @@ __all__ = [
     "allowed_origins",
     "azure_image_client",
     "azure_text_client",
+    "entra_token_provider",
     "extract_response_text",
     "logger",
     "normalize_image_generator",

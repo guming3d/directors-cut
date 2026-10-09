@@ -98,3 +98,32 @@ async def test_run_sora_subprocess_raises_actionable_moderation_error(monkeypatc
     exc = exc_info.value
     assert exc.failure.category == "moderation"
     assert "content safety" in str(exc)
+
+
+KEY_AUTH_DISABLED_OUTPUT = (
+    "Command /usr/bin/python backend/sora-openai-client.py --prompt-file output/x/prompts/scene_01.txt failed\n"
+    "STDERR:\nTraceback (most recent call last):\n"
+    '  File "backend/sora-openai-client.py", line 209, in main\n'
+    "openai.PermissionDeniedError: Error code: 403 - {'error': {'code': 'AuthenticationTypeDisabled', "
+    "'message': 'Key based authentication is disabled for this resource.'}}"
+)
+
+
+def test_classify_sora_failure_detects_disabled_key_auth() -> None:
+    failure = classify_sora_failure(KEY_AUTH_DISABLED_OUTPUT)
+
+    assert failure.category == "key_auth_disabled"
+
+
+def test_disabled_key_auth_message_points_to_entra_setting() -> None:
+    from backend.provider_errors import format_sora_failure_message
+
+    message = format_sora_failure_message("Scene 1", classify_sora_failure(KEY_AUTH_DISABLED_OUTPUT), attempts=1)
+
+    assert "AZURE_OPENAI_AUTH=entra" in message
+
+
+def test_failure_excerpt_shows_provider_error_not_command_line() -> None:
+    failure = classify_sora_failure(KEY_AUTH_DISABLED_OUTPUT)
+
+    assert failure.excerpt.startswith("openai.PermissionDeniedError: Error code: 403")

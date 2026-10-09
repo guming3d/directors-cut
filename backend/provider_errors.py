@@ -28,6 +28,23 @@ def _truncate(value: str, limit: int = 220) -> str:
     return cleaned[: limit - 3] + "..."
 
 
+_ERROR_LINE_PATTERN = re.compile(r"(error|exception)\b", re.IGNORECASE)
+
+
+def _error_excerpt(text: str) -> str:
+    """Prefer the provider's last error line over the leading command text.
+
+    Subprocess failures start with the full command line, so a plain prefix
+    hides the actual provider message at the end of the traceback.
+    """
+
+    for line in reversed((text or "").splitlines()):
+        stripped = line.strip()
+        if _ERROR_LINE_PATTERN.search(stripped) and not stripped.startswith(("File ", "raise ", "Traceback")):
+            return _truncate(stripped)
+    return _truncate(text)
+
+
 def _extract_retry_after_seconds(text: str) -> Optional[float]:
     for pattern in _RETRY_AFTER_PATTERNS:
         match = pattern.search(text)
@@ -43,7 +60,7 @@ def _extract_retry_after_seconds(text: str) -> Optional[float]:
 def classify_sora_failure(*parts: str) -> ProviderFailure:
     combined = "\n".join(part for part in parts if part)
     lowered = combined.lower()
-    excerpt = _truncate(combined)
+    excerpt = _error_excerpt(combined)
     retry_after_seconds = _extract_retry_after_seconds(combined)
 
     moderation_markers = (
@@ -92,6 +109,15 @@ def classify_sora_failure(*parts: str) -> ProviderFailure:
             category="timeout",
             reason="request timed out while waiting for provider",
             retryable=True,
+            excerpt=excerpt,
+            retry_after_seconds=retry_after_seconds,
+        )
+
+    if "authenticationtypedisabled" in lowered or "key based authentication is disabled" in lowered:
+        return ProviderFailure(
+            category="key_auth_disabled",
+            reason="API key sign-in is disabled on this Azure resource",
+            retryable=False,
             excerpt=excerpt,
             retry_after_seconds=retry_after_seconds,
         )
@@ -181,6 +207,7 @@ def format_sora_failure_message(
         "timeout": "Retry the request; the provider did not finish in time.",
         "transient": "Retry shortly; this looks like a temporary provider/network issue.",
         "auth": "Check Azure endpoint, API key, and deployment permissions.",
+        "key_auth_disabled": "Set AZURE_OPENAI_AUTH=entra to sign in with Microsoft Entra ID instead of the API key.",
         "configuration": "Check required Sora environment configuration.",
         "unknown": "Review client logs for provider response details.",
     }

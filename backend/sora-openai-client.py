@@ -24,10 +24,30 @@ if not endpoint_raw:
     raise RuntimeError("Set ENDPOINT_URL or AZURE_OPENAI_ENDPOINT before running.")
 endpoint = endpoint_raw.rstrip("/")
 deployment = os.getenv("DEPLOYMENT_NAME", "sora-2")
+# "entra" signs in with Microsoft Entra ID (az login locally, managed identity in
+# Azure); needed when key-based authentication is disabled on the resource.
+auth_mode = (os.getenv("AZURE_OPENAI_AUTH") or "key").strip().lower()
 api_key = os.getenv("AZURE_OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
 
-if not api_key:
-    raise RuntimeError("Set AZURE_OPENAI_API_KEY or OPENAI_API_KEY before running.")
+if auth_mode != "entra" and not api_key:
+    raise RuntimeError(
+        "Set AZURE_OPENAI_API_KEY or OPENAI_API_KEY before running, or set AZURE_OPENAI_AUTH=entra."
+    )
+
+
+def _entra_token_provider():
+    """Async bearer-token provider backed by the sync DefaultAzureCredential."""
+
+    from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+
+    sync_provider = get_bearer_token_provider(
+        DefaultAzureCredential(), "https://cognitiveservices.azure.com/.default"
+    )
+
+    async def provider() -> str:
+        return await asyncio.to_thread(sync_provider)
+
+    return provider
 
 VIDEO_PROMPT = os.getenv(
     "VIDEO_PROMPT",
@@ -187,7 +207,7 @@ async def main() -> None:
         reference_path = resize_image_if_needed(reference_path, video_size)
 
     client = AsyncOpenAI(
-        api_key=api_key,
+        api_key=_entra_token_provider() if auth_mode == "entra" else api_key,
         base_url=f"{endpoint}/openai/v1/",
         timeout=900.0,
     )

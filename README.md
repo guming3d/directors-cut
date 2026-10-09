@@ -20,6 +20,10 @@ Set `VIDEO_PROVIDER` to `sora2` (default), `kling`, `jimeng`, or `seedance` to d
 
 For Seedance 2.5 (Volcengine Ark, model `doubao-seedance-2-5-260628`), set `ARK_API_KEY`. Clips can be 4, 5, 8, 10, or 12 seconds and include generated audio unless `SEEDANCE_GENERATE_AUDIO=false`. Ark only accepts reference images by URL, so start frames are uploaded to a public Cloudflare R2 bucket first: configure `R2_ACCOUNT_ID`, `R2_BUCKET`, `R2_PUBLIC_BASE_URL`, `R2_ACCESS_KEY_ID`, and `R2_SECRET_ACCESS_KEY` (uploaded frames become publicly readable). Seedance is billed per generated second and task creation is never retried automatically; use 4-second scenes while testing.
 
+### Azure sign-in for Sora
+
+If the Sora resource has key-based authentication disabled (calls fail with `AuthenticationTypeDisabled`), set `AZURE_OPENAI_AUTH=entra`. The Sora client and remix calls then sign in with Microsoft Entra ID through `DefaultAzureCredential`: your `az login` locally, or a managed identity in Azure. That identity needs the "Cognitive Services OpenAI User" role (or equivalent) on the resource.
+
 ### Models
 
 All text and vision reasoning (storyboard refinement, scene splitting, first-frame prompts, character extraction, segment descriptions) uses `AZURE_OPENAI_REASONING_DEPLOYMENT` (default `gpt-6.1-sol`) with `reasoning.effort=medium`; set `AZURE_OPENAI_REASONING_ENDPOINT`/`AZURE_OPENAI_REASONING_API_KEY` if it lives on a different resource than Sora. When a workflow script has no `**Scene N (Title)**` headers, the reasoning model inserts them automatically and the pipeline continues. Images come from the Foundry `gpt-image-2.5-sunburst` deployment (`FOUNDRY_GPT_IMAGE_ENDPOINT`, `FOUNDRY_GPT_IMAGE_API_KEY`).

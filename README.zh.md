@@ -57,6 +57,8 @@
 
 使用 Seedance 2.5（火山方舟，模型 `doubao-seedance-2-5-260628`）时需设置 `ARK_API_KEY`，支持 4/5/8/10/12 秒，默认生成音频（`SEEDANCE_GENERATE_AUDIO=false` 可关闭）。方舟仅接受 URL 形式的参考图，因此首帧会先上传到公开的 Cloudflare R2 存储桶，需配置 `R2_ACCOUNT_ID`、`R2_BUCKET`、`R2_PUBLIC_BASE_URL`、`R2_ACCESS_KEY_ID`、`R2_SECRET_ACCESS_KEY`（上传的帧会公开可读）。Seedance 按生成秒数计费，创建任务不会自动重试，测试时请使用 4 秒场景。
 
+若 Sora 资源禁用了密钥认证（报错 `AuthenticationTypeDisabled`），请设置 `AZURE_OPENAI_AUTH=entra`，Sora 生成与 remix 将通过 `DefaultAzureCredential` 使用 Microsoft Entra ID 登录（本地使用 `az login`，Azure 中使用托管标识），该标识需在资源上具有 “Cognitive Services OpenAI User” 或同等角色。
+
 文本与视觉推理统一使用 `AZURE_OPENAI_REASONING_DEPLOYMENT`（默认 `gpt-6.1-sol`，`reasoning.effort=medium`）；若部署在其他资源上，可设置 `AZURE_OPENAI_REASONING_ENDPOINT`/`AZURE_OPENAI_REASONING_API_KEY`。剧本缺少 `**Scene N (Title)**` 场景标题时，推理模型会自动补充后继续执行。图像生成使用 Foundry `gpt-image-2.5-sunburst` 部署（`FOUNDRY_GPT_IMAGE_ENDPOINT`、`FOUNDRY_GPT_IMAGE_API_KEY`）。
 
 ### API 路由

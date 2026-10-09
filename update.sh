@@ -166,6 +166,7 @@ update_backend() {
   )
   local -a optional_backend_envs=(
     AZURE_OPENAI_ENDPOINT
+    AZURE_OPENAI_AUTH
     ENDPOINT_URL
     DEPLOYMENT_NAME
     AZURE_OPENAI_CHAT_DEPLOYMENT_NAME

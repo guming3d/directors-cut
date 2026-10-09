@@ -23,7 +23,9 @@ attrs==25.4.0
 azure-core==1.36.0
     # via azure-identity
 azure-identity==1.26.0b1
-    # via agent-framework-core
+    # via
+    #   -r requirements.txt
+    #   agent-framework-core
 boto3==1.42.0
     # via -r requirements.txt
 botocore==1.41.6
