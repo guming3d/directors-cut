@@ -35,12 +35,12 @@ from .config import (
     RESOLUTION_PATTERN,
     SINGLE_VIDEO_JOBS_DIR,
     STATIC_URL_PREFIX,
-    SUPPORTED_IMAGE_GENERATORS,
     SUPPORTED_REPRODUCE_REFERENCE_MODES,
     SUPPORTED_REPRODUCE_SEGMENTERS,
     SUPPORTED_VIDEO_PROVIDERS,
     allowed_origins,
     logger,
+    normalize_image_generator,
     normalize_video_provider,
 )
 from .models import (
@@ -65,7 +65,7 @@ from .models import (
 )
 from .prompts import (
     get_workflow_template_text,
-    refine_text_with_gpt5,
+    refine_text_with_llm,
     update_workflow_template_text,
 )
 from .content_insights.service import (
@@ -285,11 +285,11 @@ async def refine_workflow_script(payload: RefineWorkflowPayload) -> RefinedScrip
     if not script:
         raise HTTPException(status_code=400, detail="Script text is required for refinement.")
     try:
-        refined = await refine_text_with_gpt5(
+        refined = await refine_text_with_llm(
             script, mode="workflow", video_provider=payload.video_provider
         )
     except Exception as exc:  # pragma: no cover - defensive logging
-        logger.warning("GPT-5 refinement failed for workflow preview: %s", exc)
+        logger.warning("GPT-6.1-sol refinement failed for workflow preview: %s", exc)
         raise HTTPException(status_code=503, detail=f"Unable to refine script: {exc}") from exc
     cleaned = normalize_script_text(refined.strip() or script)
     return RefinedScriptResponse(refined_script=cleaned)
@@ -301,9 +301,9 @@ async def refine_single_prompt(payload: RefineSinglePayload) -> RefinedPromptRes
     if not prompt:
         raise HTTPException(status_code=400, detail="Prompt text is required for refinement.")
     try:
-        refined = await refine_text_with_gpt5(prompt, mode="single")
+        refined = await refine_text_with_llm(prompt, mode="single")
     except Exception as exc:  # pragma: no cover - defensive logging
-        logger.warning("GPT-5 refinement failed for single prompt preview: %s", exc)
+        logger.warning("GPT-6.1-sol refinement failed for single prompt preview: %s", exc)
         raise HTTPException(status_code=503, detail=f"Unable to refine prompt: {exc}") from exc
     final_prompt = refined.strip() or prompt
     return RefinedPromptResponse(refined_prompt=final_prompt)
@@ -354,10 +354,10 @@ async def start_workflow(payload: StartWorkflowPayload) -> JobStatusResponse:
         try:
             await refine_script_for_payload(payload)
             await WORKFLOW_JOB_STORE.add_message(
-                job_id, "planning", "Storyboard refined with GPT-5 before scene planning."
+                job_id, "planning", "Storyboard refined with GPT-6.1-sol before scene planning."
             )
         except Exception as exc:  # pragma: no cover - defensive logging
-            logger.warning("GPT-5 refinement failed for workflow %s: %s", job_id, exc)
+            logger.warning("GPT-6.1-sol refinement failed for workflow %s: %s", job_id, exc)
 
     try:
         request = prepare_request_for_job(job_id, payload)
@@ -447,9 +447,9 @@ async def start_single_video(payload: SingleVideoPayload) -> SingleVideoJobRespo
         raise HTTPException(status_code=400, detail="Prompt text is required.")
     if payload.refine_with_gpt5:
         try:
-            prompt_text = await refine_text_with_gpt5(prompt_text, mode="single")
+            prompt_text = await refine_text_with_llm(prompt_text, mode="single")
         except Exception as exc:  # pragma: no cover - defensive logging
-            logger.warning("GPT-5 prompt refinement failed for single job %s: %s", job_id, exc)
+            logger.warning("GPT-6.1-sol prompt refinement failed for single job %s: %s", job_id, exc)
         if prompt_text.strip():
             payload.prompt = prompt_text
         else:
@@ -485,7 +485,7 @@ async def start_single_video(payload: SingleVideoPayload) -> SingleVideoJobRespo
     )
     if payload.refine_with_gpt5:
         await SINGLE_VIDEO_STORE.add_message(
-            job_id, "queued", "Prompt refined with GPT-5 before submission."
+            job_id, "queued", "Prompt refined with GPT-6.1-sol before submission."
         )
 
     asyncio.create_task(run_single_video_job(config))
@@ -630,9 +630,7 @@ async def create_reproduce_job(
     except (TypeError, ValueError):
         threads = REPRODUCE_DEFAULT_THREADS
     threads = max(1, min(threads, 10))
-    requested_generator = (image_generator or DEFAULT_IMAGE_GENERATOR).strip().lower()
-    if requested_generator not in SUPPORTED_IMAGE_GENERATORS:
-        requested_generator = DEFAULT_IMAGE_GENERATOR
+    requested_generator = normalize_image_generator(image_generator, DEFAULT_IMAGE_GENERATOR)
     requested_segmentation = (
         (segmentation_backend or DEFAULT_REPRODUCE_SEGMENTATION).strip().lower()
     )

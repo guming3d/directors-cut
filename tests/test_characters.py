@@ -53,7 +53,6 @@ async def test_extract_characters_parses_json(monkeypatch):
         responses = _FakeResponses()
 
     monkeypatch.setattr(characters, "azure_text_client", lambda: _FakeClient())
-    monkeypatch.setattr(characters, "DIRECTOR_REFINEMENT_DEPLOYMENT", "test-deploy")
     monkeypatch.setattr(characters, "extract_response_text", lambda r: SAMPLE_EXTRACTION_RESPONSE)
 
     result = await extract_characters(SAMPLE_SCRIPT)
@@ -84,7 +83,6 @@ async def test_extract_characters_returns_empty_on_bad_json(monkeypatch):
         responses = _FakeResponses()
 
     monkeypatch.setattr(characters, "azure_text_client", lambda: _FakeClient())
-    monkeypatch.setattr(characters, "DIRECTOR_REFINEMENT_DEPLOYMENT", "test-deploy")
     monkeypatch.setattr(characters, "extract_response_text", lambda r: "not valid json {{{")
 
     result = await extract_characters(SAMPLE_SCRIPT)
@@ -103,7 +101,6 @@ async def test_extract_characters_returns_empty_on_exception(monkeypatch):
         responses = _FakeResponses()
 
     monkeypatch.setattr(characters, "azure_text_client", lambda: _FakeClient())
-    monkeypatch.setattr(characters, "DIRECTOR_REFINEMENT_DEPLOYMENT", "test-deploy")
 
     result = await extract_characters(SAMPLE_SCRIPT)
     assert result == []
@@ -122,7 +119,6 @@ async def test_extract_characters_limits_to_max(monkeypatch):
         responses = _FakeResponses()
 
     monkeypatch.setattr(characters, "azure_text_client", lambda: _FakeClient())
-    monkeypatch.setattr(characters, "DIRECTOR_REFINEMENT_DEPLOYMENT", "test-deploy")
     monkeypatch.setattr(characters, "extract_response_text", lambda r: json.dumps(many_chars))
 
     result = await extract_characters("some script")
@@ -204,7 +200,6 @@ async def test_prepare_character_refs_end_to_end(tmp_path, monkeypatch):
         images = _FakeImages()
 
     monkeypatch.setattr(characters, "azure_text_client", lambda: _FakeTextClient())
-    monkeypatch.setattr(characters, "DIRECTOR_REFINEMENT_DEPLOYMENT", "test-deploy")
     monkeypatch.setattr(characters, "extract_response_text", lambda r: SAMPLE_EXTRACTION_RESPONSE)
     monkeypatch.setattr(characters, "azure_image_client", lambda: _FakeImageClient())
     monkeypatch.setattr(characters, "trim_image_bytes", lambda raw, res: raw)

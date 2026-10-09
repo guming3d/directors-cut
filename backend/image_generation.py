@@ -16,9 +16,9 @@ from .config import (
     DEFAULT_SORA_RESOLUTION,
     KLING_POLL_INTERVAL_SECONDS,
     KLING_POLL_TIMEOUT_SECONDS,
-    SUPPORTED_IMAGE_GENERATORS,
     azure_image_client,
     logger,
+    normalize_image_generator,
 )
 from .image_utils import select_supported_image_size, trim_image_bytes
 from .kling import (
@@ -48,7 +48,7 @@ class ImageGenerator(Protocol):
 
 @dataclass(slots=True)
 class AzureImageGenerator:
-    name: str = "gpt-image-1"
+    name: str = "gpt-image-2.5"
 
     async def generate(
         self,
@@ -58,10 +58,10 @@ class AzureImageGenerator:
         image_path: Path | None = None,
     ) -> bytes:
         if image_path is None:
-            raise ImageGenerationError("Azure image edits require a source frame.")
+            raise ImageGenerationError("GPT Image 2.5 edits require a source frame.")
         client = azure_image_client()
         if client is None:
-            raise ImageGenerationError("Azure image client is not configured.")
+            raise ImageGenerationError("FOUNDRY_GPT_IMAGE_API_KEY is not configured for GPT Image 2.5.")
         azure_size = select_supported_image_size(resolution or DEFAULT_SORA_RESOLUTION)
 
         def _call() -> bytes:
@@ -219,19 +219,10 @@ class KlingImageGenerator:
 _GENERATOR_CACHE: dict[str, ImageGenerator] = {}
 
 
-def _normalize_backend(name: str | None) -> str:
-    if not name:
-        return DEFAULT_IMAGE_GENERATOR
-    value = name.strip().lower()
-    if value not in SUPPORTED_IMAGE_GENERATORS:
-        return DEFAULT_IMAGE_GENERATOR
-    return value
-
-
 def get_image_generator(name: str | None) -> ImageGenerator:
-    backend = _normalize_backend(name)
+    backend = normalize_image_generator(name, DEFAULT_IMAGE_GENERATOR)
     if backend not in _GENERATOR_CACHE:
-        if backend == "gpt-image-1":
+        if backend == "gpt-image-2.5":
             _GENERATOR_CACHE[backend] = AzureImageGenerator()
         elif backend == "kling":
             _GENERATOR_CACHE[backend] = KlingImageGenerator()

@@ -10,7 +10,7 @@ from typing import Optional, Sequence
 from agent_framework import Executor, WorkflowContext, handler
 
 from .characters import prepare_character_refs
-from .config import ROOT, SORA_TRANSIENT_RETRIES, logger
+from .config import REASONING_DEPLOYMENT, ROOT, SORA_TRANSIENT_RETRIES, logger
 from .first_frames import generate_first_frame_image
 from .prompts import get_visual_style_description
 from .images import prepare_scene_start_images, prepare_scene_tail_image
@@ -61,21 +61,26 @@ class DirectorAgent(Executor):
         style_desc = get_visual_style_description(request.visual_style)
         style_instruction = f"IMPORTANT VISUAL STYLE: All scenes must use the following visual style consistently:\n{style_desc}\n\n"
         raw_script = style_instruction + raw_script
-        script_text, has_headers, used_refinement = await ensure_scene_headers(
-            raw_script, request.refine_with_gpt5, request.video_provider
+        script_text, has_headers, used_llm = await ensure_scene_headers(
+            raw_script,
+            request.refine_with_gpt5,
+            request.video_provider,
+            request.scene_duration,
         )
 
         if script_text != raw_script:
             script_path.write_text(script_text, encoding="utf-8")
-        if used_refinement and request.job_id:
-            await WORKFLOW_JOB_STORE.add_message(
-                request.job_id,
-                "planning",
-                "Storyboard refined with GPT-5 before scene planning.",
+        if used_llm and request.job_id:
+            note = (
+                f"Storyboard refined with {REASONING_DEPLOYMENT} before scene planning."
+                if request.refine_with_gpt5
+                else f"Script had no scene headers; {REASONING_DEPLOYMENT} inserted scene separators."
             )
+            await WORKFLOW_JOB_STORE.add_message(request.job_id, "planning", note)
         if not has_headers:
             raise RuntimeError(
-                "No scene headers found in the script. Enable GPT-5 refinement or format it with **Scene N (Title)** blocks."
+                f"No scene headers found in the script, and {REASONING_DEPLOYMENT} could not insert them. "
+                "Format it with **Scene N (Title)** blocks."
             )
         return script_text
 

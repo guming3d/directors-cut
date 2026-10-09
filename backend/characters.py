@@ -10,11 +10,11 @@ from typing import Optional
 
 from .config import (
     AZURE_IMAGE_DEPLOYMENT,
-    DIRECTOR_REFINEMENT_DEPLOYMENT,
     azure_image_client,
     azure_text_client,
     extract_response_text,
     logger,
+    reasoning_request_options,
 )
 from .image_utils import select_supported_image_size, trim_image_bytes
 from .models import CharacterReference
@@ -33,20 +33,15 @@ async def extract_characters(script_text: str) -> list[CharacterReference]:
         logger.info("Text client not configured; skipping character extraction.")
         return []
 
-    if not DIRECTOR_REFINEMENT_DEPLOYMENT:
-        logger.info("No text deployment configured; skipping character extraction.")
-        return []
-
     system_prompt = render_prompt_template("character_extract_system")
 
     def _call() -> str:
         response = client.responses.create(
-            model=DIRECTOR_REFINEMENT_DEPLOYMENT,
             input=[
                 {"role": "system", "content": [{"type": "input_text", "text": system_prompt}]},
                 {"role": "user", "content": [{"type": "input_text", "text": script_text}]},
             ],
-            max_output_tokens=2000,
+            **reasoning_request_options(2000),
         )
         return extract_response_text(response)
 

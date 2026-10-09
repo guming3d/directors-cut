@@ -12,15 +12,15 @@ from typing import Literal
 
 from .config import (
     DEFAULT_VIDEO_PROVIDER,
-    DIRECTOR_REFINEMENT_DEPLOYMENT,
-    GPT5_REFINEMENT_DEPLOYMENT,
     HEADER_PATTERN,
+    REASONING_DEPLOYMENT,
     ROOT,
     SORA_PROMPT_GUIDE_URL,
     azure_text_client,
     extract_response_text,
     logger,
     normalize_video_provider,
+    reasoning_request_options,
 )
 from .utils import normalize_script_text, slugify
 
@@ -133,6 +133,7 @@ STATIC_PROMPT_FILES = {
     "refine_scene_user": PROMPT_TEMPLATE_DIR / "refine_scene_user.txt",
     "refine_single_system": PROMPT_TEMPLATE_DIR / "refine_single_system.txt",
     "refine_single_user": PROMPT_TEMPLATE_DIR / "refine_single_user.txt",
+    "scene_split_system": PROMPT_TEMPLATE_DIR / "scene_split_system.txt",
     "first_frame_system": PROMPT_TEMPLATE_DIR / "first_frame_system.txt",
     "first_frame_user": PROMPT_TEMPLATE_DIR / "first_frame_user.txt",
     "first_frame_fallback": PROMPT_TEMPLATE_DIR / "first_frame_fallback.txt",
@@ -258,7 +259,6 @@ async def refine_scene_description(title: str, description: str, duration: int) 
 
     def _call() -> str:
         response = client.responses.create(
-            model=DIRECTOR_REFINEMENT_DEPLOYMENT,
             input=[
                 {
                     "role": "system",
@@ -269,7 +269,7 @@ async def refine_scene_description(title: str, description: str, duration: int) 
                     "content": [{"type": "input_text", "text": user_prompt}],
                 }
             ],
-            max_output_tokens=max_tokens,
+            **reasoning_request_options(max_tokens),
         )
         return extract_response_text(response)
 
@@ -292,42 +292,95 @@ async def refine_scene_description(title: str, description: str, duration: int) 
 
 
 async def ensure_scene_headers(
-    script_text: str, use_gpt5: bool, video_provider: str | None = None
+    script_text: str,
+    use_refinement: bool,
+    video_provider: str | None = None,
+    scene_duration: int | None = None,
 ) -> tuple[str, bool, bool]:
-    """Normalize scene headers and optionally refine with GPT-5 before parsing."""
+    """Normalize scene headers, calling the reasoning model only when needed.
+
+    Returns ``(script, has_headers, used_llm)``. When the script has no scene
+    separators the reasoning model always inserts them, so header-less input no
+    longer stops the pipeline. Full refinement still runs only when requested.
+    """
 
     normalized = _normalize_scene_headers(normalize_script_text(script_text))
-    has_headers = _contains_scene_headers(normalized)
-    used_refinement = False
-    if has_headers or not use_gpt5:
-        return normalized, has_headers, used_refinement
+    if _contains_scene_headers(normalized):
+        return normalized, True, False
 
-    used_refinement = True
-    refined = await refine_text_with_gpt5(
-        normalized, mode="workflow", video_provider=video_provider
+    if use_refinement:
+        refined = await refine_text_with_llm(
+            normalized, mode="workflow", video_provider=video_provider
+        )
+        refined_normalized = _normalize_scene_headers(
+            normalize_script_text(refined.strip() or normalized)
+        )
+        if _contains_scene_headers(refined_normalized):
+            return refined_normalized, True, True
+        normalized = refined_normalized
+
+    split = await split_script_into_scenes(normalized, scene_duration)
+    split_normalized = _normalize_scene_headers(normalize_script_text(split))
+    return split_normalized, _contains_scene_headers(split_normalized), True
+
+
+async def split_script_into_scenes(script_text: str, scene_duration: int | None = None) -> str:
+    """Insert ``**Scene N (Title)**`` separators without rewriting the content."""
+
+    normalized = script_text.strip()
+    if not normalized:
+        return script_text
+
+    client = azure_text_client()
+    if client is None:
+        raise RuntimeError(
+            "Script has no scene headers and the Azure OpenAI client is not configured to add them."
+        )
+
+    duration_hint = (
+        f"Each scene is rendered as one {scene_duration}-second video clip."
+        if scene_duration
+        else "Each scene is rendered as one short video clip."
     )
-    refined = refined.strip() or normalized
-    refined_normalized = _normalize_scene_headers(normalize_script_text(refined))
-    has_headers = _contains_scene_headers(refined_normalized)
-    return refined_normalized, has_headers, used_refinement
+    system_prompt = render_prompt_template("scene_split_system", duration_hint=duration_hint)
+    # The answer repeats the whole script plus headers, so budget for that.
+    max_tokens = max(2000, len(normalized) * 2)
+
+    def _call() -> str:
+        response = client.responses.create(
+            input=[
+                {"role": "system", "content": [{"type": "input_text", "text": system_prompt}]},
+                {"role": "user", "content": [{"type": "input_text", "text": normalized}]},
+            ],
+            **reasoning_request_options(max_tokens),
+        )
+        return extract_response_text(response)
+
+    logger.info(
+        "Script has no scene headers; asking %s to insert separators (chars=%d).",
+        REASONING_DEPLOYMENT,
+        len(normalized),
+    )
+    try:
+        split = await asyncio.to_thread(_call)
+    except Exception as exc:
+        logger.error("Scene separation failed: %s", exc)
+        raise RuntimeError(f"Scene separation with {REASONING_DEPLOYMENT} failed: {exc}") from exc
+    return split.strip() or script_text
 
 
-async def refine_text_with_gpt5(
+async def refine_text_with_llm(
     content: str, mode: Literal["workflow", "single"], video_provider: str | None = None
 ) -> str:
     normalized = content.strip()
     if not normalized:
         return content
 
-    deployment = GPT5_REFINEMENT_DEPLOYMENT
-    if not deployment:
-        raise RuntimeError("GPT-5 refinement deployment not configured.")
-
     client = azure_text_client()
     if client is None:
         raise RuntimeError("Azure OpenAI client not configured.")
-    
-    logger.info("Using GPT-5 refinement deployment: %s", deployment)
+
+    logger.info("Using reasoning deployment for refinement: %s", REASONING_DEPLOYMENT)
 
     if mode == "workflow":
         system_prompt = _workflow_template_for_provider(
@@ -344,9 +397,9 @@ async def refine_text_with_gpt5(
 
     def _call() -> str:
         logger.debug(
-            "Submitting GPT-5 refinement request (mode=%s, model=%s, chars=%d).",
+            "Submitting refinement request (mode=%s, model=%s, chars=%d).",
             mode,
-            deployment,
+            REASONING_DEPLOYMENT,
             len(request_text),
         )
         messages = [
@@ -361,13 +414,12 @@ async def refine_text_with_gpt5(
             }
         ]
         response = client.responses.create(
-            model=deployment,
             input=messages,
-            max_output_tokens=max_tokens,
+            **reasoning_request_options(max_tokens),
         )
         output_text = extract_response_text(response)
         logger.debug(
-            "Received GPT-5 refinement response (mode=%s, chars=%d).",
+            "Received refinement response (mode=%s, chars=%d).",
             mode,
             len(output_text),
         )
@@ -376,8 +428,8 @@ async def refine_text_with_gpt5(
     try:
         refined = await asyncio.to_thread(_call)
     except Exception as exc:  # pragma: no cover - defensive fallback
-        logger.error("GPT-5 refinement failed (%s mode): %s", mode, exc)
-        raise RuntimeError(f"GPT-5 refinement failed ({mode} mode).") from exc
+        logger.error("%s refinement failed (%s mode): %s", REASONING_DEPLOYMENT, mode, exc)
+        raise RuntimeError(f"{REASONING_DEPLOYMENT} refinement failed ({mode} mode).") from exc
 
     cleaned = refined.strip()
     return cleaned or content
@@ -388,7 +440,8 @@ __all__ = [
     "parse_script",
     "refine_scene_description",
     "ensure_scene_headers",
-    "refine_text_with_gpt5",
+    "refine_text_with_llm",
+    "split_script_into_scenes",
     "get_workflow_template_text",
     "update_workflow_template_text",
     "workflow_template_path",

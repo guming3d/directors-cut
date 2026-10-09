@@ -1,4 +1,4 @@
-"""AI-assisted first frame generation using GPT-5 and gpt-image-1."""
+"""AI-assisted first frame generation using the reasoning model and GPT Image 2.5."""
 
 from __future__ import annotations
 
@@ -8,11 +8,12 @@ from pathlib import Path
 
 from .config import (
     AZURE_IMAGE_DEPLOYMENT,
-    GPT5_REFINEMENT_DEPLOYMENT,
+    REASONING_DEPLOYMENT,
     azure_image_client,
     azure_text_client,
     extract_response_text,
     logger,
+    reasoning_request_options,
 )
 from .image_utils import select_supported_image_size, trim_image_bytes
 from .models import CharacterReference, ScenePlan, VideoWorkflowRequest
@@ -31,10 +32,7 @@ def _fallback_image_prompt(plan: ScenePlan, resolution: str, visual_style: str =
 
 
 async def build_first_frame_prompt(plan: ScenePlan, resolution: str, visual_style: str = "3d_animation") -> str:
-    """Use GPT-5 to craft a gpt-image-1 prompt tailored to the scene opening."""
-
-    if not GPT5_REFINEMENT_DEPLOYMENT:
-        return _fallback_image_prompt(plan, resolution, visual_style)
+    """Use the reasoning model to craft an image prompt tailored to the scene opening."""
 
     client = azure_text_client()
     if client is None:
@@ -52,19 +50,18 @@ async def build_first_frame_prompt(plan: ScenePlan, resolution: str, visual_styl
 
     def _call() -> str:
         response = client.responses.create(
-            model=GPT5_REFINEMENT_DEPLOYMENT,
             input=[
                 {"role": "system", "content": [{"type": "input_text", "text": system_prompt}]},
                 {"role": "user", "content": [{"type": "input_text", "text": user_prompt}]},
             ],
-            max_output_tokens=900,
+            **reasoning_request_options(900),
         )
         return extract_response_text(response)
 
     try:
         refined = await asyncio.to_thread(_call)
     except Exception as exc:  # pragma: no cover - defensive log path
-        logger.warning("GPT-5 failed to draft first-frame prompt for %s: %s", plan.label, exc)
+        logger.warning("%s failed to draft first-frame prompt for %s: %s", REASONING_DEPLOYMENT, plan.label, exc)
         return _fallback_image_prompt(plan, resolution, visual_style)
 
     cleaned = refined.strip()
@@ -78,7 +75,7 @@ async def _generate_image_bytes(
 ) -> bytes:
     client = azure_image_client()
     if client is None:
-        raise RuntimeError("Azure OpenAI client not configured for image generation.")
+        raise RuntimeError("FOUNDRY_GPT_IMAGE_API_KEY is not configured for image generation.")
 
     azure_size = select_supported_image_size(resolution)
     valid_refs = [

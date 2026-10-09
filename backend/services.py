@@ -15,6 +15,7 @@ from typing import Optional
 from .config import (
     DEFAULT_SORA_RESOLUTION,
     HEADER_PATTERN,
+    REASONING_DEPLOYMENT,
     RESOLUTION_PATTERN,
     ROOT,
     SCENE_IMAGE_DIR,
@@ -46,7 +47,7 @@ from .sora_runner import SoraExecutionError, run_sora_subprocess_with_retry
 from .utils import escape_for_concat, normalize_script_text, run_subprocess
 from .workflow import workflow
 from .config import SINGLE_VIDEO_JOBS_DIR, OUTPUT_DIR
-from .prompts import ensure_scene_headers, refine_text_with_gpt5
+from .prompts import refine_text_with_llm
 from .config import video_client
 
 
@@ -239,7 +240,7 @@ def prepare_single_video_job(
 async def _ensure_script_headers(job_id: str, request: VideoWorkflowRequest) -> None:
     """Lightweight preflight: confirm script exists and optionally note header state.
 
-    Full normalization and GPT-5 refinement now occur inside DirectorAgent to avoid
+    Full normalization, scene splitting, and refinement now occur inside DirectorAgent to avoid
     pre-run failures when the model returns late or empty headers.
     """
 
@@ -252,12 +253,11 @@ async def _ensure_script_headers(job_id: str, request: VideoWorkflowRequest) -> 
     if has_headers:
         return
 
-    note = (
-        "Storyboard missing explicit scene headers; DirectorAgent will attempt GPT-5 refinement during planning."
-        if request.refine_with_gpt5
-        else "Storyboard missing scene headers; DirectorAgent will parse as-is."
+    await _safe_workflow_add_message(
+        job_id,
+        "planning",
+        f"Storyboard missing scene headers; DirectorAgent will insert them with {REASONING_DEPLOYMENT} during planning.",
     )
-    await _safe_workflow_add_message(job_id, "planning", note)
 
 
 async def run_workflow_job(job_id: str, request: VideoWorkflowRequest) -> None:
@@ -1075,7 +1075,7 @@ async def run_recompose_job(job_id: str) -> None:
 async def refine_script_for_payload(payload: StartWorkflowPayload) -> None:
     if not payload.refine_with_gpt5:
         return
-    refined_script = await refine_text_with_gpt5(
+    refined_script = await refine_text_with_llm(
         payload.script, mode="workflow", video_provider=payload.video_provider
     )
     if refined_script.strip():

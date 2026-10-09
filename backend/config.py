@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from dotenv import load_dotenv
-from openai import AsyncOpenAI, AzureOpenAI
+from openai import AsyncOpenAI, AzureOpenAI, OpenAI
 from PIL import Image
 
 # Base paths
@@ -94,11 +94,18 @@ KLING_ALLOWED_DURATIONS = (5, 10)
 JIMENG_ALLOWED_DURATIONS = (5, 10)
 
 # Image generation provider defaults
-SUPPORTED_IMAGE_GENERATORS = ("gpt-image-1", "kling", "original")
-_image_generator_env = (os.getenv("REPRODUCE_IMAGE_GENERATOR") or "gpt-image-1").strip().lower()
-DEFAULT_IMAGE_GENERATOR = (
-    _image_generator_env if _image_generator_env in SUPPORTED_IMAGE_GENERATORS else "gpt-image-1"
-)
+SUPPORTED_IMAGE_GENERATORS = ("gpt-image-2.5", "kling", "original")
+# Jobs stored before the GPT Image 2.5 switch reference the old generator name.
+LEGACY_IMAGE_GENERATOR_ALIASES = {"gpt-image-1": "gpt-image-2.5"}
+
+
+def normalize_image_generator(value: Optional[str], default: str = "gpt-image-2.5") -> str:
+    lowered = (value or "").strip().lower()
+    lowered = LEGACY_IMAGE_GENERATOR_ALIASES.get(lowered, lowered)
+    return lowered if lowered in SUPPORTED_IMAGE_GENERATORS else default
+
+
+DEFAULT_IMAGE_GENERATOR = normalize_image_generator(os.getenv("REPRODUCE_IMAGE_GENERATOR"))
 
 # Video reproduce segmentation defaults
 SUPPORTED_REPRODUCE_SEGMENTERS = ("content_understanding", "opencv")
@@ -223,37 +230,44 @@ except (TypeError, ValueError):
 DEFAULT_SUBPROCESS_TIMEOUT_SECONDS = max(1.0, _subprocess_timeout)
 
 # Azure configuration
-DIRECTOR_REFINEMENT_DEPLOYMENT = (
-    os.getenv("DIRECTOR_REFINEMENT_DEPLOYMENT")
-    or os.getenv("AZURE_OPENAI_GPT41_DEPLOYMENT")
-    or os.getenv("AZURE_OPENAI_GPT41_DEPLOYMENT_NAME")
-    or os.getenv("AZURE_OPENAI_RESPONSES_DEPLOYMENT")
-    or os.getenv("AZURE_OPENAI_RESPONSES_DEPLOYMENT_NAME")
-    or os.getenv("AZURE_OPENAI_DEPLOYMENT")
-    or os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME")
+# All text/vision reasoning (storyboard refinement, scene splitting, first-frame
+# prompts, character extraction, segment descriptions) runs on one deployment.
+REASONING_DEPLOYMENT = os.getenv("AZURE_OPENAI_REASONING_DEPLOYMENT") or "gpt-6.1-sol"
+SUPPORTED_REASONING_EFFORTS = ("low", "medium", "high", "xhigh")
+_reasoning_effort_env = (os.getenv("AZURE_OPENAI_REASONING_EFFORT") or "medium").strip().lower()
+REASONING_EFFORT = (
+    _reasoning_effort_env if _reasoning_effort_env in SUPPORTED_REASONING_EFFORTS else "medium"
 )
-GPT5_REFINEMENT_DEPLOYMENT = (
-    os.getenv("AZURE_OPENAI_GPT5_DEPLOYMENT")
-    or os.getenv("AZURE_OPENAI_GPT5_DEPLOYMENT_NAME")
-    or os.getenv("AZURE_OPENAI_RESPONSES_DEPLOYMENT")
-    or os.getenv("AZURE_OPENAI_RESPONSES_DEPLOYMENT_NAME")
-    or os.getenv("AZURE_OPENAI_DEPLOYMENT")
-    or os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME")
-)
-AZURE_TEXT_ENDPOINT = (os.getenv("AZURE_OPENAI_ENDPOINT") or os.getenv("ENDPOINT_URL") or "").rstrip("/")
-AZURE_TEXT_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
-AZURE_TEXT_API_VERSION = os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-15-preview")
-AZURE_IMAGE_API_VERSION = os.getenv("AZURE_OPENAI_IMAGE_API_VERSION", "2025-04-01-preview")
-AZURE_IMAGE_DEPLOYMENT = (
-    os.getenv("AZURE_OPENAI_GPT_IMAGE_DEPLOYMENT")
-    or os.getenv("AZURE_OPENAI_GPT_IMAGE_DEPLOYMENT_NAME")
-    or os.getenv("AZURE_OPENAI_IMAGE_DEPLOYMENT")
-    or os.getenv("AZURE_OPENAI_IMAGE_DEPLOYMENT_NAME")
-    or "gpt-image-1"
-)
+try:
+    _reasoning_headroom = int(os.getenv("AZURE_OPENAI_REASONING_TOKEN_HEADROOM", "8000"))
+except ValueError:
+    _reasoning_headroom = 8000
+# Reasoning tokens count against max_output_tokens, so each call reserves extra
+# budget on top of the visible answer it needs.
+REASONING_TOKEN_HEADROOM = max(0, _reasoning_headroom)
+# The reasoning deployment may live on a different resource than Sora; the
+# REASONING_* overrides fall back to the shared Azure OpenAI resource.
+AZURE_TEXT_ENDPOINT = (
+    os.getenv("AZURE_OPENAI_REASONING_ENDPOINT")
+    or os.getenv("AZURE_OPENAI_ENDPOINT")
+    or os.getenv("ENDPOINT_URL")
+    or ""
+).rstrip("/")
+AZURE_TEXT_API_KEY = os.getenv("AZURE_OPENAI_REASONING_API_KEY") or os.getenv("AZURE_OPENAI_API_KEY")
+AZURE_TEXT_API_VERSION = os.getenv("AZURE_OPENAI_API_VERSION", "2025-04-01-preview")
+
+# Image generation runs on the Microsoft Foundry GPT Image 2.5 deployment, which
+# is served from the OpenAI v1-compatible endpoint (openai.OpenAI, not AzureOpenAI).
+FOUNDRY_IMAGE_ENDPOINT = (
+    os.getenv("FOUNDRY_GPT_IMAGE_ENDPOINT")
+    or "https://testaistudio0307049060.services.ai.azure.com/openai/v1"
+).rstrip("/")
+FOUNDRY_IMAGE_API_KEY = os.getenv("FOUNDRY_GPT_IMAGE_API_KEY")
+AZURE_IMAGE_DEPLOYMENT = os.getenv("FOUNDRY_GPT_IMAGE_DEPLOYMENT") or "gpt-image-2.5-sunburst"
+FOUNDRY_IMAGE_TIMEOUT_SECONDS = max(30.0, _float_env("FOUNDRY_GPT_IMAGE_TIMEOUT", "300"))
 _TEXT_CLIENT: AzureOpenAI | None = None
 _VIDEO_CLIENT: AsyncOpenAI | None = None
-_IMAGE_CLIENT: AzureOpenAI | None = None
+_IMAGE_CLIENT: OpenAI | None = None
 
 
 def _configure_logging() -> logging.Logger:
@@ -295,14 +309,12 @@ def azure_text_client() -> AzureOpenAI | None:
     """Create or reuse a shared Azure OpenAI client for GPT refinement."""
 
     logger.debug(
-        "Azure refinement config deployments director=%s gpt5=%s endpoint=%s",
-        DIRECTOR_REFINEMENT_DEPLOYMENT,
-        GPT5_REFINEMENT_DEPLOYMENT,
+        "Azure reasoning config deployment=%s effort=%s endpoint=%s",
+        REASONING_DEPLOYMENT,
+        REASONING_EFFORT,
         AZURE_TEXT_ENDPOINT,
     )
 
-    if not (DIRECTOR_REFINEMENT_DEPLOYMENT or GPT5_REFINEMENT_DEPLOYMENT):
-        return None
     if not AZURE_TEXT_ENDPOINT or not AZURE_TEXT_API_KEY:
         logger.debug("Azure OpenAI credentials not configured; skipping prompt refinement client.")
         return None
@@ -341,27 +353,40 @@ def video_client() -> AsyncOpenAI:
     return _VIDEO_CLIENT
 
 
-def azure_image_client() -> AzureOpenAI | None:
-    """Create or reuse a shared Azure OpenAI client for image generation."""
+def reasoning_request_options(max_output_tokens: int) -> dict[str, Any]:
+    """Return the shared Responses API kwargs for the reasoning deployment.
 
-    if not AZURE_TEXT_ENDPOINT or not AZURE_TEXT_API_KEY:
-        logger.debug("Azure OpenAI credentials not configured; skipping image client.")
+    ``max_output_tokens`` is the budget for the visible answer; reasoning
+    headroom is added so medium-effort thinking cannot starve the output.
+    """
+
+    return {
+        "model": REASONING_DEPLOYMENT,
+        "reasoning": {"effort": REASONING_EFFORT},
+        "max_output_tokens": max_output_tokens + REASONING_TOKEN_HEADROOM,
+    }
+
+
+def azure_image_client() -> OpenAI | None:
+    """Create or reuse a shared Foundry GPT Image 2.5 client.
+
+    SDK retries are disabled: a timed-out image request may already have been
+    processed, and an automatic retry would be billed twice.
+    """
+
+    if not FOUNDRY_IMAGE_API_KEY:
+        logger.debug("FOUNDRY_GPT_IMAGE_API_KEY not configured; skipping image client.")
         return None
 
     global _IMAGE_CLIENT  # type: ignore[assignment]
-    try:
-        client = _IMAGE_CLIENT
-    except NameError:
-        client = None
-
-    if client is None:
-        client = AzureOpenAI(
-            api_key=AZURE_TEXT_API_KEY,
-            azure_endpoint=AZURE_TEXT_ENDPOINT,
-            api_version=AZURE_IMAGE_API_VERSION,
+    if _IMAGE_CLIENT is None:
+        _IMAGE_CLIENT = OpenAI(
+            base_url=FOUNDRY_IMAGE_ENDPOINT,
+            api_key=FOUNDRY_IMAGE_API_KEY,
+            timeout=FOUNDRY_IMAGE_TIMEOUT_SECONDS,
+            max_retries=0,
         )
-        _IMAGE_CLIENT = client  # type: ignore[assignment]
-    return client
+    return _IMAGE_CLIENT
 
 
 def extract_response_text(response: Any) -> str:
@@ -418,7 +443,6 @@ __all__ = [
     "AZURE_CONTENT_UNDERSTANDING_API_KEY",
     "AZURE_CONTENT_UNDERSTANDING_API_VERSION",
     "AZURE_CONTENT_UNDERSTANDING_ENDPOINT",
-    "AZURE_IMAGE_API_VERSION",
     "AZURE_IMAGE_DEPLOYMENT",
     "AZURE_TEXT_API_KEY",
     "AZURE_TEXT_API_VERSION",
@@ -434,9 +458,10 @@ __all__ = [
     "DEFAULT_REPRODUCE_REFERENCE_MODE",
     "DEFAULT_REPRODUCE_SEGMENTATION",
     "DEFAULT_VIDEO_PROVIDER",
-    "DIRECTOR_REFINEMENT_DEPLOYMENT",
     "FINAL_VIDEO_PATH",
-    "GPT5_REFINEMENT_DEPLOYMENT",
+    "FOUNDRY_IMAGE_API_KEY",
+    "FOUNDRY_IMAGE_ENDPOINT",
+    "FOUNDRY_IMAGE_TIMEOUT_SECONDS",
     "HEADER_PATTERN",
     "JIMENG_ACCESS_KEY_ID",
     "JIMENG_ALLOWED_DURATIONS",
@@ -466,6 +491,10 @@ __all__ = [
     "KLING_ALLOWED_DURATIONS",
     "OUTPUT_DIR",
     "PROMPTS_DIR",
+    "REASONING_DEPLOYMENT",
+    "REASONING_EFFORT",
+    "REASONING_TOKEN_HEADROOM",
+    "SUPPORTED_REASONING_EFFORTS",
     "RESOLUTION_PATTERN",
     "ROOT",
     "REPRODUCE_DEFAULT_THREADS",
@@ -502,7 +531,9 @@ __all__ = [
     "azure_text_client",
     "extract_response_text",
     "logger",
+    "normalize_image_generator",
     "normalize_video_provider",
+    "reasoning_request_options",
     "allowed_durations_for_provider",
     "video_client",
 ]

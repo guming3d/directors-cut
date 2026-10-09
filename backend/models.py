@@ -136,7 +136,7 @@ class VideoWorkflowRequest(BaseModel):
     )
     refine_with_gpt5: bool = Field(
         default=False,
-        description="Indicates whether GPT-5 storyboard refinement was requested.",
+        description="Indicates whether GPT-6.1-sol storyboard refinement was requested.",
     )
     character_ref_dir: Optional[str] = Field(
         default=None,
@@ -675,7 +675,7 @@ class StartWorkflowPayload(BaseModel):
     refine_with_gpt5: bool = Field(
         default=False,
         alias="refineWithGpt5",
-        description="When true, runs the submitted script through GPT-5 before planning scenes.",
+        description="When true, runs the submitted script through GPT-6.1-sol before planning scenes.",
     )
     scene_duration: int = Field(
         default=SORA_CLIP_DURATION_SECONDS,
@@ -739,7 +739,7 @@ class SingleVideoPayload(BaseModel):
     refine_with_gpt5: bool = Field(
         default=False,
         alias="refineWithGpt5",
-        description="When true, uses GPT-5 to refine the prompt before submitting to Sora2.",
+        description="When true, uses GPT-6.1-sol to refine the prompt before submitting to Sora2.",
     )
 
     @model_validator(mode="after")
@@ -804,7 +804,7 @@ class RefineWorkflowPayload(BaseModel):
     video_provider: Literal["sora2", "kling", "jimeng"] = Field(
         default=DEFAULT_VIDEO_PROVIDER,
         alias="videoProvider",
-        description="Video backend that controls which GPT-5 template is used while refining.",
+        description="Video backend that controls which GPT-6.1-sol template is used while refining.",
     )
 
 

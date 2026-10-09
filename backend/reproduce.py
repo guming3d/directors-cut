@@ -14,16 +14,17 @@ from .config import (
     DEFAULT_REPRODUCE_REFERENCE_MODE,
     DEFAULT_REPRODUCE_SEGMENTATION,
     DEFAULT_SORA_RESOLUTION,
-    GPT5_REFINEMENT_DEPLOYMENT,
+    REASONING_DEPLOYMENT,
     KLING_ALLOWED_DURATIONS,
     REPRODUCE_DEFAULT_THREADS,
     REPRODUCE_SEGMENT_FRAME_SAMPLES,
     SUPPORTED_REPRODUCE_REFERENCE_MODES,
-    SUPPORTED_IMAGE_GENERATORS,
+    normalize_image_generator,
     VIDEO_REPRODUCE_JOBS_DIR,
     azure_text_client,
     extract_response_text,
     logger,
+    reasoning_request_options,
 )
 from .content_insights.client import AzureContentUnderstandingClient, ContentUnderstandingError
 from .content_insights.parser import summarize_content_understanding_result
@@ -176,7 +177,7 @@ async def run_reproduce_job(job_id: str) -> None:
             await VIDEO_REPRODUCE_STORE.update_progress(
                 job_id,
                 0.32,
-                "Generating GPT-5 descriptions for OpenCV segments.",
+                f"Generating {REASONING_DEPLOYMENT} descriptions for OpenCV segments.",
             )
             await _describe_segments_with_frames(
                 job_id,
@@ -186,9 +187,9 @@ async def run_reproduce_job(job_id: str) -> None:
                 prompts_dir,
             )
 
-        image_generator_backend = (job_state.image_generation_backend or DEFAULT_IMAGE_GENERATOR).strip().lower()
-        if image_generator_backend not in SUPPORTED_IMAGE_GENERATORS:
-            image_generator_backend = DEFAULT_IMAGE_GENERATOR
+        image_generator_backend = normalize_image_generator(
+            job_state.image_generation_backend, DEFAULT_IMAGE_GENERATOR
+        )
         stylization_disabled = image_generator_backend == "original"
         reference_note = "start and end frames" if use_tail_reference else "start frame only"
         progress_message = (
@@ -196,7 +197,7 @@ async def run_reproduce_job(job_id: str) -> None:
             if stylization_disabled
             else (
                 "Converting key frames to stylized "
-                f"{image_generator_backend or 'gpt-image-1'} references ({reference_note})."
+                f"{image_generator_backend or DEFAULT_IMAGE_GENERATOR} references ({reference_note})."
             )
         )
         await VIDEO_REPRODUCE_STORE.update_progress(
@@ -620,12 +621,9 @@ async def _describe_segments_with_frames(
 ) -> None:
     if sample_count <= 0:
         return
-    if not GPT5_REFINEMENT_DEPLOYMENT:
-        logger.info("Skipping GPT-5 segment descriptions; deployment not configured.")
-        return
     client = azure_text_client()
     if client is None:
-        logger.info("Skipping GPT-5 segment descriptions; Azure OpenAI client unavailable.")
+        logger.info("Skipping segment descriptions; Azure OpenAI client unavailable.")
         return
     frame_dir.mkdir(parents=True, exist_ok=True)
     description_dir = prompts_dir / "descriptions"
@@ -647,7 +645,7 @@ async def _describe_segments_with_frames(
         frame_paths = await _sample_segment_preview_frames(segment, frame_dir, sample_count)
         if not frame_paths:
             continue
-        summary = await _summarize_segment_frames(segment, frame_paths, client, GPT5_REFINEMENT_DEPLOYMENT)
+        summary = await _summarize_segment_frames(segment, frame_paths, client)
         if not summary:
             continue
         cleaned = summary.strip()
@@ -700,7 +698,6 @@ async def _summarize_segment_frames(
     segment: VideoReproduceSegment,
     frame_paths: Sequence[Path],
     client,
-    deployment: str,
 ) -> str | None:
     image_payloads = []
     for path in frame_paths:
@@ -720,19 +717,18 @@ async def _summarize_segment_frames(
 
     def _call() -> str:
         response = client.responses.create(
-            model=deployment,
             input=[
                 {"role": "system", "content": [{"type": "input_text", "text": SEGMENT_DESCRIPTION_SYSTEM_PROMPT}]},
                 {"role": "user", "content": user_content},
             ],
-            max_output_tokens=800,
+            **reasoning_request_options(800),
         )
         return extract_response_text(response)
 
     try:
         summary = await asyncio.to_thread(_call)
     except Exception as exc:
-        logger.warning("GPT-5 failed to describe reproduce segment %s: %s", segment.order, exc)
+        logger.warning("%s failed to describe reproduce segment %s: %s", REASONING_DEPLOYMENT, segment.order, exc)
         return None
     cleaned = summary.strip()
     return cleaned or None
