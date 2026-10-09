@@ -90,6 +90,30 @@ def test_payload_attaches_image_with_configured_role():
     }
 
 
+def test_payload_omits_ratio_for_first_frame_image():
+    payload = seedance.build_seedance_payload(
+        prompt_text="A cat jumps.",
+        duration_seconds=4,
+        resolution="720x1280",
+        image_url="https://pub.example.com/a.png",
+    )
+
+    assert "ratio" not in payload
+
+
+def test_payload_keeps_ratio_for_reference_image(monkeypatch):
+    monkeypatch.setattr(seedance, "SEEDANCE_IMAGE_ROLE", "reference_image")
+
+    payload = seedance.build_seedance_payload(
+        prompt_text="A cat jumps.",
+        duration_seconds=4,
+        resolution="720x1280",
+        image_url="https://pub.example.com/a.png",
+    )
+
+    assert payload["ratio"] == "9:16"
+
+
 def test_payload_marks_reference_image_as_opening_frame_in_prompt(monkeypatch):
     monkeypatch.setattr(seedance, "SEEDANCE_IMAGE_ROLE", "reference_image")
 

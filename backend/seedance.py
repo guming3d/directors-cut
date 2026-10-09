@@ -68,10 +68,13 @@ def build_seedance_payload(
         "model": SEEDANCE_MODEL,
         "content": content,
         "generate_audio": SEEDANCE_GENERATE_AUDIO,
-        "ratio": nearest_aspect_ratio(resolution, SEEDANCE_SUPPORTED_ASPECT_RATIOS),
         "duration": int(duration_seconds),
         "watermark": SEEDANCE_WATERMARK,
     }
+    # With a first-frame image Ark derives the ratio from the image and rejects
+    # an explicit one (InvalidParameter.TaskTypeConstraint).
+    if not image_url or SEEDANCE_IMAGE_ROLE != "first_frame":
+        payload["ratio"] = nearest_aspect_ratio(resolution, SEEDANCE_SUPPORTED_ASPECT_RATIOS)
     if SEEDANCE_RESOLUTION:
         payload["resolution"] = SEEDANCE_RESOLUTION
     return payload
@@ -191,7 +194,7 @@ async def render_seedance_clip(
     logger.debug(
         "Submitting Seedance request duration=%ss ratio=%s has_reference=%s",
         payload["duration"],
-        payload["ratio"],
+        payload.get("ratio", "from first frame"),
         bool(image_url),
     )
 
