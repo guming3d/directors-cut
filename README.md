@@ -30,8 +30,17 @@ All text and vision reasoning (storyboard refinement, scene splitting, first-fra
 cd /home/minggu/projects_code/sora2-workflow-agent
 python -m venv .venv
 source .venv/bin/activate
-pip install -U agent_framework openai python-dotenv pillow fastapi uvicorn[standard]
+pip install -r requirements.lock
 ```
+
+`requirements.lock` pins every transitive dependency (the Docker image installs from it too). `agent-framework` is pre-1.0 and newer releases break this code, so its packages are pinned exactly in `requirements.txt`. After editing `requirements.txt`, regenerate the lock and rebuild:
+
+```bash
+uv pip compile requirements.txt -o requirements.lock --python-version 3.11 \
+  --python-platform x86_64-unknown-linux-gnu --prerelease=allow --no-header
+```
+
+Review the diff before committing: an unpinned dependency can move to a breaking release.
 
 Run the workflow API:
 

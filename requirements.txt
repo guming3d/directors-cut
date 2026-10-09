@@ -1,4 +1,7 @@
-agent-framework>=1.0.0b251105
+# agent-framework is pre-1.0 and its newer releases break this code
+# (e.g. WorkflowBuilder now requires start_executor), so pin exactly.
+agent-framework-core==1.0.0b251114
+agent-framework-devui==1.0.0b251120
 fastapi>=0.112.2
 httpx>=0.27.0
 openai>=2.3.0

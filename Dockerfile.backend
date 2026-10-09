@@ -9,8 +9,10 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg git \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt ./requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+# requirements.lock pins every transitive dependency so rebuilds are reproducible;
+# regenerate it with uv pip compile (see README) after editing requirements.txt.
+COPY requirements.lock ./requirements.lock
+RUN pip install --no-cache-dir -r requirements.lock
 
 COPY . .
 

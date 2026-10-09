@@ -31,7 +31,12 @@
    ```bash
    python -m venv .venv
    source .venv/bin/activate
-   pip install -r requirements.txt
+   pip install -r requirements.lock
+   ```
+   `requirements.lock` 锁定了全部传递依赖（Docker 镜像也从它安装）。`agent-framework` 尚未 1.0，新版本会破坏现有代码，因此在 `requirements.txt` 中精确锁定。修改 `requirements.txt` 后，请重新生成锁文件并检查差异：
+   ```bash
+   uv pip compile requirements.txt -o requirements.lock --python-version 3.11 \
+     --python-platform x86_64-unknown-linux-gnu --prerelease=allow --no-header
    ```
 2. 将 `.env.example` 复制为 `.env`，填写凭据（Azure/OpenAI 密钥、`SORA_WORKFLOW_ALLOWED_ORIGINS`、`VIDEO_PROVIDER`，如用 Kling 再补充 `KLING_API_BASE_URL`、`KLING_ACCESS_KEY`、`KLING_SECRET_KEY` 等）。
 3. 启动 FastAPI 服务：
