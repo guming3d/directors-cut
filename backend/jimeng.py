@@ -30,7 +30,7 @@ from .config import (
     JIMENG_SUPPORTED_ASPECT_RATIOS,
     logger,
 )
-from .utils import resolution_to_size
+from .utils import nearest_aspect_ratio
 
 DOWNLOAD_CHUNK_SIZE = 1048576
 API_VERSION = "2022-08-31"
@@ -178,26 +178,7 @@ async def _invoke_action(
 
 
 def _resolution_to_aspect_ratio(resolution: str) -> str:
-    width, height = resolution_to_size(resolution)
-    if height <= 0:
-        return "16:9"
-    ratio = width / float(height)
-
-    def _ratio_value(text: str) -> float:
-        try:
-            a, b = text.split(":")
-            return float(a) / float(b)
-        except (ValueError, ZeroDivisionError):
-            return ratio
-
-    best = "16:9"
-    smallest_delta = float("inf")
-    for candidate in JIMENG_SUPPORTED_ASPECT_RATIOS:
-        delta = abs(ratio - _ratio_value(candidate))
-        if delta < smallest_delta:
-            smallest_delta = delta
-            best = candidate
-    return best
+    return nearest_aspect_ratio(resolution, JIMENG_SUPPORTED_ASPECT_RATIOS)
 
 
 async def _download_video(client: httpx.AsyncClient, url: str, dest: Path) -> None:

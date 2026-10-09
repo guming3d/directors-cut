@@ -226,7 +226,7 @@ export type Language = "en" | "zh";
 
 export type DurationOption = "4" | "5" | "8" | "10" | "12";
 
-export type ImageGeneratorOption = "gpt-image-1" | "kling" | "original";
+export type ImageGeneratorOption = "gpt-image-2.5" | "kling" | "original";
 
 export type ReproduceSegmentationOption = "content_understanding" | "opencv";
 

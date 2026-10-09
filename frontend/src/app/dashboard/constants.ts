@@ -60,11 +60,12 @@ export const LANGUAGE_OPTIONS: Language[] = ["en", "zh"];
 
 export const SORA_DURATION_OPTIONS = ["4", "8", "12"] as const;
 export const KLING_DURATION_OPTIONS = ["5", "10"] as const;
+export const SEEDANCE_DURATION_OPTIONS = ["4", "5", "8", "10", "12"] as const;
 export const resolutionOptions = ["720x1280", "1280x720", "1920x1080"] as const;
-export const VIDEO_PROVIDER_OPTIONS = ["sora2", "kling", "jimeng"] as const;
+export const VIDEO_PROVIDER_OPTIONS = ["sora2", "kling", "jimeng", "seedance"] as const;
 
 export const IMAGE_GENERATOR_OPTIONS: { value: ImageGeneratorOption; label: string }[] = [
-  { value: "gpt-image-1", label: "Azure gpt-image-1" },
+  { value: "gpt-image-2.5", label: "Foundry gpt-image-2.5" },
   { value: "kling", label: "Kling image generation" },
   { value: "original", label: "Use original frames (no stylization)" },
 ];
@@ -85,8 +86,11 @@ export const REFERENCE_FRAME_OPTIONS: { value: ReferenceFrameMode; label: string
   { value: "start_only", label: "Start frame only" },
 ];
 
-export const getDurationOptions = (provider: string | null): readonly DurationOption[] =>
-  provider === "kling" || provider === "jimeng" ? KLING_DURATION_OPTIONS : SORA_DURATION_OPTIONS;
+export const getDurationOptions = (provider: string | null): readonly DurationOption[] => {
+  if (provider === "seedance") return SEEDANCE_DURATION_OPTIONS;
+  if (provider === "kling" || provider === "jimeng") return KLING_DURATION_OPTIONS;
+  return SORA_DURATION_OPTIONS;
+};
 
 export const getImageGeneratorLabel = (value: string): string => {
   const option = IMAGE_GENERATOR_OPTIONS.find((item) => item.value === value);

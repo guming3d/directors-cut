@@ -1,6 +1,6 @@
 # Sora Agent Workflow
 
-Full-stack toolkit for running the Azure Sora2/Kling/Jimeng multi-agent video workflow with a FastAPI backend and a Next.js dashboard. The backend orchestrates Director → Sora → Composer agents to generate per-scene clips, monitor progress, and stitch the final video. The frontend lets users paste storyboard scripts, launch jobs, and watch live status updates, scene previews, and the completed compilation.
+Full-stack toolkit for running the Azure Sora2/Kling/Jimeng/Seedance multi-agent video workflow with a FastAPI backend and a Next.js dashboard. The backend orchestrates Director → Sora → Composer agents to generate per-scene clips, monitor progress, and stitch the final video. The frontend lets users paste storyboard scripts, launch jobs, and watch live status updates, scene previews, and the completed compilation.
 
 ## Prerequisites
 
@@ -14,9 +14,15 @@ Full-stack toolkit for running the Azure Sora2/Kling/Jimeng multi-agent video wo
   - `SORA_BLOCK_RETRIES` — retries for moderated scenes (default: `3`)
   - `VIDEO_DOWNLOAD_VARIANT` — override the variant name sent to the Sora client
 
-### Switching video backends (Sora2, Kling, or Jimeng)
+### Switching video backends (Sora2, Kling, Jimeng, or Seedance)
 
-Set `VIDEO_PROVIDER` to `sora2` (default), `kling`, or `jimeng` to decide which API generates clips. When targeting Kling you must configure `KLING_API_BASE_URL`, `KLING_ACCESS_KEY`, and `KLING_SECRET_KEY` so the workflow can mint short-lived JWTs. Optional knobs such as `KLING_MODEL_NAME`, `KLING_MODE`, `KLING_CFG_SCALE`, `KLING_POLL_INTERVAL`, `KLING_POLL_TIMEOUT`, and `KLING_TOKEN_TTL` still apply, and a legacy `KLING_API_KEY` fallback remains available for staging environments. Run `python verify_kling_token.py` to confirm your keys produce a valid token and inspect its expiration. For Jimeng, provide `JIMENG_ACCESS_KEY_ID` and `JIMENG_SECRET_ACCESS_KEY` (STS token optional via `JIMENG_SECURITY_TOKEN`); the client signs requests against `JIMENG_API_BASE_URL` (defaults to `https://visual.volcengineapi.com`) using the fixed `JIMENG_REGION=cn-north-1` and `JIMENG_SERVICE=cv` unless overridden. Jimeng supports 5s/10s clips and accepts an optional reference image as the first frame. The workflow reuses the same Director/Composer agents, and the dashboard surfaces a “Video backend” tag so operators can immediately see which engine is active. Remix endpoints remain Sora-only; Kling and Jimeng jobs support regeneration but not Azure remix APIs.
+Set `VIDEO_PROVIDER` to `sora2` (default), `kling`, `jimeng`, or `seedance` to decide which API generates clips. When targeting Kling you must configure `KLING_API_BASE_URL`, `KLING_ACCESS_KEY`, and `KLING_SECRET_KEY` so the workflow can mint short-lived JWTs. Optional knobs such as `KLING_MODEL_NAME`, `KLING_MODE`, `KLING_CFG_SCALE`, `KLING_POLL_INTERVAL`, `KLING_POLL_TIMEOUT`, and `KLING_TOKEN_TTL` still apply, and a legacy `KLING_API_KEY` fallback remains available for staging environments. Run `python verify_kling_token.py` to confirm your keys produce a valid token and inspect its expiration. For Jimeng, provide `JIMENG_ACCESS_KEY_ID` and `JIMENG_SECRET_ACCESS_KEY` (STS token optional via `JIMENG_SECURITY_TOKEN`); the client signs requests against `JIMENG_API_BASE_URL` (defaults to `https://visual.volcengineapi.com`) using the fixed `JIMENG_REGION=cn-north-1` and `JIMENG_SERVICE=cv` unless overridden. Jimeng supports 5s/10s clips and accepts an optional reference image as the first frame. The workflow reuses the same Director/Composer agents, and the dashboard surfaces a “Video backend” tag so operators can immediately see which engine is active. Remix endpoints remain Sora-only; Kling, Jimeng, and Seedance jobs support regeneration but not Azure remix APIs.
+
+For Seedance 2.5 (Volcengine Ark, model `doubao-seedance-2-5-260628`), set `ARK_API_KEY`. Clips can be 4, 5, 8, 10, or 12 seconds and include generated audio unless `SEEDANCE_GENERATE_AUDIO=false`. Ark only accepts reference images by URL, so start frames are uploaded to a public Cloudflare R2 bucket first: configure `R2_ACCOUNT_ID`, `R2_BUCKET`, `R2_PUBLIC_BASE_URL`, `R2_ACCESS_KEY_ID`, and `R2_SECRET_ACCESS_KEY` (uploaded frames become publicly readable). Seedance is billed per generated second and task creation is never retried automatically; use 4-second scenes while testing.
+
+### Models
+
+All text and vision reasoning (storyboard refinement, scene splitting, first-frame prompts, character extraction, segment descriptions) uses `AZURE_OPENAI_REASONING_DEPLOYMENT` (default `gpt-6.1-sol`) with `reasoning.effort=medium`; set `AZURE_OPENAI_REASONING_ENDPOINT`/`AZURE_OPENAI_REASONING_API_KEY` if it lives on a different resource than Sora. When a workflow script has no `**Scene N (Title)**` headers, the reasoning model inserts them automatically and the pipeline continues. Images come from the Foundry `gpt-image-2.5-sunburst` deployment (`FOUNDRY_GPT_IMAGE_ENDPOINT`, `FOUNDRY_GPT_IMAGE_API_KEY`).
 
 ## Backend (FastAPI) Setup
 
@@ -58,7 +64,7 @@ If no auth variables are configured, this script sets `SORA_WORKFLOW_REQUIRE_AUT
 - `GET /api/reproduce` — list reproduce jobs with cached segments, prompts, and output links
 - `GET /api/reproduce/{job_id}` — inspect a specific reproduce job (segments, stylized frames, Kling versions, and merged output)
 - `POST /api/reproduce/{job_id}/segments/{segment_order}/regenerate` — supply a custom prompt to rerender a single segment
-- `POST /api/reproduce/{job_id}/rerun` — resume a failed reproduce job without re-calling GPT-5, gpt-image-1, or Kling for cached artifacts
+- `POST /api/reproduce/{job_id}/rerun` — resume a failed reproduce job without re-calling GPT-6.1-sol, gpt-image-2.5, or Kling for cached artifacts
 - `DELETE /api/reproduce/{job_id}` — remove a reproduce job and its workspace assets
 - `GET /static/...` — static hosting of generated assets (final video, scene clips, logs)
 

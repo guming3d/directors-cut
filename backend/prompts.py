@@ -99,6 +99,7 @@ WORKFLOW_TEMPLATE_FILES = {
     "sora2": PROMPT_TEMPLATE_DIR / "sora_prompt_generation.txt",
     "kling": PROMPT_TEMPLATE_DIR / "kling_prompt_generation.txt",
     "jimeng": PROMPT_TEMPLATE_DIR / "jimeng_prompt_generation.txt",
+    "seedance": PROMPT_TEMPLATE_DIR / "seedance_prompt_generation.txt",
 }
 
 VISUAL_STYLE_DESCRIPTIONS: dict[str, str] = {

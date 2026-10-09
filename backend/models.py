@@ -32,6 +32,9 @@ from .config import (
 from .utils import utc_now
 
 
+VideoProviderName = Literal["sora2", "kling", "jimeng", "seedance"]
+
+
 @dataclass
 class CharacterReference:
     """A character extracted from the storyboard with an optional reference image."""
@@ -61,7 +64,7 @@ class VideoWorkflowRequest(BaseModel):
     script_path: str = Field(
         default=str(SCRIPT_PATH), description="Path to the master video script."
     )
-    video_provider: Literal["sora2", "kling", "jimeng"] = Field(
+    video_provider: VideoProviderName = Field(
         default=DEFAULT_VIDEO_PROVIDER,
         alias="videoProvider",
         description="Video backend to use for rendering.",
@@ -105,7 +108,7 @@ class VideoWorkflowRequest(BaseModel):
     )
     scene_duration: int = Field(
         default=SORA_CLIP_DURATION_SECONDS,
-        description="Scene duration in seconds (Sora: 4/8/12, Kling/Jimeng: 5/10).",
+        description="Scene duration in seconds (Sora: 4/8/12, Kling/Jimeng: 5/10, Seedance: 4/5/8/10/12).",
     )
     thread_count: int = Field(
         default=int(os.getenv("SORA_WORKFLOW_THREADS", "3")),
@@ -636,7 +639,7 @@ class StartWorkflowPayload(BaseModel):
     script: str = Field(
         ..., description="Storyboard script content for the Director agent to process."
     )
-    video_provider: Literal["sora2", "kling", "jimeng"] = Field(
+    video_provider: VideoProviderName = Field(
         default=DEFAULT_VIDEO_PROVIDER,
         alias="videoProvider",
         description="Video backend to use when rendering scenes.",
@@ -680,7 +683,7 @@ class StartWorkflowPayload(BaseModel):
     scene_duration: int = Field(
         default=SORA_CLIP_DURATION_SECONDS,
         alias="sceneDuration",
-        description="Scene runtime in seconds (Sora: 4/8/12, Kling/Jimeng: 5/10).",
+        description="Scene runtime in seconds (Sora: 4/8/12, Kling/Jimeng: 5/10, Seedance: 4/5/8/10/12).",
     )
     visual_style: Literal["2d_animation", "3d_animation", "realistic"] = Field(
         default="3d_animation",
@@ -712,14 +715,14 @@ class SingleVideoPayload(BaseModel):
         default=DEFAULT_SORA_RESOLUTION,
         description="Output resolution (e.g. 720x1280).",
     )
-    video_provider: Literal["sora2", "kling", "jimeng"] = Field(
+    video_provider: VideoProviderName = Field(
         default=DEFAULT_VIDEO_PROVIDER,
         alias="videoProvider",
         description="Video backend to use for this single clip.",
     )
     duration: int = Field(
         default=8,
-        description="Video duration in seconds (Sora: 4/8/12, Kling/Jimeng: 5/10).",
+        description="Video duration in seconds (Sora: 4/8/12, Kling/Jimeng: 5/10, Seedance: 4/5/8/10/12).",
     )
     download_variant: Optional[str] = Field(
         default=None,
@@ -801,7 +804,7 @@ class RefineWorkflowPayload(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     script: str
-    video_provider: Literal["sora2", "kling", "jimeng"] = Field(
+    video_provider: VideoProviderName = Field(
         default=DEFAULT_VIDEO_PROVIDER,
         alias="videoProvider",
         description="Video backend that controls which GPT-6.1-sol template is used while refining.",
@@ -815,7 +818,7 @@ class RefineSinglePayload(BaseModel):
 class WorkflowPromptTemplateResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
-    video_provider: Literal["sora2", "kling", "jimeng"] = Field(
+    video_provider: VideoProviderName = Field(
         default=DEFAULT_VIDEO_PROVIDER,
         alias="videoProvider",
     )
@@ -826,7 +829,7 @@ class WorkflowPromptTemplateUpdate(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     template: str
-    video_provider: Literal["sora2", "kling", "jimeng"] = Field(
+    video_provider: VideoProviderName = Field(
         default=DEFAULT_VIDEO_PROVIDER,
         alias="videoProvider",
     )

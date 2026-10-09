@@ -86,12 +86,14 @@ DEFAULT_REPRODUCE_REFERENCE_MODE = (
 )
 
 # Video provider defaults
-SUPPORTED_VIDEO_PROVIDERS = ("sora2", "kling", "jimeng")
+SUPPORTED_VIDEO_PROVIDERS = ("sora2", "kling", "jimeng", "seedance")
 _provider_env = (os.getenv("VIDEO_PROVIDER") or "sora2").strip().lower()
 DEFAULT_VIDEO_PROVIDER = _provider_env if _provider_env in SUPPORTED_VIDEO_PROVIDERS else "sora2"
 SORA_ALLOWED_DURATIONS = (4, 8, 12)
 KLING_ALLOWED_DURATIONS = (5, 10)
 JIMENG_ALLOWED_DURATIONS = (5, 10)
+# Seedance bills per generated second; 4s is the cheapest option for trials.
+SEEDANCE_ALLOWED_DURATIONS = (4, 5, 8, 10, 12)
 
 # Image generation provider defaults
 SUPPORTED_IMAGE_GENERATORS = ("gpt-image-2.5", "kling", "original")
@@ -130,6 +132,8 @@ def allowed_durations_for_provider(value: Optional[str]) -> tuple[int, ...]:
         return KLING_ALLOWED_DURATIONS
     if provider == "jimeng":
         return JIMENG_ALLOWED_DURATIONS
+    if provider == "seedance":
+        return SEEDANCE_ALLOWED_DURATIONS
     return SORA_ALLOWED_DURATIONS
 
 
@@ -193,6 +197,41 @@ JIMENG_SECRET_ACCESS_KEY = os.getenv("JIMENG_SECRET_ACCESS_KEY") or os.getenv("J
 JIMENG_SECURITY_TOKEN = os.getenv("JIMENG_SECURITY_TOKEN")
 JIMENG_SERVICE = os.getenv("JIMENG_SERVICE", "cv")
 JIMENG_SUPPORTED_ASPECT_RATIOS = ("16:9", "4:3", "1:1", "3:4", "9:16", "21:9")
+
+# Seedance 2.5 (Volcengine Ark) configuration
+def _bool_env(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None or not value.strip():
+        return default
+    return value.strip().lower() not in ("0", "false", "no", "off")
+
+
+ARK_API_KEY = os.getenv("ARK_API_KEY")
+SEEDANCE_API_URL = (
+    os.getenv("SEEDANCE_API_URL")
+    or "https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks"
+).rstrip("/")
+SEEDANCE_MODEL = os.getenv("SEEDANCE_MODEL") or "doubao-seedance-2-5-260628"
+SEEDANCE_GENERATE_AUDIO = _bool_env("SEEDANCE_GENERATE_AUDIO", True)
+SEEDANCE_WATERMARK = _bool_env("SEEDANCE_WATERMARK", False)
+# Optional output resolution such as "720p"; omitted from requests when unset.
+SEEDANCE_RESOLUTION = (os.getenv("SEEDANCE_RESOLUTION") or "").strip() or None
+# Role for the scene's start image: "first_frame" pins the opening frame;
+# "reference_image" only conditions the look.
+SEEDANCE_IMAGE_ROLE = (os.getenv("SEEDANCE_IMAGE_ROLE") or "first_frame").strip()
+SEEDANCE_POLL_INTERVAL_SECONDS = max(2.0, _float_env("SEEDANCE_POLL_INTERVAL", "10"))
+SEEDANCE_POLL_TIMEOUT_SECONDS = max(60.0, _float_env("SEEDANCE_POLL_TIMEOUT", "1200"))
+SEEDANCE_SUPPORTED_ASPECT_RATIOS = ("16:9", "4:3", "1:1", "3:4", "9:16", "21:9")
+
+# Cloudflare R2 public bucket used to host Seedance reference images, since Ark
+# only accepts media by URL.
+R2_ACCOUNT_ID = os.getenv("R2_ACCOUNT_ID")
+R2_BUCKET = os.getenv("R2_BUCKET")
+R2_PUBLIC_BASE_URL = (os.getenv("R2_PUBLIC_BASE_URL") or "").rstrip("/")
+R2_ACCESS_KEY_ID = os.getenv("R2_ACCESS_KEY_ID")
+R2_SECRET_ACCESS_KEY = os.getenv("R2_SECRET_ACCESS_KEY")
+R2_JURISDICTION = (os.getenv("R2_JURISDICTION") or "").strip().lower()
+R2_UPLOAD_PREFIX = (os.getenv("R2_UPLOAD_PREFIX") or "seedance-refs").strip("/")
 
 # Azure content understanding configuration
 AZURE_CONTENT_UNDERSTANDING_ENDPOINT = (os.getenv("AZURE_CONTENT_UNDERSTANDING_ENDPOINT") or "").rstrip("/")
@@ -474,6 +513,24 @@ __all__ = [
     "JIMENG_SECURITY_TOKEN",
     "JIMENG_SERVICE",
     "JIMENG_SUPPORTED_ASPECT_RATIOS",
+    "ARK_API_KEY",
+    "R2_ACCESS_KEY_ID",
+    "R2_ACCOUNT_ID",
+    "R2_BUCKET",
+    "R2_JURISDICTION",
+    "R2_PUBLIC_BASE_URL",
+    "R2_SECRET_ACCESS_KEY",
+    "R2_UPLOAD_PREFIX",
+    "SEEDANCE_ALLOWED_DURATIONS",
+    "SEEDANCE_API_URL",
+    "SEEDANCE_GENERATE_AUDIO",
+    "SEEDANCE_IMAGE_ROLE",
+    "SEEDANCE_MODEL",
+    "SEEDANCE_POLL_INTERVAL_SECONDS",
+    "SEEDANCE_POLL_TIMEOUT_SECONDS",
+    "SEEDANCE_RESOLUTION",
+    "SEEDANCE_SUPPORTED_ASPECT_RATIOS",
+    "SEEDANCE_WATERMARK",
     "KLING_API_BASE_URL",
     "KLING_API_KEY",
     "KLING_ACCESS_KEY",

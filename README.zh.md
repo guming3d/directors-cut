@@ -1,6 +1,6 @@
 # Sora Agent Workflow
 
-这是一个用于运行 Azure Sora2/Kling/Jimeng 多智能体视频工作流的全栈工具包，包含 FastAPI 后端和 Next.js 仪表盘。后端负责编排 Director → Sora → Composer 智能体以生成分场景的片段、监控进度并拼接最终视频。前端支持粘贴分镜脚本、发起任务、查看实时状态、场景预览以及最终成片。
+这是一个用于运行 Azure Sora2/Kling/Jimeng/Seedance 多智能体视频工作流的全栈工具包，包含 FastAPI 后端和 Next.js 仪表盘。后端负责编排 Director → Sora → Composer 智能体以生成分场景的片段、监控进度并拼接最终视频。前端支持粘贴分镜脚本、发起任务、查看实时状态、场景预览以及最终成片。
 
 ## 前置要求
 
@@ -13,7 +13,7 @@
   - `SORA_WORKFLOW_THREADS` — 并发渲染任务数量（默认 `3`）
   - `SORA_BLOCK_RETRIES` — 因审核拦截的场景的重试次数（默认 `3`）
   - `VIDEO_DOWNLOAD_VARIANT` — 覆盖传给 Sora 客户端的 variant 名称
-  - `VIDEO_PROVIDER` — 选择后端：`sora2`（默认）、`kling` 或 `jimeng`
+  - `VIDEO_PROVIDER` — 选择后端：`sora2`（默认）、`kling`、`jimeng` 或 `seedance`
 
 ## 项目结构
 
@@ -48,7 +48,11 @@
 
 ### 切换 Sora2、Kling、Jimeng
 
-设置 `VIDEO_PROVIDER=sora2`（默认）、`VIDEO_PROVIDER=kling` 或 `VIDEO_PROVIDER=jimeng` 选择后端。使用 Kling 时需配置 `KLING_API_BASE_URL`、`KLING_ACCESS_KEY`、`KLING_SECRET_KEY`（可选 `KLING_API_KEY` 仅用于旧环境），其余参数如 `KLING_MODEL_NAME`、`KLING_MODE`、`KLING_CFG_SCALE`、`KLING_POLL_INTERVAL`、`KLING_POLL_TIMEOUT`、`KLING_TOKEN_TTL` 仍可调，`python verify_kling_token.py` 可用于检查令牌有效期。使用 Jimeng 时需提供 `JIMENG_ACCESS_KEY_ID`、`JIMENG_SECRET_ACCESS_KEY`（如有 STS 令牌则填 `JIMENG_SECURITY_TOKEN`），默认调用 `https://visual.volcengineapi.com`，Region/Service 固定为 `cn-north-1` / `cv`，支持 5s/10s 时长，可选首帧参考图。Kling/Jimeng 目前仅支持重新生成，不支持 remix。
+设置 `VIDEO_PROVIDER=sora2`（默认）、`VIDEO_PROVIDER=kling` 或 `VIDEO_PROVIDER=jimeng` 选择后端。使用 Kling 时需配置 `KLING_API_BASE_URL`、`KLING_ACCESS_KEY`、`KLING_SECRET_KEY`（可选 `KLING_API_KEY` 仅用于旧环境），其余参数如 `KLING_MODEL_NAME`、`KLING_MODE`、`KLING_CFG_SCALE`、`KLING_POLL_INTERVAL`、`KLING_POLL_TIMEOUT`、`KLING_TOKEN_TTL` 仍可调，`python verify_kling_token.py` 可用于检查令牌有效期。使用 Jimeng 时需提供 `JIMENG_ACCESS_KEY_ID`、`JIMENG_SECRET_ACCESS_KEY`（如有 STS 令牌则填 `JIMENG_SECURITY_TOKEN`），默认调用 `https://visual.volcengineapi.com`，Region/Service 固定为 `cn-north-1` / `cv`，支持 5s/10s 时长，可选首帧参考图。Kling/Jimeng/Seedance 目前仅支持重新生成，不支持 remix。
+
+使用 Seedance 2.5（火山方舟，模型 `doubao-seedance-2-5-260628`）时需设置 `ARK_API_KEY`，支持 4/5/8/10/12 秒，默认生成音频（`SEEDANCE_GENERATE_AUDIO=false` 可关闭）。方舟仅接受 URL 形式的参考图，因此首帧会先上传到公开的 Cloudflare R2 存储桶，需配置 `R2_ACCOUNT_ID`、`R2_BUCKET`、`R2_PUBLIC_BASE_URL`、`R2_ACCESS_KEY_ID`、`R2_SECRET_ACCESS_KEY`（上传的帧会公开可读）。Seedance 按生成秒数计费，创建任务不会自动重试，测试时请使用 4 秒场景。
+
+文本与视觉推理统一使用 `AZURE_OPENAI_REASONING_DEPLOYMENT`（默认 `gpt-6.1-sol`，`reasoning.effort=medium`）；若部署在其他资源上，可设置 `AZURE_OPENAI_REASONING_ENDPOINT`/`AZURE_OPENAI_REASONING_API_KEY`。剧本缺少 `**Scene N (Title)**` 场景标题时，推理模型会自动补充后继续执行。图像生成使用 Foundry `gpt-image-2.5-sunburst` 部署（`FOUNDRY_GPT_IMAGE_ENDPOINT`、`FOUNDRY_GPT_IMAGE_API_KEY`）。
 
 ### API 路由
 
@@ -63,7 +67,7 @@
 - `GET /api/reproduce` — 列出 reproduce 任务及其分段、提示与输出
 - `GET /api/reproduce/{job_id}` — 查看指定 reproduce 任务的分段、风格化帧与 Kling 版本
 - `POST /api/reproduce/{job_id}/segments/{segment_order}/regenerate` — 为某个分段提供自定义提示并重新渲染
-- `POST /api/reproduce/{job_id}/rerun` — 在失败后复用本地缓存（GPT-5、gpt-image-1、Kling）的产物继续执行
+- `POST /api/reproduce/{job_id}/rerun` — 在失败后复用本地缓存（GPT-6.1-sol、gpt-image-2.5、Kling）的产物继续执行
 - `DELETE /api/reproduce/{job_id}` — 删除 reproduce 任务及其工作区文件
 - `GET /static/...` — 提供生成资产（最终视频、片段、日志）的静态访问
 

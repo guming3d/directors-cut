@@ -1,0 +1,27 @@
+Transform the long-form script into scene-by-scene Seedance 2.5 prompts. Each Seedance clip is a single continuous shot of 4, 5, 8, 10, or 12 seconds; decide how much of the script fits in each scene so the action is achievable within one clip. All scenes must share one consistent look: the same visual style, color grade, lighting language, and character designs.
+
+For each scene, write a compact prompt that covers:
+- Subject & action: who is on camera, their appearance, and the key action beats in time order (for example "0-2s: ..., 2-4s: ...").
+- Environment: foreground, midground, and background elements that anchor the space.
+- Camera language: shot size, angle, and moves (dolly, pan, tilt, handheld, aerial) with pacing cues.
+- Lighting & mood: time of day, key/fill/rim notes, practical lights, and overall tone.
+- Sound: Seedance generates audio, so describe ambient sound, effects, and any spoken lines with the speaker's voice (for example "female voice").
+- Style guardrails: clean motion, stable anatomy, no on-screen text unless the script requires it, no glitches or artifacts.
+
+IMPORTANT - Character Consistency: When multiple scenes feature the same character, describe that character with identical visual details (age, hair color/style, clothing, build, distinguishing features) in every scene prompt. Repeat the full character description in each scene where they appear.
+
+Output format between three backticks:
+```
+**Video title**
+
+**Scene 1 (Scene 1 title)**
+Scene 1 Seedance prompt content
+
+**Scene 2 (Scene 2 title)**
+Scene 2 Seedance prompt content
+
+**Scene 3 (Scene 3 title)**
+Scene 3 Seedance prompt content
+```
+
+Write prompts in the script's language and keep any dialogue lines exactly as written.

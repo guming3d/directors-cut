@@ -16,6 +16,7 @@ from .prompts import get_visual_style_description
 from .images import prepare_scene_start_images, prepare_scene_tail_image
 from .kling import render_kling_clip
 from .jimeng import render_jimeng_clip
+from .seedance import render_seedance_clip, write_seedance_logs
 from .models import (
     CharacterReference,
     ScenePlan,
@@ -227,7 +228,7 @@ class DirectorAgent(Executor):
 
 
 class Sora2Agent(Executor):
-    """Generate each clip concurrently via the configured video backend (Sora2, Kling, or Jimeng)."""
+    """Generate each clip concurrently via the configured video backend (Sora2, Kling, Jimeng, or Seedance)."""
 
     def __init__(self) -> None:
         super().__init__(id="sora2_agent")
@@ -436,6 +437,8 @@ class Sora2Agent(Executor):
             return await self._invoke_kling(plan, request, scenes_dir, scene_images, reference_override, character_refs)
         if request.video_provider == "jimeng":
             return await self._invoke_jimeng(plan, request, scenes_dir, scene_images, reference_override, character_refs)
+        if request.video_provider == "seedance":
+            return await self._invoke_seedance(plan, request, scenes_dir, scene_images, reference_override, character_refs)
         return await self._invoke_sora(plan, request, scenes_dir, scene_images, reference_override, character_refs)
 
     async def _invoke_jimeng(
@@ -485,6 +488,47 @@ class Sora2Agent(Executor):
             f"Jimeng task {result.task_id} completed via {result.endpoint}.\nVideo URL: {result.video_url}\n",
             encoding="utf-8",
         )
+
+        return SceneRender(
+            order=plan.order,
+            label=plan.label,
+            duration_seconds=plan.duration_seconds,
+            prompt_path=plan.prompt_path,
+            video_path=str(video_path),
+            log_path=str(log_path),
+            client_log_path=str(client_log_path),
+            prompt_text=plan.prompt_text,
+            video_id=result.task_id,
+            first_frame_path=first_frame_path,
+        )
+
+    async def _invoke_seedance(
+        self,
+        plan: ScenePlan,
+        request: VideoWorkflowRequest,
+        scenes_dir: Path,
+        scene_images: Sequence[str],
+        reference_override: Optional[str] = None,
+        character_refs: list[CharacterReference] | None = None,
+    ) -> SceneRender:
+        video_path = scenes_dir / f"scene_{plan.order:02d}.mp4"
+        await report_progress(
+            request,
+            "rendering",
+            f"Seedance: starting render for {plan.label}.",
+        )
+
+        input_reference, first_frame_path = await self._prepare_reference_image(
+            plan, request, scene_images, reference_override, character_refs
+        )
+        result = await render_seedance_clip(
+            prompt_text=plan.prompt_text,
+            duration_seconds=plan.duration_seconds,
+            resolution=request.resolution,
+            output_path=video_path,
+            primary_image_path=input_reference,
+        )
+        log_path, client_log_path = write_seedance_logs(result, video_path, ".client.log")
 
         return SceneRender(
             order=plan.order,

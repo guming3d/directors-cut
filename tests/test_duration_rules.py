@@ -49,3 +49,21 @@ def test_workflow_payload_rejects_scene_image_dir_override():
             script="**Scene 1 (Test)**\nDescription",
             scene_image_dir="/tmp/unsafe",
         )
+
+
+def test_seedance_workflow_payload_accepts_four_second_scenes():
+    payload = StartWorkflowPayload(
+        script="**Scene 1 (Test)**\nDescription",
+        video_provider="seedance",
+        scene_duration=4,
+    )
+    assert payload.video_provider == "seedance"
+
+
+def test_seedance_single_video_payload_rejects_unsupported_duration():
+    with pytest.raises(ValidationError):
+        SingleVideoPayload(
+            prompt="Describe a futuristic city skyline at dusk.",
+            video_provider="seedance",
+            duration=7,
+        )

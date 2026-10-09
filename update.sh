@@ -126,6 +126,21 @@ update_backend() {
   if [[ -n "${AZURE_SPEECH_KEY:-}" ]]; then
     BACKEND_SECRETS+=("azure-speech-key=$AZURE_SPEECH_KEY")
   fi
+  if [[ -n "${AZURE_OPENAI_REASONING_API_KEY:-}" ]]; then
+    BACKEND_SECRETS+=("reasoning-api-key=$AZURE_OPENAI_REASONING_API_KEY")
+  fi
+  if [[ -n "${FOUNDRY_GPT_IMAGE_API_KEY:-}" ]]; then
+    BACKEND_SECRETS+=("foundry-image-api-key=$FOUNDRY_GPT_IMAGE_API_KEY")
+  fi
+  if [[ -n "${ARK_API_KEY:-}" ]]; then
+    BACKEND_SECRETS+=("ark-api-key=$ARK_API_KEY")
+  fi
+  if [[ -n "${R2_ACCESS_KEY_ID:-}" ]]; then
+    BACKEND_SECRETS+=("r2-access-key-id=$R2_ACCESS_KEY_ID")
+  fi
+  if [[ -n "${R2_SECRET_ACCESS_KEY:-}" ]]; then
+    BACKEND_SECRETS+=("r2-secret-access-key=$R2_SECRET_ACCESS_KEY")
+  fi
 
   az containerapp secret set \
     --name "$AZURE_CONTAINERAPPS_BACKEND" \
@@ -155,10 +170,12 @@ update_backend() {
     DEPLOYMENT_NAME
     AZURE_OPENAI_CHAT_DEPLOYMENT_NAME
     AZURE_OPENAI_RESPONSES_DEPLOYMENT_NAME
-    AZURE_OPENAI_GPT5_DEPLOYMENT
+    AZURE_OPENAI_REASONING_ENDPOINT
+    AZURE_OPENAI_REASONING_DEPLOYMENT
+    AZURE_OPENAI_REASONING_EFFORT
     AZURE_OPENAI_RESPONSES_DEPLOYMENT
-    AZURE_OPENAI_GPT_IMAGE_DEPLOYMENT
-    AZURE_OPENAI_IMAGE_API_VERSION
+    FOUNDRY_GPT_IMAGE_ENDPOINT
+    FOUNDRY_GPT_IMAGE_DEPLOYMENT
     AZURE_OPENAI_API_VERSION
     AZURE_CONTENT_UNDERSTANDING_ENDPOINT
     AZURE_CONTENT_UNDERSTANDING_API_VERSION
@@ -175,6 +192,16 @@ update_backend() {
     SORA_WORKFLOW_ALLOWED_LANGUAGES
     SORA_WORKFLOW_MODE
     VIDEO_PROVIDER
+    SEEDANCE_MODEL
+    SEEDANCE_GENERATE_AUDIO
+    SEEDANCE_RESOLUTION
+    SEEDANCE_IMAGE_ROLE
+    SEEDANCE_POLL_INTERVAL
+    SEEDANCE_POLL_TIMEOUT
+    R2_ACCOUNT_ID
+    R2_BUCKET
+    R2_PUBLIC_BASE_URL
+    R2_UPLOAD_PREFIX
     LOG_LEVEL
     KLING_API_BASE_URL
     KLING_TOKEN_TTL
@@ -218,6 +245,21 @@ update_backend() {
   fi
   if [[ -n "${AZURE_SPEECH_KEY:-}" ]]; then
     BACKEND_ENV_VARS+=("AZURE_SPEECH_KEY=secretref:azure-speech-key")
+  fi
+  if [[ -n "${AZURE_OPENAI_REASONING_API_KEY:-}" ]]; then
+    BACKEND_ENV_VARS+=("AZURE_OPENAI_REASONING_API_KEY=secretref:reasoning-api-key")
+  fi
+  if [[ -n "${FOUNDRY_GPT_IMAGE_API_KEY:-}" ]]; then
+    BACKEND_ENV_VARS+=("FOUNDRY_GPT_IMAGE_API_KEY=secretref:foundry-image-api-key")
+  fi
+  if [[ -n "${ARK_API_KEY:-}" ]]; then
+    BACKEND_ENV_VARS+=("ARK_API_KEY=secretref:ark-api-key")
+  fi
+  if [[ -n "${R2_ACCESS_KEY_ID:-}" ]]; then
+    BACKEND_ENV_VARS+=("R2_ACCESS_KEY_ID=secretref:r2-access-key-id")
+  fi
+  if [[ -n "${R2_SECRET_ACCESS_KEY:-}" ]]; then
+    BACKEND_ENV_VARS+=("R2_SECRET_ACCESS_KEY=secretref:r2-secret-access-key")
   fi
 
   az containerapp update \

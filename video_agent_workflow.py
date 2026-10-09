@@ -60,7 +60,7 @@ def main() -> None:
         "--scene-duration",
         type=int,
         default=SORA_CLIP_DURATION_SECONDS,
-        help="Seconds to assign each scene clip (Sora: 4/8/12, Kling/Jimeng: 5/10).",
+        help="Seconds to assign each scene clip (Sora: 4/8/12, Kling/Jimeng: 5/10, Seedance: 4/5/8/10/12).",
     )
     parser.add_argument(
         "--ai-first-frames",
@@ -69,7 +69,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--video-provider",
-        choices=("sora2", "kling", "jimeng"),
+        choices=("sora2", "kling", "jimeng", "seedance"),
         default=DEFAULT_VIDEO_PROVIDER,
         help="Video backend to use for rendering scenes.",
     )

@@ -29,6 +29,7 @@ from .config import (
 from .images import prepare_sequence_initial_image, resolve_scene_image_dir, save_payload_as_png
 from .kling import render_kling_clip
 from .jimeng import render_jimeng_clip
+from .seedance import render_seedance_clip, write_seedance_logs
 from .models import (
     EncodedImagePayload,
     SceneRender,
@@ -280,6 +281,8 @@ async def run_single_video_job(config: SingleVideoJobConfig) -> None:
             log_path, client_log_path, video_id = await _render_single_with_kling(config)
         elif config.video_provider == "jimeng":
             log_path, client_log_path, video_id = await _render_single_with_jimeng(config)
+        elif config.video_provider == "seedance":
+            log_path, client_log_path, video_id = await _render_single_with_seedance(config)
         else:
             log_path, client_log_path, video_id = await _render_single_with_sora(config)
         await SINGLE_VIDEO_STORE.update_progress(job_id, 0.75, "Download completed, finalizing artifacts.")
@@ -469,6 +472,43 @@ async def _render_single_with_jimeng(
     return log_path, client_log_path, result.task_id
 
 
+async def _render_single_with_seedance(
+    config: SingleVideoJobConfig,
+) -> tuple[Path, Path, Optional[str]]:
+    reference_path = (
+        str(config.reference_image_path)
+        if config.reference_image_path
+        else (str(config.reference_image_paths[0]) if config.reference_image_paths else None)
+    )
+    result = await render_seedance_clip(
+        prompt_text=config.prompt_text,
+        duration_seconds=config.duration,
+        resolution=config.resolution,
+        output_path=config.video_path,
+        primary_image_path=reference_path,
+    )
+    log_path, client_log_path = write_seedance_logs(result, config.video_path, ".client.log")
+    return log_path, client_log_path, result.task_id
+
+
+async def _render_scene_regen_with_seedance(
+    job_id: str,
+    scene,
+    prompt_text: str,
+    resolution: str,
+    output_path: Path,
+) -> tuple[Path, Path, str]:
+    result = await render_seedance_clip(
+        prompt_text=prompt_text,
+        duration_seconds=scene.duration_seconds,
+        resolution=resolution,
+        output_path=output_path,
+        primary_image_path=scene.first_frame_path,
+    )
+    log_path, client_log_path = write_seedance_logs(result, output_path, ".regen.log", action="regeneration")
+    return log_path, client_log_path, result.task_id
+
+
 async def _render_scene_regen_with_kling(
     job_id: str,
     scene,
@@ -553,7 +593,7 @@ async def run_single_video_remix(job_id: str, prompt: str) -> None:
         logger.warning("Remix requested for unknown single job %s: %s", job_id, exc)
         return
 
-    if job_state.video_provider in {"kling", "jimeng"}:
+    if job_state.video_provider in {"kling", "jimeng", "seedance"}:
         await _safe_single_add_message(
             job_id,
             "failed",
@@ -672,7 +712,7 @@ async def run_scene_remix_job(job_id: str, scene_order: int, prompt: str) -> Non
         )
         return
 
-    if video_provider in {"kling", "jimeng"}:
+    if video_provider in {"kling", "jimeng", "seedance"}:
         await _safe_workflow_add_message(
             job_id,
             "failed",
@@ -849,9 +889,14 @@ async def run_scene_regeneration_job(job_id: str, scene_order: int, prompt_overr
             )
         return
 
-    if video_provider == "jimeng":
+    if video_provider in {"jimeng", "seedance"}:
+        render_regen = (
+            _render_scene_regen_with_seedance
+            if video_provider == "seedance"
+            else _render_scene_regen_with_jimeng
+        )
         try:
-            log_path, client_log_path, video_id = await _render_scene_regen_with_jimeng(
+            log_path, client_log_path, video_id = await render_regen(
                 job_id,
                 scene,
                 prompt_text_current,
@@ -881,7 +926,9 @@ async def run_scene_regeneration_job(job_id: str, scene_order: int, prompt_overr
                 ),
             )
         except Exception as exc:  # pragma: no cover - defensive logging
-            logger.exception("Jimeng regeneration job for %s scene %s failed: %s", job_id, scene_order, exc)
+            logger.exception(
+                "%s regeneration job for %s scene %s failed: %s", video_provider, job_id, scene_order, exc
+            )
             await _safe_workflow_add_message(
                 job_id,
                 "failed",

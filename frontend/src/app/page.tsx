@@ -1271,7 +1271,7 @@ export default function Home() {
       console.error(err);
       setWorkflowTemplateError(
         templateUpdated
-          ? "Template updated but GPT-5 rerun failed. Try refining again."
+          ? "Template updated but GPT-6.1-sol rerun failed. Try refining again."
           : "Unable to update prompt template. Confirm the backend accepts template edits.",
       );
       return;
@@ -2298,6 +2298,7 @@ export default function Home() {
           <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
             {translate("Paste your storyboard with scene headings.")}{" "}
             <span className="font-mono text-xs text-slate-500">**Scene 1 (Title)**</span>{" "}
+            {translate("Headings are optional: GPT-6.1-sol adds them when missing.")}{" "}
             {translate("The Director agent will refine prompts following Sora2 best practices.")}
           </p>
           <form className="space-y-5" onSubmit={handleCombinedSubmit}>
@@ -2458,7 +2459,7 @@ export default function Home() {
                   {translate(generateAiFirstFrames ? "AI start stills enabled" : "No AI first frames")}
                 </button>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  {translate("Use GPT-5 + gpt-image-1 to seed each scene.")}
+                  {translate("Use GPT-6.1-sol + gpt-image-2.5 to seed each scene.")}
                 </p>
               </div>
             </div>
@@ -2498,9 +2499,9 @@ export default function Home() {
             <div className="rounded border border-slate-300 dark:border-slate-700 bg-slate-100/50 dark:bg-slate-100 dark:bg-slate-800/50 px-4 py-3">
               <div className="flex items-center justify-between gap-4">
                 <div>
-                  <p className="text-sm font-semibold text-zinc-600 dark:text-slate-300">{translate("Refine script with GPT-5")}</p>
+                  <p className="text-sm font-semibold text-zinc-600 dark:text-slate-300">{translate("Refine script with GPT-6.1-sol")}</p>
                   <p className="text-xs text-slate-500">
-                    {translate("Use GPT-5 to polish the storyboard before planning scenes.")}
+                    {translate("Use GPT-6.1-sol to polish the storyboard before planning scenes.")}
                   </p>
                 </div>
                 <button
@@ -2809,9 +2810,9 @@ export default function Home() {
             <div className="rounded border border-slate-300 dark:border-slate-700 bg-slate-100/50 dark:bg-slate-100 dark:bg-slate-800/50 px-4 py-3">
               <div className="flex items-center justify-between gap-4">
                 <div>
-                  <p className="text-sm font-semibold text-zinc-600 dark:text-slate-300">{translate("Refine prompt with GPT-5")}</p>
+                  <p className="text-sm font-semibold text-zinc-600 dark:text-slate-300">{translate("Refine prompt with GPT-6.1-sol")}</p>
                   <p className="text-xs text-slate-500">
-                    {translate("Let GPT-5 tighten the single-scene prompt before submitting.")}
+                    {translate("Let GPT-6.1-sol tighten the single-scene prompt before submitting.")}
                   </p>
                 </div>
                 <button
@@ -4419,8 +4420,8 @@ export default function Home() {
               <p className="text-sm text-slate-500 dark:text-slate-400">
                 {translate(
                   refinementReview.mode === "workflow"
-                    ? "GPT-5 refined your storyboard. Edit it below or proceed."
-                    : "GPT-5 refined your prompt. Edit it below or proceed.",
+                    ? "GPT-6.1-sol refined your storyboard. Edit it below or proceed."
+                    : "GPT-6.1-sol refined your prompt. Edit it below or proceed.",
                 )}
               </p>
               <div className="space-y-2">
@@ -4437,9 +4438,9 @@ export default function Home() {
                 <div className="space-y-3 rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/40 p-3">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <p className="text-sm font-semibold text-zinc-600 dark:text-slate-200">{translate("GPT-5 prompt template")}</p>
+                      <p className="text-sm font-semibold text-zinc-600 dark:text-slate-200">{translate("GPT-6.1-sol prompt template")}</p>
                       <p className="text-xs text-slate-500 dark:text-slate-400">
-                        {translate("Edit or replace the GPT-5 prompt file before refining scenes.")}
+                        {translate("Edit or replace the GPT-6.1-sol prompt file before refining scenes.")}
                       </p>
                     </div>
                     <button
@@ -4461,7 +4462,7 @@ export default function Home() {
                     value={workflowTemplateDraft}
                     onChange={(event) => setWorkflowTemplateDraft(event.target.value)}
                     disabled={workflowTemplateLoading || workflowTemplateSaving}
-                    placeholder={translate("Edit or replace the GPT-5 prompt file before refining scenes.")}
+                    placeholder={translate("Edit or replace the GPT-6.1-sol prompt file before refining scenes.")}
                   />
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     {workflowTemplateError ? (

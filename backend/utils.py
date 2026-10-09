@@ -70,6 +70,25 @@ def resolution_to_size(resolution: str) -> tuple[int, int]:
     return width, height
 
 
+def nearest_aspect_ratio(resolution: str, candidates: Sequence[str], default: str = "16:9") -> str:
+    """Pick the ``W:H`` candidate closest to the WIDTHxHEIGHT resolution."""
+
+    width, height = resolution_to_size(resolution)
+    ratio = width / float(height)
+    best = default
+    smallest_delta = float("inf")
+    for candidate in candidates:
+        try:
+            a, b = candidate.split(":")
+            delta = abs(ratio - float(a) / float(b))
+        except (ValueError, ZeroDivisionError):
+            continue
+        if delta < smallest_delta:
+            smallest_delta = delta
+            best = candidate
+    return best
+
+
 def escape_for_concat(path: Path) -> str:
     escaped = path.as_posix().replace("'", "'\\''")
     return f"file '{escaped}'"
@@ -185,6 +204,7 @@ def build_static_asset_url(path: Optional[str]) -> Optional[str]:
 
 
 __all__ = [
+    "nearest_aspect_ratio",
     "build_static_asset_url",
     "escape_for_concat",
     "extract_frame_at_timestamp",
