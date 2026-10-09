@@ -563,6 +563,9 @@ class WorkflowJobStore:
             scene_duration=job.scene_duration,
             generate_ai_first_frame=job.generate_ai_first_frame,
             character_ref_paths=list(job.character_ref_paths),
+            character_ref_urls=[
+                url for url in (build_static_asset_url(path) for path in job.character_ref_paths) if url
+            ],
             visual_style=job.visual_style,
         )
 

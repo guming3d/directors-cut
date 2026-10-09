@@ -89,3 +89,16 @@ async def test_single_video_store_round_trip(tmp_path):
     assert reloaded_snapshot.video_path == version.video_path
     assert reloaded_snapshot.versions[0].video_path == version.video_path
     assert reloaded_snapshot.selected_version_id == version.version_id
+
+
+@pytest.mark.asyncio
+async def test_workflow_status_exposes_character_reference_urls(tmp_path):
+    from backend.config import OUTPUT_DIR
+
+    store = WorkflowJobStore(WorkflowJobDatabase(tmp_path / "workflow.json"))
+    await store.create_job("job-refs")
+    await store.update_character_refs("job-refs", [str(OUTPUT_DIR / "job-refs" / "character_refs" / "Mango_ref.png")])
+
+    snapshot = await store.get_status("job-refs")
+
+    assert snapshot.character_ref_urls == ["/static/job-refs/character_refs/Mango_ref.png"]

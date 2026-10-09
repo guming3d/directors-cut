@@ -73,6 +73,7 @@ export type JobStatus = {
   generation_mode: "parallel" | "sequence";
   scene_duration?: number;
   generate_ai_first_frame?: boolean;
+  character_ref_urls?: string[];
 };
 
 export type SingleVideoJob = {

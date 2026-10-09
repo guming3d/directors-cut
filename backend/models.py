@@ -486,6 +486,7 @@ class JobStatusResponse(BaseModel):
     scene_duration: int = SORA_CLIP_DURATION_SECONDS
     generate_ai_first_frame: bool = False
     character_ref_paths: list[str] = Field(default_factory=list)
+    character_ref_urls: list[str] = Field(default_factory=list)
     visual_style: str = "3d_animation"
 
 

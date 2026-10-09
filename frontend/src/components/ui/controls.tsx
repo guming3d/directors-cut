@@ -162,3 +162,8 @@ export const fileInputClass =
   "block w-full text-sm text-slate-500 file:mr-3 file:h-9 file:cursor-pointer file:rounded-lg file:border file:border-slate-300 " +
   "file:bg-white file:px-3 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-50 " +
   "dark:text-slate-400 dark:file:border-slate-700 dark:file:bg-slate-900 dark:file:text-slate-200";
+
+export const secondaryButtonClass =
+  "inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 text-xs font-medium text-slate-700 transition " +
+  "hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:cursor-not-allowed disabled:opacity-60 " +
+  "dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800";

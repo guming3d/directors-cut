@@ -3,6 +3,7 @@
 import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Modal from "@/components/Modal";
 import WorkflowProgress from "@/components/WorkflowProgress";
+import { ImageFrame, MaterialGroup, VideoFrame, aspectRatioOf } from "@/components/SceneMedia";
 import {
   Field,
   SegmentedControl,
@@ -11,6 +12,7 @@ import {
   fileInputClass,
   inputClass,
   primaryButtonClass,
+  secondaryButtonClass,
 } from "@/components/ui/controls";
 import { LanguageToggle } from "@/components/dashboard/LanguageToggle";
 import { ThemeToggle } from "@/components/dashboard/ThemeToggle";
@@ -925,6 +927,12 @@ export default function Home() {
           activeSceneSelectedVersion.last_frame_url ?? activeScene?.last_frame_url,
         )
       : null;
+
+  const jobAspectRatio = aspectRatioOf(job?.resolution);
+  const isPortraitJob = jobAspectRatio < 1;
+  const characterRefUrls = (job?.character_ref_urls ?? [])
+    .map((url) => buildAssetUrl(apiBase, url))
+    .filter((url): url is string => Boolean(url));
 
   const singleVideoUrl = buildAssetUrl(apiBase, singleJob?.video_url);
   const singleStatusToken = getStatusToken(singleJob?.status, language);
@@ -2896,13 +2904,16 @@ export default function Home() {
                   </div>
                   {finalVideoUrl ? (
                     <>
-                      <video
-                        controls
-                        className="max-h-[420px] w-full rounded border border-slate-200 dark:border-slate-800 bg-black/60"
-                        src={finalVideoUrl}
-                      >
-                        {translate("Your browser does not support HTML5 video.")}
-                      </video>
+                      <div className="flex justify-center rounded-xl bg-slate-50 p-4 dark:bg-slate-950/40">
+                        <VideoFrame
+                          key={finalVideoUrl}
+                          src={finalVideoUrl}
+                          initialRatio={jobAspectRatio}
+                          fit={isPortraitJob ? "height" : "width"}
+                          sizeClass={isPortraitJob ? "h-[min(70vh,720px)]" : "max-w-5xl"}
+                          fallbackText={translate("Your browser does not support HTML5 video.")}
+                        />
+                      </div>
                       <a
                         href={finalVideoUrl}
                         target="_blank"
@@ -2929,24 +2940,30 @@ export default function Home() {
                         {translate("Scenes this workflow")}: {job.scenes.length}
                       </p>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-wide text-slate-500">
-                      <span className="rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-2 py-0.5">
-                        {translate(job.generation_mode === "sequence" ? "Sequence" : "Parallel")}
-                      </span>
-                      <span className="rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-2 py-0.5">
-                        {translate(showAiFirstFrames ? "AI start stills enabled" : "No AI first frames")}
-                      </span>
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+                      {[
+                        job.resolution,
+                        translate(job.generation_mode === "sequence" ? "Sequence" : "Parallel"),
+                        translate(showAiFirstFrames ? "AI start stills enabled" : "No AI first frames"),
+                      ].map((tag) => (
+                        <span
+                          key={tag}
+                          className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 dark:border-slate-700 dark:bg-slate-900"
+                        >
+                          {tag}
+                        </span>
+                      ))}
                     </div>
                   </div>
-                  <div className="mt-5 grid gap-6 lg:grid-cols-[380px_1fr]">
-                    <div className="max-h-[75vh] overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 p-3 shadow-inner shadow-black/5 dark:shadow-black/20">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                          {translate("Scenes this workflow")}
-                        </p>
-                        <span className="text-[11px] text-slate-500">{translate("Available scenes")}</span>
-                      </div>
-                      <div className="mt-3 space-y-2">
+                  <div className="mt-5 grid gap-6 lg:grid-cols-[300px_minmax(0,1fr)]">
+                    <nav
+                      aria-label={translate("Scenes")}
+                      className="max-h-[80vh] overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 dark:border-slate-800 dark:bg-slate-900"
+                    >
+                      <p className="px-2 pb-2 pt-1 text-xs font-medium text-slate-500 dark:text-slate-400">
+                        {translate("Scenes")} ({job.scenes.length})
+                      </p>
+                      <ul className="space-y-1">
                         {job.scenes.map((scene) => {
                           const versions = scene.versions ?? [];
                           const selectedVersion =
@@ -2963,148 +2980,111 @@ export default function Home() {
                           const isActive = activeScene?.order === scene.order;
                           const isFailed = selectedVersion?.source === "failed";
                           const isRegenerating = Boolean(sceneRegenerating[scene.order]);
+                          const thumbSize = isPortraitJob ? "h-20" : "h-14";
                           return (
-                            <button
-                              key={scene.order}
-                              type="button"
-                              onClick={() => setActiveSceneOrder(scene.order)}
-                              className={`group relative flex w-full flex-col gap-2 rounded-lg border p-3 text-left transition-all ${
-                                isActive
-                                  ? "border-blue-500/50 bg-white dark:bg-slate-800/80 shadow-lg shadow-blue-900/5 dark:shadow-blue-900/20 ring-1 ring-blue-500/20"
-                                  : "border-slate-200 dark:border-slate-700/50 bg-white dark:bg-slate-900/40 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800/60"
-                              }`}
-                            >
-                              <div className="flex items-center justify-between w-full border-b border-slate-700/50 pb-2 mb-1">
-                                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 group-hover:text-slate-700 dark:text-slate-400 dark:group-hover:text-slate-300">
-                                  {translate("Scene")} {scene.order}
-                                </span>
-                                {isRegenerating && (
-                                  <ArrowPathIcon className="h-3 w-3 animate-spin text-blue-400" />
-                                )}
-                              </div>
-                              
-                              <div className="flex gap-3">
-                                {previewUrl ? (
-                                  <div className="relative h-16 w-24 flex-shrink-0 overflow-hidden rounded border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-black/40">
-                                    <Image
+                            <li key={scene.order}>
+                              <button
+                                type="button"
+                                onClick={() => setActiveSceneOrder(scene.order)}
+                                aria-current={isActive ? "true" : undefined}
+                                className={`flex w-full items-center gap-3 rounded-lg p-2 text-left transition focus-visible:outline-2 focus-visible:outline-blue-600 ${
+                                  isActive
+                                    ? "bg-blue-50 ring-1 ring-blue-600/25 dark:bg-blue-500/10 dark:ring-blue-400/30"
+                                    : "hover:bg-slate-50 dark:hover:bg-slate-800/60"
+                                }`}
+                              >
+                                <div className="flex-none">
+                                  {previewUrl ? (
+                                    <ImageFrame
                                       src={previewUrl}
-                                      alt={`${scene.label} preview`}
-                                      width={120}
-                                      height={80}
-                                      unoptimized
-                                      className="h-full w-full object-cover opacity-80 transition group-hover:opacity-100 group-hover:scale-105"
+                                      alt={`${scene.label} ${translate("First frame")}`}
+                                      initialRatio={jobAspectRatio}
+                                      fit="height"
+                                      sizeClass={thumbSize}
                                     />
-                                  </div>
-                                ) : (
-                                  <div className="flex h-16 w-24 flex-shrink-0 items-center justify-center rounded border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-[10px] text-slate-400 dark:text-slate-500">
-                                    {translate("Pending")}
-                                  </div>
-                                )}
-                                
-                                <div className="flex min-w-0 flex-1 flex-col justify-between py-0.5">
-                                  <div>
-                                    <p className="truncate text-xs font-medium text-slate-700 dark:text-slate-200 group-hover:text-slate-900 dark:group-hover:text-white">
-                                      {scene.label}
-                                    </p>
-                                    <p className="mt-0.5 truncate text-[10px] text-slate-500">
-                                      {scenePromptEdits[scene.order]?.trim()
-                                        ? scenePromptEdits[scene.order]
-                                        : selectedVersion?.prompt ?? ""}
-                                    </p>
-                                  </div>
-                                  
-                                  <div className="flex items-center gap-2">
-                                    <span className="inline-flex items-center rounded bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 text-[9px] font-medium text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
-                                      {scene.duration_seconds}s
-                                    </span>
-                                    <span className="inline-flex items-center rounded bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 text-[9px] font-medium text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
-                                      v{versions.length}
-                                    </span>
-                                    {isFailed && (
-                                      <span className="ml-auto text-[9px] font-bold text-rose-500">
-                                        FAILED
-                                      </span>
-                                    )}
-                                  </div>
+                                  ) : (
+                                    <div
+                                      style={{ aspectRatio: String(jobAspectRatio) }}
+                                      className={`${thumbSize} rounded-lg border border-dashed border-slate-300 dark:border-slate-700`}
+                                    />
+                                  )}
                                 </div>
-                              </div>
-                            </button>
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
+                                    {scene.label}
+                                  </p>
+                                  <p className="mt-1 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                                    <span>{scene.duration_seconds}s</span>
+                                    <span>v{versions.length}</span>
+                                    {isFailed ? (
+                                      <span className="font-medium text-rose-600 dark:text-rose-400">{translate("Failed")}</span>
+                                    ) : null}
+                                    {isRegenerating ? (
+                                      <ArrowPathIcon aria-hidden="true" className="h-3.5 w-3.5 animate-spin text-blue-600" />
+                                    ) : null}
+                                  </p>
+                                </div>
+                              </button>
+                            </li>
                           );
                         })}
-                      </div>
-                    </div>
+                      </ul>
+                    </nav>
 
-                    <div className="max-h-[75vh] overflow-y-auto space-y-4 rounded-lg border border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/50 p-4 shadow-inner shadow-black/20">
+                    <div className="max-h-[80vh] min-w-0 space-y-6 overflow-y-auto rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
                       {activeScene ? (
                         <>
                           <div className="flex flex-wrap items-start justify-between gap-3">
-                            <div className="space-y-1">
-                              <div className="flex items-center gap-2">
-                                <span className="rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                                  {translate("Scene")} {activeScene.order}
+                            <div className="min-w-0">
+                              <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+                                {activeScene.label}
+                              </h3>
+                              <p className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
+                                <span>
+                                  {translate("Scene duration")}: {activeScene.duration_seconds} {translate("seconds")}
                                 </span>
-                                <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
-                                  {activeScene.label}
-                                </h3>
-                              </div>
-                              <p className="text-xs text-slate-500 dark:text-slate-400">
-                                {translate("Scene duration")}: {activeScene.duration_seconds} {translate("seconds")} •{" "}
-                                {translate("Versions")}: {activeSceneVersions.length}
+                                <span>
+                                  {translate("Versions")}: {activeSceneVersions.length}
+                                </span>
+                                {activeSceneSelectedVersion ? (
+                                  <span>
+                                    {translate("Selected")}: {activeSceneSelectedVersion.label},{" "}
+                                    {formatTimeDistance(activeSceneSelectedVersion.created_at)}
+                                  </span>
+                                ) : null}
+                                {activeSceneSelectedVersion?.video_id ? (
+                                  <span className="max-w-full truncate">
+                                    {translate("Video ID:")} {activeSceneSelectedVersion.video_id}
+                                  </span>
+                                ) : null}
                               </p>
-                              {activeSceneSelectedVersion ? (
-                                <p className="text-xs text-slate-500 dark:text-slate-400">
-                                  {translate("Selected")}: {activeSceneSelectedVersion.label} •{" "}
-                                  {formatTimeDistance(activeSceneSelectedVersion.created_at)}
-                                </p>
-                              ) : null}
                             </div>
-                            <div className="flex flex-wrap items-center gap-2">
-                              {activeSceneSelectedVersion?.prompt ? (
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setPromptPreview({
-                                      sceneLabel: activeScene.label,
-                                      versionLabel: activeSceneSelectedVersion.label,
-                                      prompt: activeSceneSelectedVersion.prompt ?? "",
-                                    })
-                                  }
-                                  className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-[11px] font-semibold text-zinc-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-800 dark:hover:text-slate-100"
-                                >
-                                  <DocumentTextIcon className="h-4 w-4" />
-                                  {translate("View system prompt")}
-                                </button>
-                              ) : null}
+                            {activeSceneSelectedVersion?.prompt ? (
                               <button
                                 type="button"
                                 onClick={() =>
-                                  handleCopyPrompt(
-                                    scenePromptEdits[activeScene.order] ??
-                                      activeSceneSelectedVersion?.prompt ??
-                                      "",
-                                  )
+                                  setPromptPreview({
+                                    sceneLabel: activeScene.label,
+                                    versionLabel: activeSceneSelectedVersion.label,
+                                    prompt: activeSceneSelectedVersion.prompt ?? "",
+                                  })
                                 }
-                                className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-[11px] font-semibold text-zinc-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-800 dark:hover:text-slate-100"
+                                className={secondaryButtonClass}
                               >
                                 <DocumentTextIcon className="h-4 w-4" />
-                                {translate("Copy prompt")}
+                                {translate("View system prompt")}
                               </button>
-                              {activeSceneSelectedVersion?.video_id ? (
-                                <span className="rounded-md border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-2 py-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                                  {translate("Video ID:")} {activeSceneSelectedVersion.video_id}
-                                </span>
-                              ) : null}
-                            </div>
+                            ) : null}
                           </div>
 
                           {activeSceneSelectedVersion?.source === "failed" ? (
-                            <div className="flex items-start gap-3 rounded-md border border-rose-200 dark:border-rose-900/40 bg-rose-50 dark:bg-rose-950/30 px-3 py-2 shadow-inner shadow-rose-900/10">
-                              <ExclamationTriangleIcon className="h-5 w-5 flex-none text-rose-500" />
-                              <div className="space-y-1">
-                                <p className="text-xs font-semibold text-rose-700 dark:text-rose-300">
+                            <div className="flex items-start gap-2.5 rounded-lg bg-rose-50 px-3.5 py-3 dark:bg-rose-500/10">
+                              <ExclamationTriangleIcon className="mt-0.5 h-4 w-4 flex-none text-rose-600 dark:text-rose-400" />
+                              <div>
+                                <p className="text-sm font-medium text-rose-700 dark:text-rose-300">
                                   {translate("Scene generation blocked")}
                                 </p>
-                                <p className="text-[11px] text-rose-600 dark:text-rose-300">
+                                <p className="text-xs text-rose-600 dark:text-rose-300">
                                   {translate("Generation blocked. Update the prompt and regenerate this scene.")}
                                 </p>
                               </div>
@@ -3112,99 +3092,47 @@ export default function Home() {
                           ) : null}
 
                           {sceneRegenerating[activeScene.order] ? (
-                            <div className="flex items-center gap-3 rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/70 px-3 py-2 shadow-inner shadow-black/10">
-                              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 shadow-sm shadow-black/20">
-                                <ArrowPathIcon className="h-5 w-5 animate-spin" />
-                              </div>
-                              <div className="flex-1 space-y-1">
-                                <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">
-                                  {translate("Scene regeneration in progress")}
-                                </p>
-                                <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                                  {translate("Awaiting version refresh...")}
-                                </p>
-                                <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
-                                  <div className="h-full w-2/3 animate-pulse bg-gradient-to-r from-slate-400 via-slate-200 to-slate-400 dark:from-slate-600 dark:via-slate-500 dark:to-slate-600" />
-                                </div>
-                              </div>
+                            <div className="flex items-center gap-2.5 rounded-lg bg-blue-50 px-3.5 py-3 text-sm text-blue-700 dark:bg-blue-500/10 dark:text-blue-300">
+                              <ArrowPathIcon className="h-4 w-4 flex-none animate-spin" />
+                              <span className="font-medium">{translate("Scene regeneration in progress")}</span>
+                              <span className="text-blue-600/80 dark:text-blue-300/80">{translate("Awaiting version refresh...")}</span>
                             </div>
                           ) : null}
 
-                          <div className="grid gap-4 xl:grid-cols-[1.15fr,0.85fr]">
-                            <div className="space-y-3">
-                              <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-black/10 dark:bg-black/40 p-3 shadow-inner shadow-black/20">
-                                <div className="flex items-center justify-between gap-3">
-                                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                                    {translate("Generated Video")}
-                                  </p>
-                                  {activeSceneSelectedVersion?.source ? (
-                                    <span className="rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                                      {activeSceneSelectedVersion.source}
-                                    </span>
-                                  ) : null}
+                          <div
+                            className={`grid gap-6 ${
+                              isPortraitJob
+                                ? "lg:grid-cols-[auto_minmax(0,1fr)]"
+                                : "xl:grid-cols-[minmax(0,3fr)_minmax(320px,2fr)]"
+                            }`}
+                          >
+                            <div className="min-w-0">
+                              {activeSceneVideoUrl ? (
+                                <VideoFrame
+                                  key={`${activeSceneSelectedVersion?.version_id ?? "scene"}-${activeSceneVideoUrl}`}
+                                  src={activeSceneVideoUrl}
+                                  initialRatio={jobAspectRatio}
+                                  fit={isPortraitJob ? "height" : "width"}
+                                  sizeClass={isPortraitJob ? "h-[min(64vh,600px)] min-h-[320px]" : ""}
+                                  fallbackText={translate("Version video unavailable.")}
+                                />
+                              ) : (
+                                <div
+                                  style={{ aspectRatio: String(jobAspectRatio) }}
+                                  className={`flex items-center justify-center rounded-lg border border-dashed border-slate-300 text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400 ${
+                                    isPortraitJob ? "h-[min(64vh,600px)] min-h-[320px]" : "w-full"
+                                  }`}
+                                >
+                                  {translate("Video pending...")}
                                 </div>
-                                {activeSceneVideoUrl ? (
-                                  <video
-                                    key={`${activeSceneSelectedVersion?.version_id ?? "scene"}-${activeSceneVideoUrl}`}
-                                    controls
-                                    className="mt-2 max-h-[360px] w-full rounded-md border border-slate-200 dark:border-slate-800 bg-black/80"
-                                    src={activeSceneVideoUrl}
-                                  >
-                                    {translate("Version video unavailable.")}
-                                  </video>
-                                ) : (
-                                  <div className="mt-2 flex h-52 items-center justify-center rounded-md border border-dashed border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-sm text-slate-500 dark:text-slate-400">
-                                    {translate("Video pending...")}
-                                  </div>
-                                )}
-                              </div>
-                              <div className="grid gap-3 sm:grid-cols-2">
-                                {activeSceneFirstFrameUrl ? (
-                                  <div className="rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 p-2">
-                                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                                      {translate("AI first frame preview")}
-                                    </p>
-                                    <Image
-                                      src={activeSceneFirstFrameUrl}
-                                      alt={`${activeScene.label} ${translate("AI first frame preview")}`}
-                                      width={320}
-                                      height={200}
-                                      unoptimized
-                                      className="mt-2 h-28 w-full rounded object-cover"
-                                    />
-                                  </div>
-                                ) : null}
-                                {activeSceneLastFrameUrl ? (
-                                  <div className="rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 p-2">
-                                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                                      {translate("Last frame reference")}
-                                    </p>
-                                    <Image
-                                      src={activeSceneLastFrameUrl}
-                                      alt={`${activeScene.label} ${translate("Last frame reference")}`}
-                                      width={320}
-                                      height={200}
-                                      unoptimized
-                                      className="mt-2 h-28 w-full rounded object-cover"
-                                    />
-                                  </div>
-                                ) : null}
-                              </div>
+                              )}
                             </div>
 
-                            <div className="space-y-3">
-                              <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 p-3 shadow-inner shadow-black/10">
-                                <div className="flex items-center justify-between gap-3">
-                                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                                    {translate("Edit prompt before regenerating")}
-                                  </p>
-                                  <span className="text-[11px] text-slate-500">
-                                    {translate("Video ID:")}{" "}
-                                    {activeSceneSelectedVersion?.video_id ?? translate("Unavailable")}
-                                  </span>
-                                </div>
+                            <div className="min-w-0 space-y-6">
+                              <Field label={translate("Edit prompt before regenerating")} htmlFor="scene-prompt-edit">
                                 <textarea
-                                  className="mt-2 min-h-[120px] w-full rounded-md border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-800"
+                                  id="scene-prompt-edit"
+                                  className={`${inputClass} min-h-[200px] resize-y py-2.5 leading-6`}
                                   value={
                                     scenePromptEdits[activeScene.order] ??
                                     activeSceneSelectedVersion?.prompt ??
@@ -3218,206 +3146,228 @@ export default function Home() {
                                   }
                                   placeholder={translate("Edit prompt before regenerating")}
                                 />
-                                <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      handleCopyPrompt(
-                                        scenePromptEdits[activeScene.order] ??
-                                          activeSceneSelectedVersion?.prompt ??
-                                          "",
-                                      )
-                                    }
-                                    className="inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs font-semibold text-zinc-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-800 dark:hover:text-slate-100"
-                                  >
-                                    <DocumentTextIcon className="h-4 w-4" />
-                                    {translate("Copy prompt")}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      handleRegenerateScene(
-                                        activeScene.order,
-                                        scenePromptEdits[activeScene.order] ??
-                                          activeSceneSelectedVersion?.prompt ??
-                                          "",
-                                      )
-                                    }
-                                    disabled={Boolean(sceneRegenerating[activeScene.order])}
-                                    className="inline-flex items-center justify-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 bg-slate-900 px-4 py-2 text-xs font-semibold text-white dark:bg-slate-100 dark:text-slate-900 shadow-sm shadow-slate-900/50 transition hover:bg-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400 disabled:cursor-not-allowed disabled:opacity-60"
-                                  >
-                                    {sceneRegenerating[activeScene.order] ? (
-                                      <ArrowPathIcon className="h-4 w-4 animate-spin" />
-                                    ) : (
-                                      <ArrowPathIcon className="h-4 w-4" />
-                                    )}
-                                    {sceneRegenerating[activeScene.order]
-                                      ? translate("Regenerating...")
-                                      : translate("Regenerate Scene")}
-                                  </button>
-                                </div>
+                              </Field>
+                              <div className="-mt-3 flex flex-wrap items-center justify-end gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleCopyPrompt(
+                                      scenePromptEdits[activeScene.order] ??
+                                        activeSceneSelectedVersion?.prompt ??
+                                        "",
+                                    )
+                                  }
+                                  className={secondaryButtonClass}
+                                >
+                                  <DocumentTextIcon className="h-4 w-4" />
+                                  {translate("Copy prompt")}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleRegenerateScene(
+                                      activeScene.order,
+                                      scenePromptEdits[activeScene.order] ??
+                                        activeSceneSelectedVersion?.prompt ??
+                                        "",
+                                    )
+                                  }
+                                  disabled={Boolean(sceneRegenerating[activeScene.order])}
+                                  className={`${primaryButtonClass} h-8 px-3 text-xs`}
+                                >
+                                  <ArrowPathIcon
+                                    className={`h-4 w-4 ${sceneRegenerating[activeScene.order] ? "animate-spin" : ""}`}
+                                  />
+                                  {sceneRegenerating[activeScene.order]
+                                    ? translate("Regenerating...")
+                                    : translate("Regenerate Scene")}
+                                </button>
                               </div>
 
-                              <form
-                                className="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 p-3 shadow-inner shadow-black/10"
-                                onSubmit={(event) => handleRemixSubmit(event, activeScene.order)}
-                              >
-                                <div className="flex items-center justify-between gap-3">
-                                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                                    {translate("Remix prompt")}
-                                  </p>
-                                  <span className="text-[11px] text-slate-500">
-                                    {translate("Uses previous video ID:")}{" "}
-                                    {activeSceneSelectedVersion?.video_id ?? translate("Unavailable")}
-                                  </span>
-                                </div>
-                                <textarea
-                                  className="mt-2 min-h-[96px] w-full rounded-md border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-800"
-                                  placeholder={translate("Describe how you want to remix this scene...")}
-                                  value={remixPrompts[activeScene.order] ?? ""}
-                                  onChange={(event) =>
-                                    setRemixPrompts((prev) => ({
-                                      ...prev,
-                                      [activeScene.order]: event.target.value,
-                                    }))
-                                  }
-                                />
-                                <div className="mt-3 flex items-center justify-between gap-2 text-xs text-slate-500">
-                                  <span>
-                                    {translate("Prompt:")}{" "}
-                                    {activeSceneSelectedVersion?.label ?? translate("Versions")}
-                                  </span>
-                                  <button
-                                    type="submit"
-                                    disabled={
-                                      !activeSceneSelectedVersion?.video_id || remixSubmitting[activeScene.order]
+                              {job.video_provider === "sora2" ? (
+                                <form
+                                  className="space-y-3 border-t border-slate-200 pt-5 dark:border-slate-800"
+                                  onSubmit={(event) => handleRemixSubmit(event, activeScene.order)}
+                                >
+                                  <Field
+                                    label={translate("Remix prompt")}
+                                    htmlFor="scene-remix-prompt"
+                                    hint={
+                                      <>
+                                        {translate("Uses previous video ID:")}{" "}
+                                        {activeSceneSelectedVersion?.video_id ?? translate("Unavailable")}
+                                      </>
                                     }
-                                    className="inline-flex items-center gap-1 rounded-md border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs font-semibold text-zinc-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-800 dark:hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
                                   >
-                                    {remixSubmitting[activeScene.order] ? (
-                                      <ArrowPathIcon className="h-4 w-4 animate-spin" />
-                                    ) : (
-                                      <ArrowPathIcon className="h-4 w-4" />
-                                    )}
-                                    {translate("Remix Scene")}
-                                  </button>
-                                </div>
-                              </form>
+                                    <textarea
+                                      id="scene-remix-prompt"
+                                      className={`${inputClass} min-h-[96px] resize-y py-2.5 leading-6`}
+                                      placeholder={translate("Describe how you want to remix this scene...")}
+                                      value={remixPrompts[activeScene.order] ?? ""}
+                                      onChange={(event) =>
+                                        setRemixPrompts((prev) => ({
+                                          ...prev,
+                                          [activeScene.order]: event.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </Field>
+                                  <div className="flex justify-end">
+                                    <button
+                                      type="submit"
+                                      disabled={
+                                        !activeSceneSelectedVersion?.video_id || remixSubmitting[activeScene.order]
+                                      }
+                                      className={secondaryButtonClass}
+                                    >
+                                      <ArrowPathIcon
+                                        className={`h-4 w-4 ${remixSubmitting[activeScene.order] ? "animate-spin" : ""}`}
+                                      />
+                                      {translate("Remix Scene")}
+                                    </button>
+                                  </div>
+                                </form>
+                              ) : null}
                             </div>
                           </div>
 
-                          <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 p-3 shadow-inner shadow-black/10">
-                            <div className="flex items-center justify-between gap-3">
-                              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                                {translate("Versions")}
+                          {characterRefUrls.length || activeSceneFirstFrameUrl || activeSceneLastFrameUrl ? (
+                            <section className="border-t border-slate-200 pt-5 dark:border-slate-800">
+                              <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                                {translate("Scene materials")}
+                              </h4>
+                              <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                                {translate("The images this clip was generated from. Click one to open it full size.")}
                               </p>
-                              <span className="text-[11px] text-slate-500">
-                                {translate("Scene")} {activeScene.order}
-                              </span>
-                            </div>
-                            <div className="mt-3 overflow-x-auto">
-                              <div className="flex min-w-full gap-3">
-                                {activeSceneVersions.map((version) => {
-                                  const versionVideoUrl = buildAssetUrl(apiBase, version.video_url);
-                                  const versionLastFrameUrl = showSequenceReferences
-                                    ? buildAssetUrl(apiBase, version.last_frame_url)
-                                    : null;
-                                  const isActiveVersion =
-                                    version.version_id === activeScene?.selected_version_id;
-                                  const isBusy = Boolean(selectionSubmitting[version.version_id]);
-                                  return (
-                                    <div
-                                      key={version.version_id}
-                                      className={`w-[260px] flex-shrink-0 rounded-lg border p-3 transition-all ${
-                                        isActiveVersion
-                                          ? "border-blue-500/50 bg-slate-800 shadow-lg shadow-blue-900/20 ring-1 ring-blue-500/20"
-                                          : "border-slate-700/50 bg-slate-900/40 hover:border-slate-600 hover:bg-slate-800/60"
-                                      }`}
-                                    >
-                                      <div className="flex items-start justify-between gap-2">
-                                        <div>
-                                          <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-                                            {version.label}
-                                          </p>
-                                          <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                                            {version.source} • {formatTimeDistance(version.created_at)}
-                                          </p>
-                                        </div>
-                                        <button
-                                          type="button"
-                                          onClick={() =>
-                                            handleSelectVersion(activeScene.order, version.version_id)
-                                          }
-                                          disabled={isActiveVersion || isBusy}
-                                          className={`rounded-md border px-3 py-1 text-[11px] font-semibold transition ${
-                                            isActiveVersion
-                                              ? "border-emerald-200 dark:border-emerald-900/50 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-500"
-                                              : "border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200 disabled:opacity-60"
-                                          }`}
-                                        >
-                                          {isActiveVersion
-                                            ? translate("Selected")
-                                            : isBusy
-                                              ? translate("Selecting...")
-                                              : translate("Use this version")}
-                                        </button>
-                                      </div>
+                              <div className="mt-4 flex flex-wrap items-start gap-x-8 gap-y-5">
+                                {characterRefUrls.length ? (
+                                  <MaterialGroup
+                                    title={translate("Character references")}
+                                    initialRatio={jobAspectRatio}
+                                    sizeClass={isPortraitJob ? "h-40" : "h-28"}
+                                    items={characterRefUrls.map((url, index) => ({
+                                      key: url,
+                                      src: url,
+                                      label: `${translate("Character references")} ${index + 1}`,
+                                      alt: `${translate("Character references")} ${index + 1}`,
+                                    }))}
+                                  />
+                                ) : null}
+                                {activeSceneFirstFrameUrl ? (
+                                  <MaterialGroup
+                                    title={translate("First frame")}
+                                    initialRatio={jobAspectRatio}
+                                    sizeClass={isPortraitJob ? "h-40" : "h-28"}
+                                    items={[
+                                      {
+                                        key: activeSceneFirstFrameUrl,
+                                        src: activeSceneFirstFrameUrl,
+                                        label: translate("First frame"),
+                                        alt: `${activeScene.label} ${translate("First frame")}`,
+                                      },
+                                    ]}
+                                  />
+                                ) : null}
+                                {activeSceneLastFrameUrl ? (
+                                  <MaterialGroup
+                                    title={translate("Last frame reference")}
+                                    initialRatio={jobAspectRatio}
+                                    sizeClass={isPortraitJob ? "h-40" : "h-28"}
+                                    items={[
+                                      {
+                                        key: activeSceneLastFrameUrl,
+                                        src: activeSceneLastFrameUrl,
+                                        label: translate("Last frame reference"),
+                                        alt: `${activeScene.label} ${translate("Last frame reference")}`,
+                                      },
+                                    ]}
+                                  />
+                                ) : null}
+                              </div>
+                            </section>
+                          ) : null}
+
+                          <section className="border-t border-slate-200 pt-5 dark:border-slate-800">
+                            <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                              {translate("Versions")}{" "}
+                              <span className="font-normal text-slate-500 dark:text-slate-400">({activeSceneVersions.length})</span>
+                            </h4>
+                            <ul className="mt-4 flex gap-3 overflow-x-auto pb-2">
+                              {activeSceneVersions.map((version) => {
+                                const versionVideoUrl = buildAssetUrl(apiBase, version.video_url);
+                                const isActiveVersion = version.version_id === activeScene?.selected_version_id;
+                                const isBusy = Boolean(selectionSubmitting[version.version_id]);
+                                const versionMediaSize = isPortraitJob ? "h-56" : "h-32";
+                                return (
+                                  <li
+                                    key={version.version_id}
+                                    className={`flex w-min min-w-[220px] flex-none flex-col rounded-xl border bg-white p-3 dark:bg-slate-900 ${
+                                      isActiveVersion
+                                        ? "border-blue-600 ring-2 ring-blue-600/15 dark:border-blue-500"
+                                        : "border-slate-200 dark:border-slate-800"
+                                    }`}
+                                  >
+                                    <div className="flex justify-center rounded-lg bg-slate-50 dark:bg-slate-950/40">
                                       {versionVideoUrl ? (
-                                        <video
+                                        <VideoFrame
                                           key={`${version.version_id}-${versionVideoUrl}`}
-                                          controls
-                                          className="mt-2 max-h-32 w-full rounded-md border border-slate-200 dark:border-slate-800 bg-black/60"
                                           src={versionVideoUrl}
-                                        >
-                                          {translate("Version video unavailable.")}
-                                        </video>
+                                          initialRatio={jobAspectRatio}
+                                          fit="height"
+                                          sizeClass={versionMediaSize}
+                                          fallbackText={translate("Version video unavailable.")}
+                                        />
                                       ) : (
-                                        <div className="mt-2 flex h-32 items-center justify-center rounded-md border border-dashed border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs text-slate-500 dark:text-slate-400">
+                                        <div
+                                          className={`flex ${versionMediaSize} items-center justify-center px-4 text-xs text-slate-500 dark:text-slate-400`}
+                                        >
                                           {translate("Video unavailable.")}
                                         </div>
                                       )}
-                                      {versionLastFrameUrl ? (
-                                        <div className="mt-2 rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 p-2">
-                                          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                                            {translate("Last frame reference")}
-                                          </p>
-                                          <Image
-                                            src={versionLastFrameUrl}
-                                            alt={`${version.label} ${translate("Last frame reference")}`}
-                                            width={260}
-                                            height={140}
-                                            unoptimized
-                                            className="mt-2 h-20 w-full rounded object-cover"
-                                          />
-                                        </div>
-                                      ) : null}
-                                      {version.prompt ? (
+                                    </div>
+                                    <div className="mt-3 flex items-center justify-between gap-3">
+                                      <p className="min-w-0 truncate text-sm font-medium text-slate-900 dark:text-slate-100">
+                                        {version.label}
+                                      </p>
+                                      {isActiveVersion ? (
+                                        <span className="inline-flex flex-none items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-500/10 dark:text-blue-300">
+                                          <CheckCircleIcon aria-hidden="true" className="h-3.5 w-3.5" />
+                                          {translate("Selected")}
+                                        </span>
+                                      ) : (
                                         <button
                                           type="button"
-                                          onClick={() =>
-                                            setPromptPreview({
-                                              sceneLabel: activeScene.label,
-                                              versionLabel: version.label,
-                                              prompt: version.prompt ?? "",
-                                            })
-                                          }
-                                          className="mt-3 inline-flex items-center gap-2 rounded-md border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-zinc-600 dark:text-slate-300 transition hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200"
+                                          onClick={() => handleSelectVersion(activeScene.order, version.version_id)}
+                                          disabled={isBusy}
+                                          className={`${secondaryButtonClass} h-7 flex-none px-2.5`}
                                         >
-                                          <DocumentTextIcon className="h-4 w-4" />
-                                          {translate("View system prompt")}
+                                          {isBusy ? translate("Selecting...") : translate("Use this version")}
                                         </button>
-                                      ) : null}
-                                      {version.video_id ? (
-                                        <p className="text-[11px] text-slate-500">
-                                          {translate("Azure video ID:")} {version.video_id}
-                                        </p>
-                                      ) : null}
+                                      )}
                                     </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          </div>
+                                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                      {formatTimeDistance(version.created_at)}
+                                    </p>
+                                    {version.prompt ? (
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setPromptPreview({
+                                            sceneLabel: activeScene.label,
+                                            versionLabel: version.label,
+                                            prompt: version.prompt ?? "",
+                                          })
+                                        }
+                                        className="mt-2 self-start text-xs font-medium text-blue-700 hover:underline dark:text-blue-300"
+                                      >
+                                        {translate("View system prompt")}
+                                      </button>
+                                    ) : null}
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          </section>
                         </>
                       ) : (
                         <p className="text-sm text-slate-500 dark:text-slate-400">
