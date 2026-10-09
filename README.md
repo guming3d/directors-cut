@@ -22,7 +22,7 @@ For Seedance 2.5 (Volcengine Ark, model `doubao-seedance-2-5-260628`), set `ARK_
 
 ### Azure sign-in for Sora
 
-If the Sora resource has key-based authentication disabled (calls fail with `AuthenticationTypeDisabled`), set `AZURE_OPENAI_AUTH=entra`. The Sora client and remix calls then sign in with Microsoft Entra ID through `DefaultAzureCredential`: your `az login` locally, or a managed identity in Azure. That identity needs the "Cognitive Services OpenAI User" role (or equivalent) on the resource.
+Sora rendering and remix sign in with Microsoft Entra ID by default (`AZURE_OPENAI_AUTH=entra`) through `DefaultAzureCredential`: your `az login` locally, or a managed identity in Azure. That identity needs the "Cognitive Services OpenAI User" role (or equivalent) on the Sora resource. Set `AZURE_OPENAI_AUTH=key` to send `AZURE_OPENAI_API_KEY` instead; that fails with `AuthenticationTypeDisabled` when the resource has key-based authentication disabled.
 
 ### Models
 

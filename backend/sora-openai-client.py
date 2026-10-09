@@ -24,14 +24,15 @@ if not endpoint_raw:
     raise RuntimeError("Set ENDPOINT_URL or AZURE_OPENAI_ENDPOINT before running.")
 endpoint = endpoint_raw.rstrip("/")
 deployment = os.getenv("DEPLOYMENT_NAME", "sora-2")
-# "entra" signs in with Microsoft Entra ID (az login locally, managed identity in
-# Azure); needed when key-based authentication is disabled on the resource.
-auth_mode = (os.getenv("AZURE_OPENAI_AUTH") or "key").strip().lower()
+# "entra" (default) signs in with Microsoft Entra ID (az login locally, managed
+# identity in Azure); "key" sends the API key, which fails once key-based
+# authentication is disabled on the resource.
+auth_mode = (os.getenv("AZURE_OPENAI_AUTH") or "entra").strip().lower()
 api_key = os.getenv("AZURE_OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
 
-if auth_mode != "entra" and not api_key:
+if auth_mode == "key" and not api_key:
     raise RuntimeError(
-        "Set AZURE_OPENAI_API_KEY or OPENAI_API_KEY before running, or set AZURE_OPENAI_AUTH=entra."
+        "AZURE_OPENAI_AUTH=key needs AZURE_OPENAI_API_KEY or OPENAI_API_KEY; set it or use AZURE_OPENAI_AUTH=entra."
     )
 
 
@@ -207,7 +208,7 @@ async def main() -> None:
         reference_path = resize_image_if_needed(reference_path, video_size)
 
     client = AsyncOpenAI(
-        api_key=_entra_token_provider() if auth_mode == "entra" else api_key,
+        api_key=api_key if auth_mode == "key" else _entra_token_provider(),
         base_url=f"{endpoint}/openai/v1/",
         timeout=900.0,
     )

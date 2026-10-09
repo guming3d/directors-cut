@@ -305,13 +305,13 @@ FOUNDRY_IMAGE_ENDPOINT = (
 FOUNDRY_IMAGE_API_KEY = os.getenv("FOUNDRY_GPT_IMAGE_API_KEY")
 AZURE_IMAGE_DEPLOYMENT = os.getenv("FOUNDRY_GPT_IMAGE_DEPLOYMENT") or "gpt-image-2.5-sunburst"
 FOUNDRY_IMAGE_TIMEOUT_SECONDS = max(30.0, _float_env("FOUNDRY_GPT_IMAGE_TIMEOUT", "300"))
-# How the Sora resource is called: "key" sends AZURE_OPENAI_API_KEY; "entra"
-# signs in with Microsoft Entra ID (az login locally, managed identity in Azure).
-# Use "entra" when key-based authentication is disabled on the resource.
+# How the Sora resource is called: "entra" (default) signs in with Microsoft
+# Entra ID (az login locally, managed identity in Azure); "key" sends
+# AZURE_OPENAI_API_KEY, which fails once key-based authentication is disabled.
 SUPPORTED_AZURE_OPENAI_AUTH_MODES = ("key", "entra")
-_azure_openai_auth_env = (os.getenv("AZURE_OPENAI_AUTH") or "key").strip().lower()
+_azure_openai_auth_env = (os.getenv("AZURE_OPENAI_AUTH") or "entra").strip().lower()
 AZURE_OPENAI_AUTH = (
-    _azure_openai_auth_env if _azure_openai_auth_env in SUPPORTED_AZURE_OPENAI_AUTH_MODES else "key"
+    _azure_openai_auth_env if _azure_openai_auth_env in SUPPORTED_AZURE_OPENAI_AUTH_MODES else "entra"
 )
 AZURE_OPENAI_ENTRA_SCOPE = "https://cognitiveservices.azure.com/.default"
 _TEXT_CLIENT: AzureOpenAI | OpenAI | None = None

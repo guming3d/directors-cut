@@ -51,3 +51,16 @@ def test_entra_token_provider_requests_cognitive_services_scope(monkeypatch):
     token = asyncio.run(config.entra_token_provider()())
 
     assert (token, requested) == ("entra-token", ["https://cognitiveservices.azure.com/.default"])
+
+
+def test_sora_auth_defaults_to_entra(monkeypatch):
+    import importlib
+
+    monkeypatch.delenv("AZURE_OPENAI_AUTH", raising=False)
+    monkeypatch.setattr("dotenv.load_dotenv", lambda *args, **kwargs: False)
+    reloaded = importlib.reload(config)
+    try:
+        assert reloaded.AZURE_OPENAI_AUTH == "entra"
+    finally:
+        monkeypatch.undo()
+        importlib.reload(config)
