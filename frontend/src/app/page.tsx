@@ -3,6 +3,15 @@
 import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Modal from "@/components/Modal";
 import WorkflowProgress from "@/components/WorkflowProgress";
+import {
+  Field,
+  SegmentedControl,
+  SettingRow,
+  SettingsList,
+  fileInputClass,
+  inputClass,
+  primaryButtonClass,
+} from "@/components/ui/controls";
 import { LanguageToggle } from "@/components/dashboard/LanguageToggle";
 import { ThemeToggle } from "@/components/dashboard/ThemeToggle";
 import { WorkflowTable } from "@/components/dashboard/WorkflowTable";
@@ -34,6 +43,7 @@ import {
   VIDEO_PROVIDER_OPTIONS,
   VISUAL_STYLE_OPTIONS,
   getDurationOptions,
+  getVideoProviderLabel,
   getImageGeneratorLabel,
   getReferenceModeLabel,
   getSegmentationLabel,
@@ -1127,6 +1137,19 @@ export default function Home() {
     setInsightJob(null);
     setActiveInsightJobId(null);
     setSelectedInsightJobs(new Set());
+  };
+
+  const toggleUseSceneImages = () => {
+    setUseSceneImages((value) => {
+      const next = !value;
+      if (next) {
+        setGenerateAiFirstFrames(false);
+      } else {
+        setSceneImageFiles([]);
+        setSceneImagePreviews([]);
+      }
+      return next;
+    });
   };
 
   const toggleGenerateAiFirstFrames = () => {
@@ -2295,41 +2318,50 @@ export default function Home() {
               <span>{translate(combinedError)}</span>
             </div>
           )}
-          <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
-            {translate("Paste your storyboard with scene headings.")}{" "}
-            <span className="font-mono text-xs text-slate-500">**Scene 1 (Title)**</span>{" "}
-            {translate("Headings are optional: GPT-6.1-sol adds them when missing.")}{" "}
-            {translate("The Director agent will refine prompts following Sora2 best practices.")}
-          </p>
-          <form className="space-y-5" onSubmit={handleCombinedSubmit}>
-            <textarea
-              className="min-h-[260px] w-full resize-none rounded border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-4 py-3 text-sm text-slate-900 dark:text-slate-100 shadow-inner placeholder:text-slate-500 transition focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-800"
-              placeholder={translate("Enter script or storyboard prompt")}
-              value={script}
-              onChange={(event) => setScript(event.target.value)}
-            />
+          <form className="space-y-6" onSubmit={handleCombinedSubmit}>
+            <Field
+              label={translate("Script")}
+              htmlFor="workflow-script"
+              hint={
+                <>
+                  {translate("Start each scene with a heading like")}{" "}
+                  <code className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[11px] text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                    **Scene 1 (Title)**
+                  </code>
+                  {translate(". Without headings, GPT-6.1-sol splits the script into scenes for you.")}
+                </>
+              }
+            >
+              <textarea
+                id="workflow-script"
+                className={`${inputClass} min-h-[220px] resize-y py-2.5 leading-6`}
+                placeholder={translate("Enter script or storyboard prompt")}
+                value={script}
+                onChange={(event) => setScript(event.target.value)}
+              />
+            </Field>
 
-            <div className="grid gap-4 sm:grid-cols-3">
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Video backend")}</label>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label={translate("Video backend")} htmlFor="workflow-provider">
                 <select
+                  id="workflow-provider"
                   value={workflowProviderSelection}
                   onChange={(event) => setWorkflowVideoProvider(event.target.value)}
-                  className="w-full rounded border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 shadow-inner focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-800"
+                  className={`${inputClass} h-9`}
                 >
                   {availableVideoProviders.map((option) => (
                     <option key={option} value={option}>
-                      {option.toUpperCase()}
+                      {getVideoProviderLabel(option)}
                     </option>
                   ))}
                 </select>
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Resolution")}</label>
+              </Field>
+              <Field label={translate("Resolution")} htmlFor="workflow-resolution">
                 <select
+                  id="workflow-resolution"
                   value={combinedResolution}
                   onChange={(event) => setCombinedResolution(event.target.value as (typeof resolutionOptions)[number])}
-                  className="w-full rounded border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 shadow-inner focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-800"
+                  className={`${inputClass} h-9`}
                 >
                   {resolutionOptions.map((option) => (
                     <option key={option} value={option}>
@@ -2337,214 +2369,83 @@ export default function Home() {
                     </option>
                   ))}
                 </select>
-              </div>
-              <div className="space-y-2">
-                <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Visual style")}</span>
-                <div className="flex gap-2">
-                  {VISUAL_STYLE_OPTIONS.map((option) => {
-                    const isActive = visualStyle === option.value;
-                    return (
-                      <label
-                        key={option.value}
-                        className={`flex-1 cursor-pointer rounded-md border px-3 py-2 text-center text-sm font-semibold transition ${
-                          isActive
-                            ? "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm"
-                            : "border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200"
-                        }`}
-                      >
-                        <input
-                          type="radio"
-                          name="visual-style"
-                          value={option.value}
-                          checked={isActive}
-                          onChange={() => setVisualStyle(option.value)}
-                          className="sr-only"
-                        />
-                        {translate(option.label)}
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-              <div className="space-y-2">
-                <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Scene duration")}</span>
-                <div className="flex gap-2">
-                  {workflowDurationOptions.map((option) => {
-                    const isActive = sceneDuration === option;
-                    return (
-                      <label
-                        key={option}
-                        className={`flex-1 cursor-pointer rounded-md border px-3 py-2 text-center text-sm font-semibold transition ${
-                          isActive
-                            ? "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm"
-                            : "border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200"
-                        }`}
-                      >
-                        <input
-                          type="radio"
-                          name="scene-duration"
-                          value={option}
-                          checked={isActive}
-                          onChange={(event) => setSceneDuration(event.target.value as DurationOption)}
-                          className="sr-only"
-                        />
-                        {option}
-                        {translate("s")}
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
+              </Field>
+              <Field label={translate("Visual style")}>
+                <SegmentedControl
+                  ariaLabel={translate("Visual style")}
+                  options={VISUAL_STYLE_OPTIONS.map((option) => ({ value: option.value, label: translate(option.label) }))}
+                  value={visualStyle}
+                  onChange={setVisualStyle}
+                />
+              </Field>
+              <Field label={translate("Scene duration")}>
+                <SegmentedControl
+                  ariaLabel={translate("Scene duration")}
+                  options={workflowDurationOptions.map((option) => ({ value: option, label: `${option}${translate("s")}` }))}
+                  value={sceneDuration}
+                  onChange={setSceneDuration}
+                />
+              </Field>
+              <Field
+                label={translate("Generation mode")}
+                hint={translate(
+                  generationMode === "sequence"
+                    ? "Sequence mode accepts a single starting still, then reuses the last frame of each clip to guide the next scene for smoother continuity."
+                    : "All scenes render at the same time. This is the fastest option.",
+                )}
+              >
+                <SegmentedControl
+                  ariaLabel={translate("Generation mode")}
+                  options={[
+                    { value: "parallel" as const, label: translate("Parallel") },
+                    { value: "sequence" as const, label: translate("Sequence") },
+                  ]}
+                  value={generationMode}
+                  onChange={setGenerationMode}
+                />
+              </Field>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Scene references")}</span>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setUseSceneImages((value) => {
-                      const next = !value;
-                      if (next) {
-                        setGenerateAiFirstFrames(false);
-                      } else {
-                        setSceneImageFiles([]);
-                        setSceneImagePreviews([]);
-                      }
-                      return next;
-                    })
-                  }
-                  className={`flex w-full items-center gap-3 rounded border px-4 py-3 text-sm font-semibold transition ${
-                    useSceneImages
-                      ? "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm"
-                      : "border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200"
-                  }`}
-                >
-                  <span className={`inline-flex h-5 w-10 items-center rounded-full border transition ${
-                    useSceneImages
-                      ? "border-slate-500 bg-slate-600"
-                      : "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700"
-                  }`}>
-                    <span
-                      className={`ml-1 inline-block h-3.5 w-3.5 rounded-full bg-slate-200 transition ${
-                        useSceneImages ? "translate-x-4" : "translate-x-0"
-                      }`}
-                    />
-                  </span>
-                  {useSceneImages ? translate("Scene images enabled") : translate("No scene references")}
-                </button>
-              </div>
-              <div className="space-y-2">
-                <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("AI first frames")}</span>
-                <button
-                  type="button"
-                  onClick={toggleGenerateAiFirstFrames}
-                  className={`flex w-full items-center gap-3 rounded border px-4 py-3 text-sm font-semibold transition ${
-                    generateAiFirstFrames
-                      ? "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm"
-                      : "border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200"
-                  }`}
-                >
-                  <span className={`inline-flex h-5 w-10 items-center rounded-full border transition ${
-                    generateAiFirstFrames
-                      ? "border-slate-500 bg-slate-600"
-                      : "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700"
-                  }`}>
-                    <span
-                      className={`ml-1 inline-block h-3.5 w-3.5 rounded-full bg-slate-200 transition ${
-                        generateAiFirstFrames ? "translate-x-4" : "translate-x-0"
-                      }`}
-                    />
-                  </span>
-                  {translate(generateAiFirstFrames ? "AI start stills enabled" : "No AI first frames")}
-                </button>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  {translate("Use GPT-6.1-sol + gpt-image-2.5 to seed each scene.")}
-                </p>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Generation mode")}</label>
-              <div className="flex flex-wrap gap-3">
-                {[
-                  { id: "parallel" as const, label: translate("Parallel"), description: translate("Render scenes concurrently") },
-                  { id: "sequence" as const, label: translate("Sequence"), description: translate("Chain scenes sequentially") },
-                ].map((mode) => {
-                  const isActive = generationMode === mode.id;
-                  return (
-                    <button
-                      key={mode.id}
-                      type="button"
-                      onClick={() => setGenerationMode(mode.id)}
-                      className={`flex flex-col rounded border px-4 py-2 text-left text-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400 ${
-                        isActive
-                          ? "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm"
-                          : "border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200"
-                      }`}
-                    >
-                      <span className="font-semibold">{mode.label}</span>
-                      <span className={`text-xs ${isActive ? "text-zinc-600 dark:text-slate-300" : "text-slate-500"}`}>
-                        {mode.description}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-              <p className="text-xs text-slate-500">
-                {translate("Sequence mode accepts a single starting still, then reuses the last frame of each clip to guide the next scene for smoother continuity.")}
-              </p>
-            </div>
-
-            <div className="rounded border border-slate-300 dark:border-slate-700 bg-slate-100/50 dark:bg-slate-100 dark:bg-slate-800/50 px-4 py-3">
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <p className="text-sm font-semibold text-zinc-600 dark:text-slate-300">{translate("Refine script with GPT-6.1-sol")}</p>
-                  <p className="text-xs text-slate-500">
-                    {translate("Use GPT-6.1-sol to polish the storyboard before planning scenes.")}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setRefineWorkflowWithGpt5((value) => !value)}
-                  className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold transition ${
-                    refineWorkflowWithGpt5
-                      ? "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-slate-100"
-                      : "border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200"
-                  }`}
-                >
-                  <span
-                    className={`relative inline-flex h-5 w-10 items-center rounded-full border transition ${
-                      refineWorkflowWithGpt5 ? "border-slate-500 bg-slate-600" : "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700"
-                    }`}
-                  >
-                    <span
-                      className={`absolute left-1 h-3 rounded-full bg-slate-200 transition ${
-                        refineWorkflowWithGpt5 ? "translate-x-4 w-4" : "w-3"
-                      }`}
-                    />
-                  </span>
-                  {translate(refineWorkflowWithGpt5 ? "Enabled" : "Disabled")}
-                </button>
-              </div>
-            </div>
+            <SettingsList>
+              <SettingRow
+                title={translate("AI first frames")}
+                description={translate("Generate an opening image for each scene with gpt-image-2.5.")}
+                checked={generateAiFirstFrames}
+                onChange={toggleGenerateAiFirstFrames}
+              />
+              <SettingRow
+                title={translate("Use my own start images")}
+                description={translate("Upload one image per scene as its opening frame. Turns off AI first frames.")}
+                checked={useSceneImages}
+                onChange={toggleUseSceneImages}
+              />
+              <SettingRow
+                title={translate("Refine script with GPT-6.1-sol")}
+                description={translate("Use GPT-6.1-sol to polish the storyboard before planning scenes.")}
+                checked={refineWorkflowWithGpt5}
+                onChange={setRefineWorkflowWithGpt5}
+              />
+            </SettingsList>
 
             {useSceneImages ? (
               <div className="space-y-3">
-                <label className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Upload reference stills")}</label>
+                <label htmlFor="workflow-scene-images" className="block text-[13px] font-medium text-slate-700 dark:text-slate-300">
+                  {translate("Upload reference stills")}
+                </label>
                 <input
+                  id="workflow-scene-images"
                   type="file"
                   accept="image/png,image/jpeg"
                   multiple={generationMode !== "sequence"}
                   onChange={handleSceneImagesChange}
-                  className="max-w-xs text-xs text-slate-500"
+                  className={fileInputClass}
                 />
                 {sceneImagePreviews.length ? (
                   <div className="grid grid-cols-3 gap-3 md:grid-cols-4">
                     {sceneImagePreviews.map((preview, index) => (
                       <div
                         key={`${preview}-${index}`}
-                        className="flex h-28 items-center justify-center overflow-hidden rounded-md border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800"
+                        className="flex h-28 items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800"
                       >
                         <Image
                           src={preview}
@@ -2558,32 +2459,28 @@ export default function Home() {
                     ))}
                   </div>
                 ) : (
-                  <p className="text-xs text-slate-500">{translate("Accepted formats: PNG, JPG. Images remain local until submission.")}</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">{translate("Accepted formats: PNG, JPG. Images remain local until submission.")}</p>
                 )}
               </div>
             ) : null}
 
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <button
-                type="submit"
-                disabled={isSubmittingCombined}
-                className="inline-flex items-center justify-center gap-2 rounded-md bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white dark:bg-slate-100 dark:text-slate-900 shadow-sm shadow-slate-900/50 transition hover:bg-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400 disabled:cursor-not-allowed disabled:opacity-60"
-              >
+            <div className="flex flex-col-reverse gap-3 border-t border-slate-200 pt-5 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800">
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {translate("API target:")} <span className="font-mono text-[11px]">{apiBase}/api/workflows</span>
+              </p>
+              <button type="submit" disabled={isSubmittingCombined} className={primaryButtonClass}>
                 {isSubmittingCombined ? (
                   <>
-                    <ArrowPathIcon className="h-5 w-5 animate-spin" />
+                    <ArrowPathIcon className="h-4 w-4 animate-spin" />
                     {translate("Starting Workflow...")}
                   </>
                 ) : (
                   <>
-                    <PaperAirplaneIcon className="h-5 w-5" />
+                    <PaperAirplaneIcon className="h-4 w-4" />
                     {translate("Start Workflow")}
                   </>
                 )}
               </button>
-              <p className="text-xs text-slate-500">
-                {translate("API target:")} <span className="font-mono text-[11px] text-slate-500">{apiBase}/api/workflows</span>
-              </p>
             </div>
           </form>
         </Modal>
@@ -2735,38 +2632,38 @@ export default function Home() {
               <span>{translate(singleError)}</span>
             </div>
           )}
-          <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
-            {translate("Submit a single prompt directly to the selected video backend. Optionally attach a still reference, select the render resolution, and choose a supported clip duration.")}
-          </p>
-          <form className="space-y-5" onSubmit={handleSingleSubmit}>
-            <textarea
-              className="min-h-[220px] w-full resize-none rounded border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-4 py-3 text-sm text-slate-900 dark:text-slate-100 shadow-inner placeholder:text-slate-500 transition focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-800"
-              placeholder={translate("Describe the scene, motion, cinematography, and mood for the selected video backend...")}
-              value={singlePrompt}
-              onChange={(event) => setSinglePrompt(event.target.value)}
-            />
+          <form className="space-y-6" onSubmit={handleSingleSubmit}>
+            <Field label={translate("Prompt")} htmlFor="single-prompt">
+              <textarea
+                id="single-prompt"
+                className={`${inputClass} min-h-[180px] resize-y py-2.5 leading-6`}
+                placeholder={translate("Describe the scene, motion, cinematography, and mood for the selected video backend...")}
+                value={singlePrompt}
+                onChange={(event) => setSinglePrompt(event.target.value)}
+              />
+            </Field>
 
             <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Video backend")}</label>
+              <Field label={translate("Video backend")} htmlFor="single-provider">
                 <select
+                  id="single-provider"
                   value={singleProviderSelection}
                   onChange={(event) => setSingleVideoProvider(event.target.value)}
-                  className="w-full rounded border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 shadow-inner focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-800"
+                  className={`${inputClass} h-9`}
                 >
                   {availableVideoProviders.map((option) => (
                     <option key={option} value={option}>
-                      {option.toUpperCase()}
+                      {getVideoProviderLabel(option)}
                     </option>
                   ))}
                 </select>
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Resolution")}</label>
+              </Field>
+              <Field label={translate("Resolution")} htmlFor="single-resolution">
                 <select
+                  id="single-resolution"
                   value={singleResolution}
                   onChange={(event) => setSingleResolution(event.target.value as (typeof resolutionOptions)[number])}
-                  className="w-full rounded border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 shadow-inner focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-800"
+                  className={`${inputClass} h-9`}
                 >
                   {resolutionOptions.map((option) => (
                     <option key={option} value={option}>
@@ -2774,82 +2671,39 @@ export default function Home() {
                     </option>
                   ))}
                 </select>
-              </div>
-              <div className="space-y-2">
-                <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Duration")}</span
->
-                <div className="flex gap-2">
-                  {singleDurationOptions.map((option) => {
-                    const isActive = singleDuration === option;
-                    return (
-                      <label
-                        key={option}
-                        className={`flex-1 cursor-pointer rounded-md border px-3 py-2 text-center text-sm font-semibold transition ${
-                          isActive
-                            ? "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm"
-                            : "border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200"
-                        }`}
-                      >
-                        <input
-                          type="radio"
-                          name="single-duration"
-                          value={option}
-                          checked={isActive}
-                          onChange={(event) => setSingleDuration(event.target.value as DurationOption)}
-                          className="sr-only"
-                        />
-                        {option}
-                        {translate("s")}
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
+              </Field>
+              <Field label={translate("Duration")}>
+                <SegmentedControl
+                  ariaLabel={translate("Duration")}
+                  options={singleDurationOptions.map((option) => ({ value: option, label: `${option}${translate("s")}` }))}
+                  value={singleDuration}
+                  onChange={setSingleDuration}
+                />
+              </Field>
             </div>
 
-            <div className="rounded border border-slate-300 dark:border-slate-700 bg-slate-100/50 dark:bg-slate-100 dark:bg-slate-800/50 px-4 py-3">
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <p className="text-sm font-semibold text-zinc-600 dark:text-slate-300">{translate("Refine prompt with GPT-6.1-sol")}</p>
-                  <p className="text-xs text-slate-500">
-                    {translate("Let GPT-6.1-sol tighten the single-scene prompt before submitting.")}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setRefineSingleWithGpt5((value) => !value)}
-                  className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold transition ${
-                    refineSingleWithGpt5
-                      ? "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-slate-100"
-                      : "border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:border-slate-600 hover:text-slate-700 dark:text-slate-200"
-                  }`}
-                >
-                  <span
-                    className={`relative inline-flex h-5 w-10 items-center rounded-full border transition ${
-                      refineSingleWithGpt5 ? "border-slate-500 bg-slate-600" : "border-slate-400 dark:border-slate-600 bg-slate-200 dark:bg-slate-700"
-                    }`}
-                  >
-                    <span
-                      className={`absolute left-1 h-3 rounded-full bg-slate-200 transition ${
-                        refineSingleWithGpt5 ? "translate-x-4 w-4" : "w-3"
-                      }`}
-                    />
-                  </span>
-                  {translate(refineSingleWithGpt5 ? "Enabled" : "Disabled")}
-                </button>
-              </div>
-            </div>
+            <SettingsList>
+              <SettingRow
+                title={translate("Refine prompt with GPT-6.1-sol")}
+                description={translate("Let GPT-6.1-sol tighten the single-scene prompt before submitting.")}
+                checked={refineSingleWithGpt5}
+                onChange={setRefineSingleWithGpt5}
+              />
+            </SettingsList>
 
             <div className="space-y-3">
-              <label className="text-sm font-semibold text-slate-500 dark:text-slate-400">{translate("Reference image (optional)")}</label>
+              <label htmlFor="single-reference" className="block text-[13px] font-medium text-slate-700 dark:text-slate-300">
+                {translate("Reference image (optional)")}
+              </label>
               <input
+                id="single-reference"
                 type="file"
                 accept="image/png,image/jpeg"
                 onChange={handleReferenceImageChange}
-                className="max-w-xs text-xs text-slate-500"
+                className={fileInputClass}
               />
               {singleReferencePreview && (
-                <div className="mt-2 flex h-40 w-32 items-center justify-center overflow-hidden rounded-md border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800">
+                <div className="flex h-40 w-32 items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800">
                   <Image
                     src={singleReferencePreview}
                     alt={translate("Reference preview")}
@@ -2862,27 +2716,23 @@ export default function Home() {
               )}
             </div>
 
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <button
-                type="submit"
-                disabled={isSubmittingSingle}
-                className="inline-flex items-center justify-center gap-2 rounded-md bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white dark:bg-slate-100 dark:text-slate-900 shadow-sm shadow-slate-900/50 transition hover:bg-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400 disabled:cursor-not-allowed disabled:opacity-60"
-              >
+            <div className="flex flex-col-reverse gap-3 border-t border-slate-200 pt-5 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800">
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {translate("API target:")} <span className="font-mono text-[11px]">{apiBase}/api/single-videos</span>
+              </p>
+              <button type="submit" disabled={isSubmittingSingle} className={primaryButtonClass}>
                 {isSubmittingSingle ? (
                   <>
-                    <ArrowPathIcon className="h-5 w-5 animate-spin" />
+                    <ArrowPathIcon className="h-4 w-4 animate-spin" />
                     {translate("Sending Prompt...")}
                   </>
                 ) : (
                   <>
-                    <PaperAirplaneIcon className="h-5 w-5" />
+                    <PaperAirplaneIcon className="h-4 w-4" />
                     {translate("Generate Clip")}
                   </>
                 )}
               </button>
-              <p className="text-xs text-slate-500">
-                {translate("API target:")} <span className="font-mono text-[11px] text-slate-500">{apiBase}/api/single-videos</span>
-              </p>
             </div>
           </form>
         </Modal>

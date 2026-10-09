@@ -64,6 +64,16 @@ export const SEEDANCE_DURATION_OPTIONS = ["4", "5", "8", "10", "12"] as const;
 export const resolutionOptions = ["720x1280", "1280x720", "1920x1080"] as const;
 export const VIDEO_PROVIDER_OPTIONS = ["sora2", "kling", "jimeng", "seedance"] as const;
 
+const VIDEO_PROVIDER_LABELS: Record<string, string> = {
+  sora2: "Sora 2",
+  kling: "Kling",
+  jimeng: "Jimeng",
+  seedance: "Seedance 2.5",
+};
+
+export const getVideoProviderLabel = (provider: string): string =>
+  VIDEO_PROVIDER_LABELS[provider] ?? provider;
+
 export const IMAGE_GENERATOR_OPTIONS: { value: ImageGeneratorOption; label: string }[] = [
   { value: "gpt-image-2.5", label: "Foundry gpt-image-2.5" },
   { value: "kling", label: "Kling image generation" },
