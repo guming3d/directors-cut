@@ -39,3 +39,13 @@ def test_image_client_disables_sdk_retries(monkeypatch):
     monkeypatch.setattr(config, "_IMAGE_CLIENT", None)
 
     assert config.azure_image_client().max_retries == 0
+
+
+def test_text_client_uses_openai_v1_client_for_foundry_endpoint(monkeypatch):
+    monkeypatch.setattr(config, "AZURE_TEXT_ENDPOINT", "https://example.services.ai.azure.com/openai/v1")
+    monkeypatch.setattr(config, "AZURE_TEXT_API_KEY", "test-key")
+    monkeypatch.setattr(config, "_TEXT_CLIENT", None)
+
+    client = config.azure_text_client()
+
+    assert type(client) is OpenAI

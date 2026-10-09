@@ -284,15 +284,15 @@ except ValueError:
 # Reasoning tokens count against max_output_tokens, so each call reserves extra
 # budget on top of the visible answer it needs.
 REASONING_TOKEN_HEADROOM = max(0, _reasoning_headroom)
-# The reasoning deployment may live on a different resource than Sora; the
-# REASONING_* overrides fall back to the shared Azure OpenAI resource.
-AZURE_TEXT_ENDPOINT = (
-    os.getenv("AZURE_OPENAI_REASONING_ENDPOINT")
-    or os.getenv("AZURE_OPENAI_ENDPOINT")
-    or os.getenv("ENDPOINT_URL")
-    or ""
-).rstrip("/")
-AZURE_TEXT_API_KEY = os.getenv("AZURE_OPENAI_REASONING_API_KEY") or os.getenv("AZURE_OPENAI_API_KEY")
+# The reasoning deployment may live on a different resource than Sora. A
+# separate endpoint needs its own key: the Sora key would only return 401 there.
+_reasoning_endpoint = (os.getenv("AZURE_OPENAI_REASONING_ENDPOINT") or "").rstrip("/")
+if _reasoning_endpoint:
+    AZURE_TEXT_ENDPOINT = _reasoning_endpoint
+    AZURE_TEXT_API_KEY = os.getenv("AZURE_OPENAI_REASONING_API_KEY")
+else:
+    AZURE_TEXT_ENDPOINT = (os.getenv("AZURE_OPENAI_ENDPOINT") or os.getenv("ENDPOINT_URL") or "").rstrip("/")
+    AZURE_TEXT_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
 AZURE_TEXT_API_VERSION = os.getenv("AZURE_OPENAI_API_VERSION", "2025-04-01-preview")
 
 # Image generation runs on the Microsoft Foundry GPT Image 2.5 deployment, which
@@ -304,7 +304,7 @@ FOUNDRY_IMAGE_ENDPOINT = (
 FOUNDRY_IMAGE_API_KEY = os.getenv("FOUNDRY_GPT_IMAGE_API_KEY")
 AZURE_IMAGE_DEPLOYMENT = os.getenv("FOUNDRY_GPT_IMAGE_DEPLOYMENT") or "gpt-image-2.5-sunburst"
 FOUNDRY_IMAGE_TIMEOUT_SECONDS = max(30.0, _float_env("FOUNDRY_GPT_IMAGE_TIMEOUT", "300"))
-_TEXT_CLIENT: AzureOpenAI | None = None
+_TEXT_CLIENT: AzureOpenAI | OpenAI | None = None
 _VIDEO_CLIENT: AsyncOpenAI | None = None
 _IMAGE_CLIENT: OpenAI | None = None
 
@@ -344,8 +344,12 @@ def _configure_logging() -> logging.Logger:
 logger = _configure_logging()
 
 
-def azure_text_client() -> AzureOpenAI | None:
-    """Create or reuse a shared Azure OpenAI client for GPT refinement."""
+def azure_text_client() -> AzureOpenAI | OpenAI | None:
+    """Create or reuse the shared client for the reasoning deployment.
+
+    Endpoints ending in ``/openai/v1`` (Foundry v1 API) use ``openai.OpenAI``;
+    classic Azure OpenAI resource endpoints use ``AzureOpenAI``.
+    """
 
     logger.debug(
         "Azure reasoning config deployment=%s effort=%s endpoint=%s",
@@ -365,12 +369,16 @@ def azure_text_client() -> AzureOpenAI | None:
         client = None
 
     if client is None:
-        logger.debug("Creating AzureOpenAI client for refinement")
-        client = AzureOpenAI(
-            api_key=AZURE_TEXT_API_KEY,
-            azure_endpoint=AZURE_TEXT_ENDPOINT,
-            api_version=AZURE_TEXT_API_VERSION,
-        )
+        if AZURE_TEXT_ENDPOINT.endswith("/openai/v1"):
+            logger.debug("Creating OpenAI v1 client for reasoning deployment")
+            client = OpenAI(base_url=AZURE_TEXT_ENDPOINT, api_key=AZURE_TEXT_API_KEY)
+        else:
+            logger.debug("Creating AzureOpenAI client for reasoning deployment")
+            client = AzureOpenAI(
+                api_key=AZURE_TEXT_API_KEY,
+                azure_endpoint=AZURE_TEXT_ENDPOINT,
+                api_version=AZURE_TEXT_API_VERSION,
+            )
         _TEXT_CLIENT = client  # type: ignore[assignment]
     else:
         logger.debug("Reusing cached AzureOpenAI client for refinement")
