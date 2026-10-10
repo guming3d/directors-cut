@@ -89,12 +89,13 @@ def test_extract_segments_handles_value_objects() -> None:
     assert segments[0].summary == "Segment summary text."
 
 
-def test_iter_file_chunks_streams_payload(tmp_path) -> None:
+@pytest.mark.asyncio
+async def test_aiter_file_chunks_streams_payload(tmp_path) -> None:
     video_path = tmp_path / "clip.mp4"
     payload = b"abc" * 1024
     video_path.write_bytes(payload)
 
-    chunks = list(AzureContentUnderstandingClient._iter_file_chunks(video_path, chunk_size=512))
+    chunks = [chunk async for chunk in AzureContentUnderstandingClient._aiter_file_chunks(video_path, chunk_size=512)]
 
     assert b"".join(chunks) == payload
     assert all(len(chunk) <= 512 for chunk in chunks)
@@ -150,3 +151,86 @@ async def test_video_insight_store_snapshot_includes_artifacts() -> None:
     assert snapshot.video_url and job_id in snapshot.video_url
 
     shutil.rmtree(job_dir, ignore_errors=True)
+
+
+@pytest.mark.asyncio
+async def test_begin_analyze_file_uploads_through_async_client(tmp_path, monkeypatch) -> None:
+    import httpx
+
+    from backend.content_insights import client as client_module
+
+    video_path = tmp_path / "clip.mp4"
+    payload = b"\x00\x01video" * 300_000
+    video_path.write_bytes(payload)
+    received: dict = {}
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        received["body"] = request.read()
+        received["content_length"] = request.headers.get("content-length")
+        return httpx.Response(202, headers={"operation-location": "https://cu.example/operations/1"})
+
+    real_client = httpx.AsyncClient
+
+    def _client(*args, **kwargs):
+        kwargs["transport"] = httpx.MockTransport(_handler)
+        return real_client(*args, **kwargs)
+
+    monkeypatch.setattr(client_module.httpx, "AsyncClient", _client)
+    cu = AzureContentUnderstandingClient(endpoint="https://cu.example", api_key="test-key", api_version="2025-05-01-preview")
+
+    operation = await cu._begin_analyze_file(video_path, "video/mp4")
+
+    assert (operation, received["body"], received["content_length"]) == (
+        "https://cu.example/operations/1",
+        payload,
+        str(len(payload)),
+    )
+
+
+def _client_with_transport(monkeypatch, handler):
+    import httpx
+
+    from backend.content_insights import client as client_module
+
+    real_client = httpx.AsyncClient
+
+    def _client(*args, **kwargs):
+        kwargs["transport"] = httpx.MockTransport(handler)
+        return real_client(*args, **kwargs)
+
+    monkeypatch.setattr(client_module.httpx, "AsyncClient", _client)
+    return AzureContentUnderstandingClient(
+        endpoint="https://gone.cognitiveservices.azure.com", api_key="k", api_version="2025-05-01-preview"
+    )
+
+
+@pytest.mark.asyncio
+async def test_unreachable_endpoint_error_names_endpoint_and_setting(tmp_path, monkeypatch) -> None:
+    import httpx
+
+    from backend.content_insights.client import ContentUnderstandingError
+
+    def _handler(request):
+        raise httpx.ConnectError("[Errno -2] Name or service not known", request=request)
+
+    cu = _client_with_transport(monkeypatch, _handler)
+    video = tmp_path / "clip.mp4"
+    video.write_bytes(b"v")
+
+    with pytest.raises(ContentUnderstandingError, match="AZURE_CONTENT_UNDERSTANDING_ENDPOINT") as info:
+        await cu._begin_analyze_file(video, "video/mp4")
+    assert "gone.cognitiveservices.azure.com" in str(info.value)
+
+
+@pytest.mark.asyncio
+async def test_rejected_key_error_points_to_api_key_setting(tmp_path, monkeypatch) -> None:
+    import httpx
+
+    from backend.content_insights.client import ContentUnderstandingError
+
+    cu = _client_with_transport(monkeypatch, lambda request: httpx.Response(401, json={"error": {"code": "401"}}))
+    video = tmp_path / "clip.mp4"
+    video.write_bytes(b"v")
+
+    with pytest.raises(ContentUnderstandingError, match="AZURE_CONTENT_UNDERSTANDING_API_KEY"):
+        await cu._begin_analyze_file(video, "video/mp4")

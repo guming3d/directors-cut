@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from pathlib import Path
-from typing import Any, Iterator, Optional
+from typing import Any, AsyncIterator, Iterator, Optional
 
 import httpx
 
@@ -89,6 +90,37 @@ class AzureContentUnderstandingClient:
             timeout or self._poll_timeout,
         )
 
+    @contextlib.contextmanager
+    def _readable_http_errors(self) -> Iterator[None]:
+        """Turn transport and auth failures into messages that name the fix."""
+
+        try:
+            yield
+        except httpx.ConnectError as exc:
+            raise ContentUnderstandingError(
+                f"Cannot reach Azure Content Understanding at {self._endpoint} ({exc}). "
+                "Check AZURE_CONTENT_UNDERSTANDING_ENDPOINT; the resource may have been deleted or renamed."
+            ) from exc
+        except httpx.TimeoutException as exc:
+            raise ContentUnderstandingError(
+                f"Azure Content Understanding at {self._endpoint} did not respond in time."
+            ) from exc
+        except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code
+            if status in (401, 403):
+                raise ContentUnderstandingError(
+                    f"Azure Content Understanding rejected the request (HTTP {status}). "
+                    "Check AZURE_CONTENT_UNDERSTANDING_API_KEY and that key-based access is enabled on the resource."
+                ) from exc
+            if status == 404:
+                raise ContentUnderstandingError(
+                    f"Azure Content Understanding returned HTTP 404 for analyzer '{self._analyzer_id}'. "
+                    "Check AZURE_CONTENT_UNDERSTANDING_ANALYZER_ID and AZURE_CONTENT_UNDERSTANDING_API_VERSION."
+                ) from exc
+            raise ContentUnderstandingError(
+                f"Azure Content Understanding returned HTTP {status}: {exc.response.text[:300]}"
+            ) from exc
+
     async def _begin_analyze(self, payload: bytes, content_type: str) -> str:
         url = (
             f"{self._endpoint}/contentunderstanding/analyzers/{self._analyzer_id}:analyze"
@@ -96,9 +128,10 @@ class AzureContentUnderstandingClient:
         )
         headers = self._base_headers | {"Content-Type": content_type}
         logger.debug("Submitting video insight request to %s", url)
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
-            response = await client.post(url, headers=headers, content=payload)
-            response.raise_for_status()
+        with self._readable_http_errors():
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                response = await client.post(url, headers=headers, content=payload)
+                response.raise_for_status()
         operation_url = (
             response.headers.get("operation-location")
             or response.headers.get("Operation-Location")
@@ -114,15 +147,20 @@ class AzureContentUnderstandingClient:
             f"{self._endpoint}/contentunderstanding/analyzers/{self._analyzer_id}:analyze"
             f"?api-version={self._api_version}"
         )
-        headers = self._base_headers | {"Content-Type": content_type}
+        # An explicit length sends a plain upload rather than chunked encoding.
+        headers = self._base_headers | {
+            "Content-Type": content_type,
+            "Content-Length": str(path.stat().st_size),
+        }
         logger.debug("Submitting video insight request to %s", url)
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
-            response = await client.post(
-                url,
-                headers=headers,
-                content=self._iter_file_chunks(path),
-            )
-            response.raise_for_status()
+        with self._readable_http_errors():
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                response = await client.post(
+                    url,
+                    headers=headers,
+                    content=self._aiter_file_chunks(path),
+                )
+                response.raise_for_status()
         operation_url = (
             response.headers.get("operation-location")
             or response.headers.get("Operation-Location")
@@ -144,8 +182,9 @@ class AzureContentUnderstandingClient:
                     raise ContentUnderstandingError(
                         f"Azure Content Understanding operation timed out after {timeout:.0f}s.",
                     )
-                response = await client.get(operation_url, headers=self._base_headers)
-                response.raise_for_status()
+                with self._readable_http_errors():
+                    response = await client.get(operation_url, headers=self._base_headers)
+                    response.raise_for_status()
                 payload = response.json()
                 status = str(payload.get("status", ""))
                 if status.lower() == "succeeded":
@@ -164,10 +203,12 @@ class AzureContentUnderstandingClient:
         }
 
     @staticmethod
-    def _iter_file_chunks(path: Path, chunk_size: int = 1024 * 1024) -> Iterator[bytes]:
+    async def _aiter_file_chunks(path: Path, chunk_size: int = 1024 * 1024) -> AsyncIterator[bytes]:
+        """Stream a file for httpx.AsyncClient, which rejects sync iterators."""
+
         with path.open("rb") as handle:
             while True:
-                chunk = handle.read(chunk_size)
+                chunk = await asyncio.to_thread(handle.read, chunk_size)
                 if not chunk:
                     break
                 yield chunk
