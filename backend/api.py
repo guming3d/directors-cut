@@ -65,6 +65,7 @@ from .models import (
     WorkflowPromptTemplateUpdate,
 )
 from .prompts import (
+    ProductionSettings,
     get_workflow_template_text,
     refine_text_with_llm,
     update_workflow_template_text,
@@ -329,9 +330,7 @@ async def refine_workflow_script(payload: RefineWorkflowPayload) -> RefinedScrip
     if not script:
         raise HTTPException(status_code=400, detail="Script text is required for refinement.")
     try:
-        refined = await refine_text_with_llm(
-            script, mode="workflow", video_provider=payload.video_provider
-        )
+        refined = await refine_text_with_llm(script, mode="workflow", settings=payload.production_settings())
     except Exception as exc:  # pragma: no cover - defensive logging
         logger.warning("GPT-6.1-sol refinement failed for workflow preview: %s", exc)
         raise HTTPException(status_code=503, detail=f"Unable to refine script: {exc}") from exc
@@ -345,7 +344,7 @@ async def refine_single_prompt(payload: RefineSinglePayload) -> RefinedPromptRes
     if not prompt:
         raise HTTPException(status_code=400, detail="Prompt text is required for refinement.")
     try:
-        refined = await refine_text_with_llm(prompt, mode="single")
+        refined = await refine_text_with_llm(prompt, mode="single", settings=payload.production_settings())
     except Exception as exc:  # pragma: no cover - defensive logging
         logger.warning("GPT-6.1-sol refinement failed for single prompt preview: %s", exc)
         raise HTTPException(status_code=503, detail=f"Unable to refine prompt: {exc}") from exc
@@ -491,7 +490,16 @@ async def start_single_video(payload: SingleVideoPayload) -> SingleVideoJobRespo
         raise HTTPException(status_code=400, detail="Prompt text is required.")
     if payload.refine_with_gpt5:
         try:
-            prompt_text = await refine_text_with_llm(prompt_text, mode="single")
+            prompt_text = await refine_text_with_llm(
+                prompt_text,
+                mode="single",
+                settings=ProductionSettings(
+                    video_provider=payload.video_provider,
+                    clip_seconds=payload.duration,
+                    resolution=payload.resolution,
+                    uses_start_image=bool(payload.reference_image or payload.reference_images),
+                ),
+            )
         except Exception as exc:  # pragma: no cover - defensive logging
             logger.warning("GPT-6.1-sol prompt refinement failed for single job %s: %s", job_id, exc)
         if prompt_text.strip():

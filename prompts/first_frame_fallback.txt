@@ -1,3 +1,3 @@
-Create a single still frame that opens the scene below. Match the $resolution resolution. Visual style: $visual_style. Keep characters visually consistent with any provided reference images, and avoid motion blur. Lean into strong lighting and framing that sets the tone for the first second of the clip.
+Opening frame of a video scene, shown just before the first action begins, framed for a $resolution video. Visual style: $visual_style. Keep the main subject and key details in the central 80% of the frame, sharp and free of motion blur, with clear lighting that sets the scene's mood. Keep characters identical to any provided reference images. $face_rule No text, no captions, no logos, no watermarks.
 
 $prompt_text

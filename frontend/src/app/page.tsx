@@ -1221,9 +1221,14 @@ export default function Home() {
     const response = await apiFetch(`${apiBase}/api/refine/workflow`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      // The refiner sizes scenes to these settings, so send what will be rendered.
       body: JSON.stringify({
         script: content,
         videoProvider: provider,
+        sceneDuration: Number(sceneDuration),
+        resolution: combinedResolution,
+        visualStyle,
+        usesStartImage: generateAiFirstFrames || useSceneImages,
       }),
     });
     if (!response.ok) {
@@ -1237,7 +1242,13 @@ export default function Home() {
     const response = await apiFetch(`${apiBase}/api/refine/single`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt: content }),
+      body: JSON.stringify({
+        prompt: content,
+        videoProvider: singleProviderSelection,
+        duration: Number(singleDuration),
+        resolution: singleResolution,
+        usesStartImage: Boolean(singleReferenceFile),
+      }),
     });
     if (!response.ok) {
       throw new Error(await response.text());

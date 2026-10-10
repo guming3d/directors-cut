@@ -48,7 +48,7 @@ from .sora_runner import SoraExecutionError, run_sora_subprocess_with_retry
 from .utils import escape_for_concat, normalize_script_text, run_subprocess
 from .workflow import workflow
 from .config import SINGLE_VIDEO_JOBS_DIR, OUTPUT_DIR
-from .prompts import refine_text_with_llm
+from .prompts import ProductionSettings, refine_text_with_llm
 from .config import video_client
 
 
@@ -1122,9 +1122,14 @@ async def run_recompose_job(job_id: str) -> None:
 async def refine_script_for_payload(payload: StartWorkflowPayload) -> None:
     if not payload.refine_with_gpt5:
         return
-    refined_script = await refine_text_with_llm(
-        payload.script, mode="workflow", video_provider=payload.video_provider
+    settings = ProductionSettings(
+        video_provider=payload.video_provider,
+        clip_seconds=payload.scene_duration,
+        resolution=payload.resolution or DEFAULT_SORA_RESOLUTION,
+        visual_style=payload.visual_style,
+        uses_start_image=bool(payload.generate_ai_first_frame or payload.use_scene_images or payload.scene_images),
     )
+    refined_script = await refine_text_with_llm(payload.script, mode="workflow", settings=settings)
     if refined_script.strip():
         payload.script = refined_script
 

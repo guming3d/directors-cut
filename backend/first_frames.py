@@ -13,39 +13,60 @@ from .config import (
     azure_text_client,
     extract_response_text,
     logger,
+    normalize_video_provider,
     reasoning_request_options,
 )
 from .image_utils import select_supported_image_size, trim_image_bytes
 from .models import CharacterReference, ScenePlan, VideoWorkflowRequest
-from .prompts import get_visual_style_description, render_prompt_template
+from .prompts import get_visual_style_description, provider_profile, render_prompt_template
 
 MAX_CHARACTER_REF_IMAGES = 4
 
-def _fallback_image_prompt(plan: ScenePlan, resolution: str, visual_style: str = "3d_animation") -> str:
+# Sora 2 rejects start images that contain human faces, which wastes the render.
+SORA_FACE_RULE = (
+    "Show no human face: people appear from behind, in silhouette, or partly out of frame."
+)
+
+
+def _face_rule(video_provider: str | None) -> str:
+    return SORA_FACE_RULE if normalize_video_provider(video_provider) == "sora2" else ""
+
+
+def _fallback_image_prompt(
+    plan: ScenePlan, resolution: str, visual_style: str = "3d_animation", video_provider: str | None = None
+) -> str:
     style_desc = get_visual_style_description(visual_style)
     return render_prompt_template(
         "first_frame_fallback",
         resolution=resolution,
         prompt_text=plan.prompt_text,
         visual_style=style_desc,
+        face_rule=_face_rule(video_provider),
     )
 
 
-async def build_first_frame_prompt(plan: ScenePlan, resolution: str, visual_style: str = "3d_animation") -> str:
+async def build_first_frame_prompt(
+    plan: ScenePlan,
+    resolution: str,
+    visual_style: str = "3d_animation",
+    video_provider: str | None = None,
+) -> str:
     """Use the reasoning model to craft an image prompt tailored to the scene opening."""
 
     client = azure_text_client()
     if client is None:
-        return _fallback_image_prompt(plan, resolution, visual_style)
+        return _fallback_image_prompt(plan, resolution, visual_style, video_provider)
 
     style_desc = get_visual_style_description(visual_style)
     system_prompt = render_prompt_template("first_frame_system")
     user_prompt = render_prompt_template(
         "first_frame_user",
         scene_label=plan.label,
+        video_model=provider_profile(video_provider).label,
         resolution=resolution,
         prompt_text=plan.prompt_text,
         visual_style=style_desc,
+        face_rule=_face_rule(video_provider),
     )
 
     def _call() -> str:
@@ -62,10 +83,10 @@ async def build_first_frame_prompt(plan: ScenePlan, resolution: str, visual_styl
         refined = await asyncio.to_thread(_call)
     except Exception as exc:  # pragma: no cover - defensive log path
         logger.warning("%s failed to draft first-frame prompt for %s: %s", REASONING_DEPLOYMENT, plan.label, exc)
-        return _fallback_image_prompt(plan, resolution, visual_style)
+        return _fallback_image_prompt(plan, resolution, visual_style, video_provider)
 
     cleaned = refined.strip()
-    return cleaned or _fallback_image_prompt(plan, resolution, visual_style)
+    return cleaned or _fallback_image_prompt(plan, resolution, visual_style, video_provider)
 
 
 async def _generate_image_bytes(
@@ -139,7 +160,9 @@ async def generate_first_frame_image(
     if target_path.is_file() and target_path.stat().st_size > 0:
         return str(target_path)
 
-    image_prompt = await build_first_frame_prompt(plan, request.resolution, request.visual_style)
+    image_prompt = await build_first_frame_prompt(
+        plan, request.resolution, request.visual_style, request.video_provider
+    )
 
     ref_paths: list[str] = []
     for ref in (character_refs or []):

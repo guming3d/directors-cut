@@ -32,9 +32,6 @@ async def test_workflow_runs_with_stubbed_agents(tmp_path, monkeypatch):
 
     workflow = create_sora_video_workflow()
 
-    async def fake_refine(title: str, description: str, duration: int) -> str:
-        return description
-
     async def fake_invoke(
         self,
         plan,
@@ -69,7 +66,6 @@ async def test_workflow_runs_with_stubbed_agents(tmp_path, monkeypatch):
         target.write_text("final-video", encoding="utf-8")
         return "ok", ""
 
-    monkeypatch.setattr("backend.agents.refine_scene_description", fake_refine)
     monkeypatch.setattr(Sora2Agent, "_invoke_sora", fake_invoke)
     monkeypatch.setattr("backend.agents.run_subprocess", fake_run_subprocess)
 
@@ -107,7 +103,7 @@ async def test_skips_refinement_when_flag_disabled(tmp_path, monkeypatch):
     workflow = create_sora_video_workflow()
 
     async def fail_refine(*args, **kwargs):
-        raise AssertionError("refine_scene_description should not run when refine_with_gpt5 is False")
+        raise AssertionError("refinement should not run when refine_with_gpt5 is False")
 
     async def fake_invoke(
         self,
@@ -143,7 +139,7 @@ async def test_skips_refinement_when_flag_disabled(tmp_path, monkeypatch):
         target.write_text("final-video", encoding="utf-8")
         return "ok", ""
 
-    monkeypatch.setattr("backend.agents.refine_scene_description", fail_refine)
+    monkeypatch.setattr("backend.prompts.refine_text_with_llm", fail_refine)
     monkeypatch.setattr(Sora2Agent, "_invoke_sora", fake_invoke)
     monkeypatch.setattr("backend.agents.run_subprocess", fake_run_subprocess)
 

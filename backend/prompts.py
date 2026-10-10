@@ -3,26 +3,26 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import re
 from pathlib import Path
 from functools import lru_cache
+from dataclasses import dataclass
 from string import Template
-from typing import Literal
+from typing import Literal, Sequence
 
 from .config import (
     DEFAULT_VIDEO_PROVIDER,
     HEADER_PATTERN,
     REASONING_DEPLOYMENT,
     ROOT,
-    SORA_PROMPT_GUIDE_URL,
+    SEEDANCE_GENERATE_AUDIO,
     azure_text_client,
     extract_response_text,
     logger,
     normalize_video_provider,
     reasoning_request_options,
 )
-from .utils import normalize_script_text, slugify
+from .utils import nearest_aspect_ratio, normalize_script_text, resolution_to_size, slugify
 
 HEADER_LINE_PATTERN = re.compile(
     r"^\**\s*Scene\s+(\d+)(?:\s*[(:\-]\s*(.*?))?\s*\**$",
@@ -130,9 +130,10 @@ def get_visual_style_description(style: str) -> str:
 
 
 STATIC_PROMPT_FILES = {
-    "refine_scene_system": PROMPT_TEMPLATE_DIR / "refine_scene_system.txt",
-    "refine_scene_user": PROMPT_TEMPLATE_DIR / "refine_scene_user.txt",
-    "refine_single_system": PROMPT_TEMPLATE_DIR / "refine_single_system.txt",
+    "refine_single_sora2": PROMPT_TEMPLATE_DIR / "refine_single_sora2.txt",
+    "refine_single_kling": PROMPT_TEMPLATE_DIR / "refine_single_kling.txt",
+    "refine_single_jimeng": PROMPT_TEMPLATE_DIR / "refine_single_jimeng.txt",
+    "refine_single_seedance": PROMPT_TEMPLATE_DIR / "refine_single_seedance.txt",
     "refine_single_user": PROMPT_TEMPLATE_DIR / "refine_single_user.txt",
     "scene_split_system": PROMPT_TEMPLATE_DIR / "scene_split_system.txt",
     "first_frame_system": PROMPT_TEMPLATE_DIR / "first_frame_system.txt",
@@ -231,72 +232,106 @@ def build_prompt_text(
     return prompt_body
 
 
-async def refine_scene_description(title: str, description: str, duration: int) -> str:
-    normalized = description.strip()
-    if not normalized:
-        return description
+@dataclass(frozen=True)
+class ProviderProfile:
+    label: str
+    audio: str
+    # Hard limit enforced by the provider API; longer prompts are rejected.
+    max_prompt_chars: int | None = None
 
-    client = azure_text_client()
-    if client is None:
-        return description
 
-    system_prompt = render_prompt_template(
-        "refine_scene_system",
-        guide_url=SORA_PROMPT_GUIDE_URL,
-        duration=duration,
-    )
-    user_prompt = render_prompt_template(
-        "refine_scene_user",
-        title=title,
-        duration=duration,
-        description=normalized,
-    )
+PROVIDER_PROFILES: dict[str, ProviderProfile] = {
+    "sora2": ProviderProfile(
+        "Sora 2",
+        "Generates synchronized dialogue, sound effects, and ambience from the prompt.",
+    ),
+    "kling": ProviderProfile(
+        "Kling 3.0",
+        "Video only: no sound or speech is generated, so spoken lines must become visible action.",
+        max_prompt_chars=2500,
+    ),
+    "jimeng": ProviderProfile(
+        "Jimeng 3.0 Pro",
+        "Video only: no sound or speech is generated, so spoken lines must become visible action.",
+        max_prompt_chars=800,
+    ),
+    "seedance": ProviderProfile(
+        "Seedance 2.5",
+        (
+            "Generates dialogue, sound effects, and ambience from the prompt."
+            if SEEDANCE_GENERATE_AUDIO
+            else "Video only: no sound or speech is generated, so spoken lines must become visible action."
+        ),
+    ),
+}
 
-    max_tokens_str = os.getenv("DIRECTOR_REFINEMENT_MAX_TOKENS", "900")
-    try:
-        max_tokens = int(max_tokens_str)
-    except ValueError:
-        max_tokens = 900
 
-    def _call() -> str:
-        response = client.responses.create(
-            input=[
-                {
-                    "role": "system",
-                    "content": [{"type": "input_text", "text": system_prompt}],
-                },
-                {
-                    "role": "user",
-                    "content": [{"type": "input_text", "text": user_prompt}],
-                }
-            ],
-            **reasoning_request_options(max_tokens),
+def provider_profile(provider: str | None) -> ProviderProfile:
+    return PROVIDER_PROFILES[normalize_video_provider(provider)]
+
+
+@dataclass(frozen=True)
+class ProductionSettings:
+    """Facts about the render that the prompt writer cannot infer from the script."""
+
+    video_provider: str | None = None
+    clip_seconds: int | None = None
+    resolution: str | None = None
+    visual_style: str | None = None
+    uses_start_image: bool = False
+
+    def describe(self) -> str:
+        provider = normalize_video_provider(self.video_provider)
+        profile = PROVIDER_PROFILES[provider]
+        lines = [
+            "Production settings (fixed by the app; follow them exactly):",
+            f"- Video model: {profile.label}.",
+        ]
+        if self.clip_seconds:
+            lines.append(
+                f"- Every scene is rendered as exactly one {self.clip_seconds}-second clip, "
+                "and every scene is a separately billed generation."
+            )
+        if self.resolution:
+            width, height = resolution_to_size(self.resolution)
+            orientation = "portrait" if height > width else "landscape" if width > height else "square"
+            ratio = nearest_aspect_ratio(self.resolution, ("9:16", "16:9", "1:1", "3:4", "4:3", "21:9"))
+            lines.append(f"- Frame: {ratio} {orientation} ({width}x{height}); compose every shot for this frame.")
+        if self.visual_style:
+            lines.append(f"- Visual style for every scene: {get_visual_style_description(self.visual_style)}")
+        lines.append(f"- Audio: {profile.audio}")
+        lines.append(
+            "- Start image: each scene starts from a generated first-frame image, so describe what happens "
+            "from that frame onward."
+            if self.uses_start_image
+            else "- Start image: none; the prompt alone defines the opening frame."
         )
-        return extract_response_text(response)
+        if profile.max_prompt_chars:
+            lines.append(
+                f"- Hard limit: each scene prompt must stay under {profile.max_prompt_chars} characters."
+            )
+        return "\n".join(lines)
 
-    try:
-        refined = await asyncio.to_thread(_call)
-    except Exception as exc:  # pragma: no cover - defensive fallback
-        logger.warning("Prompt refinement failed for %s: %s", title, exc)
-        return description
 
-    lines = [line.strip() for line in refined.splitlines() if line.strip()]
-    if not lines:
-        return description
+def check_prompt_lengths(prompts: Sequence[tuple[str, str]], provider: str | None) -> None:
+    """Fail before any paid render when a prompt exceeds the provider's hard limit."""
 
-    cleaned: list[str] = []
-    for line in lines:
-        stripped = line.lstrip("-•0123456789. ").strip()
-        cleaned.append(stripped or line)
-
-    return "\n".join(cleaned)
+    limit = provider_profile(provider).max_prompt_chars
+    if not limit:
+        return
+    too_long = [f"{label} ({len(text)} chars)" for label, text in prompts if len(text) > limit]
+    if too_long:
+        raise RuntimeError(
+            f"{provider_profile(provider).label} accepts prompts up to {limit} characters; shorten "
+            + ", ".join(too_long)
+            + " before rendering."
+        )
 
 
 async def ensure_scene_headers(
     script_text: str,
     use_refinement: bool,
-    video_provider: str | None = None,
-    scene_duration: int | None = None,
+    settings: ProductionSettings | None = None,
 ) -> tuple[str, bool, bool]:
     """Normalize scene headers, calling the reasoning model only when needed.
 
@@ -310,9 +345,7 @@ async def ensure_scene_headers(
         return normalized, True, False
 
     if use_refinement:
-        refined = await refine_text_with_llm(
-            normalized, mode="workflow", video_provider=video_provider
-        )
+        refined = await refine_text_with_llm(normalized, mode="workflow", settings=settings)
         refined_normalized = _normalize_scene_headers(
             normalize_script_text(refined.strip() or normalized)
         )
@@ -320,7 +353,7 @@ async def ensure_scene_headers(
             return refined_normalized, True, True
         normalized = refined_normalized
 
-    split = await split_script_into_scenes(normalized, scene_duration)
+    split = await split_script_into_scenes(normalized, settings.clip_seconds if settings else None)
     split_normalized = _normalize_scene_headers(normalize_script_text(split))
     return split_normalized, _contains_scene_headers(split_normalized), True
 
@@ -371,7 +404,9 @@ async def split_script_into_scenes(script_text: str, scene_duration: int | None 
 
 
 async def refine_text_with_llm(
-    content: str, mode: Literal["workflow", "single"], video_provider: str | None = None
+    content: str,
+    mode: Literal["workflow", "single"],
+    settings: ProductionSettings | None = None,
 ) -> str:
     normalized = content.strip()
     if not normalized:
@@ -383,15 +418,17 @@ async def refine_text_with_llm(
 
     logger.info("Using reasoning deployment for refinement: %s", REASONING_DEPLOYMENT)
 
+    settings = settings or ProductionSettings()
+    provider = normalize_video_provider(settings.video_provider)
     if mode == "workflow":
-        system_prompt = _workflow_template_for_provider(
-            video_provider or DEFAULT_VIDEO_PROVIDER
-        )
-        user_prompt = normalized
+        system_prompt = _workflow_template_for_provider(provider)
+        user_prompt = f"{settings.describe()}\n\nScript:\n{normalized}"
         max_tokens = 8000
     else:
-        system_prompt = render_prompt_template("refine_single_system")
-        user_prompt = render_prompt_template("refine_single_user", prompt=normalized)
+        system_prompt = render_prompt_template(f"refine_single_{provider}")
+        user_prompt = render_prompt_template(
+            "refine_single_user", settings=settings.describe(), prompt=normalized
+        )
         max_tokens = 2000
 
     request_text = f"{system_prompt}\n\n---\n{user_prompt}\n---"
@@ -439,7 +476,10 @@ async def refine_text_with_llm(
 __all__ = [
     "build_prompt_text",
     "parse_script",
-    "refine_scene_description",
+    "PROVIDER_PROFILES",
+    "ProductionSettings",
+    "check_prompt_lengths",
+    "provider_profile",
     "ensure_scene_headers",
     "refine_text_with_llm",
     "split_script_into_scenes",

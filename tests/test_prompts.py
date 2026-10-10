@@ -153,7 +153,9 @@ async def test_ensure_scene_headers_inserts_separators_without_refine_toggle(mon
     monkeypatch.setattr(prompts, "azure_text_client", lambda: client)
 
     script, has_headers, used_llm = await prompts.ensure_scene_headers(
-        "A city wakes up. Commuters flood the station.", use_refinement=False, scene_duration=4
+        "A city wakes up. Commuters flood the station.",
+        use_refinement=False,
+        settings=prompts.ProductionSettings(clip_seconds=4),
     )
 
     assert [draft.title for draft in parse_script(script)] == ["Sunrise", "Rush hour"]

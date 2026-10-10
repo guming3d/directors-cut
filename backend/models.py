@@ -29,6 +29,7 @@ from .config import (
     TMP_DIR,
     allowed_durations_for_provider,
 )
+from .prompts import ProductionSettings
 from .utils import utc_now
 
 
@@ -810,10 +811,43 @@ class RefineWorkflowPayload(BaseModel):
         alias="videoProvider",
         description="Video backend that controls which GPT-6.1-sol template is used while refining.",
     )
+    scene_duration: Optional[int] = Field(
+        default=None, alias="sceneDuration", description="Seconds per scene clip, so prompts fit the clip."
+    )
+    resolution: Optional[str] = Field(default=None, description="Render resolution, e.g. 720x1280.")
+    visual_style: Optional[str] = Field(default=None, alias="visualStyle")
+    uses_start_image: bool = Field(
+        default=False,
+        alias="usesStartImage",
+        description="True when scenes start from AI first frames or uploaded images.",
+    )
+
+    def production_settings(self) -> ProductionSettings:
+        return ProductionSettings(
+            video_provider=self.video_provider,
+            clip_seconds=self.scene_duration,
+            resolution=self.resolution,
+            visual_style=self.visual_style,
+            uses_start_image=self.uses_start_image,
+        )
 
 
 class RefineSinglePayload(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     prompt: str
+    video_provider: VideoProviderName = Field(default=DEFAULT_VIDEO_PROVIDER, alias="videoProvider")
+    duration: Optional[int] = Field(default=None, description="Clip length in seconds.")
+    resolution: Optional[str] = None
+    uses_start_image: bool = Field(default=False, alias="usesStartImage")
+
+    def production_settings(self) -> ProductionSettings:
+        return ProductionSettings(
+            video_provider=self.video_provider,
+            clip_seconds=self.duration,
+            resolution=self.resolution,
+            uses_start_image=self.uses_start_image,
+        )
 
 
 class WorkflowPromptTemplateResponse(BaseModel):

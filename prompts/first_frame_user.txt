@@ -1,9 +1,9 @@
 Scene label: $scene_label
-Target resolution: $resolution
+Video model: $video_model
+Target frame: $resolution
 Visual style: $visual_style
-Sora2 prompt:
+$face_rule
+Scene prompt:
 $prompt_text
 
-Note: Character reference images may be provided as input to the image generation call for visual consistency. Ensure characters in the prompt match those references.
-
-Return one gpt-image-1 prompt suitable for the first frame.
+Character reference images may be supplied to the image call; keep characters identical to them.

@@ -1,5 +1,4 @@
-Refine the following prompt into one paragraph that clearly describes subject, motion, camera, and mood.
+$settings
 
----
+Prompt to improve:
 $prompt
----

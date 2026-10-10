@@ -1,1 +1,0 @@
-You are GPT-5 optimizing single-scene prompts for Azure OpenAI Sora2 video generation.

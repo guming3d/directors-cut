@@ -34,10 +34,11 @@ from .progress import (
     report_progress,
 )
 from .prompts import (
+    ProductionSettings,
     build_prompt_text,
+    check_prompt_lengths,
     ensure_scene_headers,
     parse_script,
-    refine_scene_description,
 )
 from .stores import WORKFLOW_JOB_STORE
 from .sora_runner import run_sora_subprocess_with_retry
@@ -48,6 +49,18 @@ from .utils import (
     run_subprocess,
     slugify,
 )
+
+
+def production_settings_for(request: VideoWorkflowRequest) -> ProductionSettings:
+    return ProductionSettings(
+        video_provider=request.video_provider,
+        clip_seconds=request.scene_duration,
+        resolution=request.resolution,
+        visual_style=request.visual_style,
+        uses_start_image=bool(
+            request.generate_ai_first_frame or request.use_scene_images or request.sequence_initial_image
+        ),
+    )
 
 
 class DirectorAgent(Executor):
@@ -65,8 +78,7 @@ class DirectorAgent(Executor):
         script_text, has_headers, used_llm = await ensure_scene_headers(
             raw_script,
             request.refine_with_gpt5,
-            request.video_provider,
-            request.scene_duration,
+            production_settings_for(request),
         )
 
         if script_text != raw_script:
@@ -119,14 +131,7 @@ class DirectorAgent(Executor):
             description = "\n".join(draft.description_lines)
             slug = slugify(f"{draft.scene_number:02d}-{draft.title}")
             prompt_path = prompt_dir / f"scene_{idx:02d}_{slug}.txt"
-            refined_description = (
-                await refine_scene_description(draft.title, description, duration)
-                if request.refine_with_gpt5
-                else description
-            )
-            prompt_text = build_prompt_text(
-                draft.title, refined_description, duration, request.resolution
-            )
+            prompt_text = build_prompt_text(draft.title, description, duration, request.resolution)
             prompt_path.write_text(prompt_text + "\n", encoding="utf-8")
 
             plans.append(
@@ -134,11 +139,13 @@ class DirectorAgent(Executor):
                     order=idx,
                     label=f"Scene {draft.scene_number}: {draft.title}",
                     duration_seconds=duration,
-                    description=refined_description,
+                    description=description,
                     prompt_path=str(prompt_path),
                     prompt_text=prompt_text,
                 )
             )
+
+        check_prompt_lengths([(plan.label, plan.prompt_text) for plan in plans], request.video_provider)
 
         tmp_dir = Path(request.tmp_dir)
         if request.generation_mode == "sequence":
