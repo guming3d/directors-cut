@@ -8,6 +8,7 @@ import hashlib
 import hmac
 import json
 import time
+import weakref
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -20,6 +21,9 @@ from .config import (
     JIMENG_ACCESS_KEY_ID,
     JIMENG_API_BASE_URL,
     JIMENG_ALLOWED_DURATIONS,
+    JIMENG_MAX_CONCURRENT_TASKS,
+    JIMENG_SUBMIT_MAX_RETRIES,
+    JIMENG_SUBMIT_RETRY_BASE_DELAY_SECONDS,
     JIMENG_POLL_INTERVAL_SECONDS,
     JIMENG_POLL_TIMEOUT_SECONDS,
     JIMENG_REGION,
@@ -181,6 +185,54 @@ def _resolution_to_aspect_ratio(resolution: str) -> str:
     return nearest_aspect_ratio(resolution, JIMENG_SUPPORTED_ASPECT_RATIOS)
 
 
+_SLOTS_BY_LOOP: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore]" = (
+    weakref.WeakKeyDictionary()
+)
+
+
+def _task_slots() -> asyncio.Semaphore:
+    """Limit concurrent Jimeng tasks; the account rejects extras with HTTP 429.
+
+    A slot is held from submission until the result arrives, so parallel
+    scenes queue here instead of failing.
+    """
+
+    loop = asyncio.get_running_loop()
+    slots = _SLOTS_BY_LOOP.get(loop)
+    if slots is None:
+        slots = asyncio.Semaphore(JIMENG_MAX_CONCURRENT_TASKS)
+        _SLOTS_BY_LOOP[loop] = slots
+    return slots
+
+
+async def _submit_with_retry(client: httpx.AsyncClient, payload: dict[str, Any]) -> dict[str, Any]:
+    """Submit a task, retrying HTTP 429.
+
+    A 429 means Jimeng created no task, so retrying cannot bill twice.
+    """
+
+    for attempt in range(JIMENG_SUBMIT_MAX_RETRIES + 1):
+        try:
+            return await _invoke_action(client, "CVSync2AsyncSubmitTask", payload)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code != 429 or attempt == JIMENG_SUBMIT_MAX_RETRIES:
+                if exc.response.status_code == 429:
+                    raise JimengAPIError(
+                        f"Jimeng is still at its concurrent task limit after {attempt + 1} attempts (HTTP 429). "
+                        "Lower parallel renders or JIMENG_MAX_CONCURRENT_TASKS, or retry later."
+                    ) from exc
+                raise
+            delay = min(60.0, JIMENG_SUBMIT_RETRY_BASE_DELAY_SECONDS * (2**attempt))
+            logger.warning(
+                "Jimeng submit hit its concurrency limit (HTTP 429); retrying in %.0fs (%d/%d).",
+                delay,
+                attempt + 1,
+                JIMENG_SUBMIT_MAX_RETRIES,
+            )
+            await asyncio.sleep(delay)
+    raise AssertionError("unreachable")  # pragma: no cover
+
+
 async def _download_video(client: httpx.AsyncClient, url: str, dest: Path) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
     async with client.stream("GET", url) as response:
@@ -249,8 +301,8 @@ async def render_jimeng_clip(
     )
 
     timeout = httpx.Timeout(JIMENG_POLL_TIMEOUT_SECONDS, connect=30.0)
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        submit_response = await _invoke_action(client, "CVSync2AsyncSubmitTask", request_payload)
+    async with _task_slots(), httpx.AsyncClient(timeout=timeout) as client:
+        submit_response = await _submit_with_retry(client, request_payload)
         code = submit_response.get("code")
         if code != 10000:
             message = submit_response.get("message") or "Unknown error"
@@ -258,6 +310,8 @@ async def render_jimeng_clip(
         task_id = (submit_response.get("data") or {}).get("task_id")
         if not task_id:
             raise JimengAPIError("Jimeng submit response missing task_id.")
+        # Logged so a result can still be fetched if this process is interrupted.
+        logger.info("Jimeng task %s submitted for %s", task_id, Path(output_path).name)
 
         final_response = await _poll_task(client, task_id)
         data = final_response.get("data") or {}

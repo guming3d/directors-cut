@@ -147,6 +147,11 @@ class SingleVideoJobStore:
             for job in self._persistence.load_jobs():
                 self._jobs[job.job_id] = job
 
+    def active_job_ids(self) -> list[str]:
+        """Jobs still queued or running; after a restart these can never finish."""
+
+        return [job_id for job_id, job in self._jobs.items() if job.status in ("queued", "running")]
+
     def _persist(self, job: SingleVideoJobState) -> None:
         if self._persistence:
             self._persistence.upsert(job)

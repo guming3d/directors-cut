@@ -93,6 +93,7 @@ from .stores import (
     VIDEO_INSIGHT_STORE,
     VIDEO_REPRODUCE_STORE,
     WORKFLOW_JOB_STORE,
+    fail_interrupted_jobs,
 )
 from .utils import normalize_script_text, slugify
 
@@ -100,6 +101,9 @@ from .utils import normalize_script_text, slugify
 @asynccontextmanager
 async def _app_lifespan(_: FastAPI):
     validate_auth_configuration()
+    interrupted = await fail_interrupted_jobs()
+    if interrupted:
+        logger.warning("Marked %d job(s) interrupted by a backend restart as failed.", interrupted)
     yield
 
 

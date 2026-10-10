@@ -102,3 +102,36 @@ async def test_workflow_status_exposes_character_reference_urls(tmp_path):
     snapshot = await store.get_status("job-refs")
 
     assert snapshot.character_ref_urls == ["/static/job-refs/character_refs/Mango_ref.png"]
+
+
+@pytest.mark.asyncio
+async def test_active_job_ids_lists_only_unfinished_jobs(tmp_path):
+    store = WorkflowJobStore(WorkflowJobDatabase(tmp_path / "workflow.json"))
+    await store.create_job("queued-job")
+    await store.create_job("running-job")
+    await store.mark_running("running-job")
+    await store.create_job("failed-job")
+    await store.mark_failed("failed-job", "boom")
+
+    assert sorted(store.active_job_ids()) == ["queued-job", "running-job"]
+
+
+@pytest.mark.asyncio
+async def test_fail_interrupted_jobs_marks_running_jobs_failed_after_restart(tmp_path, monkeypatch):
+    from backend import stores
+
+    db_path = tmp_path / "workflow.json"
+    before_restart = WorkflowJobStore(WorkflowJobDatabase(db_path))
+    await before_restart.create_job("job-1")
+    await before_restart.mark_running("job-1")
+
+    after_restart = WorkflowJobStore(WorkflowJobDatabase(db_path))
+    empty = SingleVideoJobStore(SingleVideoJobDatabase(tmp_path / "single.json"))
+    monkeypatch.setattr(stores, "WORKFLOW_JOB_STORE", after_restart)
+    for name in ("SINGLE_VIDEO_STORE", "VIDEO_INSIGHT_STORE", "VIDEO_REPRODUCE_STORE"):
+        monkeypatch.setattr(stores, name, empty)
+
+    await stores.fail_interrupted_jobs()
+
+    snapshot = await after_restart.get_status("job-1")
+    assert (snapshot.status, snapshot.error) == ("failed", stores.INTERRUPTED_JOB_MESSAGE)
