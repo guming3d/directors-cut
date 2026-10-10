@@ -30,6 +30,7 @@ from .config import (
     KLING_CREATE_RETRY_MAX_DELAY_SECONDS,
     KLING_DEFAULT_MODE,
     KLING_DEFAULT_MODEL_NAME,
+    KLING_SOUND,
     KLING_DOWNLOAD_CHUNK_SIZE,
     KLING_POLL_INTERVAL_SECONDS,
     KLING_POLL_TIMEOUT_SECONDS,
@@ -259,6 +260,7 @@ async def render_kling_clip(
     mode: str | None = None,
     model_name: str | None = None,
     cfg_scale: float | None = None,
+    sound: bool | None = None,
 ) -> KlingRenderResult:
     base_url = KLING_API_BASE_URL or ""
     if not base_url:
@@ -276,6 +278,9 @@ async def render_kling_clip(
     }
     if external_task_id:
         request_payload["external_task_id"] = external_task_id
+    # Omitted when off so models without audio support keep working.
+    if KLING_SOUND if sound is None else sound:
+        request_payload["sound"] = "on"
 
 
     image_paths = [primary_image_path] if primary_image_path else []

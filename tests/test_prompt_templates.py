@@ -52,10 +52,10 @@ def test_static_templates_have_no_unknown_placeholders(name):
 
 def test_settings_describe_clip_length_frame_and_audio():
     text = prompts.ProductionSettings(
-        video_provider="kling", clip_seconds=5, resolution="720x1280", visual_style="2d_animation"
+        video_provider="jimeng", clip_seconds=5, resolution="720x1280", visual_style="2d_animation"
     ).describe()
 
-    assert all(part in text for part in ("5-second clip", "9:16 portrait", "no sound", "2500 characters"))
+    assert all(part in text for part in ("5-second clip", "9:16 portrait", "no sound", "800 characters"))
 
 
 def test_settings_describe_start_image_when_used():
@@ -110,3 +110,7 @@ def test_sora_first_frame_prompt_keeps_human_faces_out():
 
 def test_other_providers_first_frames_have_no_face_rule():
     assert "human face" not in first_frames._fallback_image_prompt(_plan(), "720x1280", video_provider="kling")
+
+
+def test_kling_profile_reports_generated_sound_by_default():
+    assert "speech" in prompts.PROVIDER_PROFILES["kling"].audio

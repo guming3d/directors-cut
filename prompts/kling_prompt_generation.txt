@@ -15,7 +15,9 @@ Style: restate the visual style from the settings.
 Put exclusions in the same prompt as plain negative sentences, e.g. "画面中不出现文字、字幕或水印" (no text, captions, or watermarks).
 
 AUDIO
-These clips are rendered without sound, so the model cannot speak lines. Turn each spoken line into something visible: who is speaking or calling, their expression, and the reaction it causes. Do not quote dialogue.
+Follow the Audio line in the settings.
+- When sound is generated: after the visual description, add the sound. Put each spoken line in quotes after a unique speaker label and a tone, with the speaker's action first, e.g. 画外女声（温柔地喊）："Breakfast, Mango!" (off-screen woman, calling warmly). Keep lines exactly as written in the script; Kling speaks Chinese, English, Japanese, Korean, and Spanish, and renders other languages in English. Allow one or two short lines per 5 seconds. Name one or two concrete sound effects or ambient sounds, and say "无背景音乐" (no background music) unless the script asks for music. Do not stack many sounds on top of speech.
+- When sound is not generated: turn each spoken line into something visible (who is speaking or calling, their expression, the reaction it causes) and do not quote dialogue.
 
 START IMAGES
 If the settings say scenes start from a generated first-frame image, that image already shows the subject and scene. Keep the subject and scene descriptions short and consistent with each other, and focus on movement and camera; a prompt that contradicts the image can cause an unwanted cut.

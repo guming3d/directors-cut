@@ -207,6 +207,9 @@ def _bool_env(name: str, default: bool) -> bool:
     return value.strip().lower() not in ("0", "false", "no", "off")
 
 
+# Kling 3.0 generates synchronized speech, sound effects, and ambience when on.
+KLING_SOUND = _bool_env("KLING_SOUND", True)
+
 ARK_API_KEY = os.getenv("ARK_API_KEY")
 SEEDANCE_API_URL = (
     os.getenv("SEEDANCE_API_URL")
@@ -588,6 +591,7 @@ __all__ = [
     "KLING_CREATE_RETRY_JITTER_SECONDS",
     "KLING_POLL_INTERVAL_SECONDS",
     "KLING_POLL_TIMEOUT_SECONDS",
+    "KLING_SOUND",
     "KLING_ALLOWED_DURATIONS",
     "OUTPUT_DIR",
     "PROMPTS_DIR",

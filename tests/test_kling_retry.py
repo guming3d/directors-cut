@@ -98,3 +98,39 @@ async def test_create_kling_task_retries_on_429(monkeypatch):
     assert response.status_code == 200
     assert attempts["count"] == 3
     assert sleep_calls == [0.5, 0.5]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("sound", "expected"), [(True, "on"), (False, None)])
+async def test_render_kling_clip_sends_sound_only_when_enabled(tmp_path, monkeypatch, sound, expected):
+    sent: list[dict] = []
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST":
+            import json
+
+            sent.append(json.loads(request.content))
+            return httpx.Response(200, json={"code": 0, "data": {"task_id": "t1"}})
+        if str(request.url).endswith("/video.mp4"):
+            return httpx.Response(200, content=b"mp4")
+        return httpx.Response(
+            200,
+            json={"code": 0, "data": {"task_status": "succeed", "task_result": {"videos": [{"url": "https://cdn.example/video.mp4", "duration": "5"}]}}},
+        )
+
+    real_client = httpx.AsyncClient
+
+    def _client(*args, **kwargs):
+        kwargs["transport"] = httpx.MockTransport(_handler)
+        return real_client(*args, **kwargs)
+
+    monkeypatch.setattr(kling.httpx, "AsyncClient", _client)
+    monkeypatch.setattr(kling, "_build_headers", lambda: {})
+    monkeypatch.setattr(kling, "KLING_POLL_INTERVAL_SECONDS", 0)
+
+    await kling.render_kling_clip(
+        prompt_text="A cat stretches.", duration_seconds=5, resolution="720x1280",
+        output_path=tmp_path / "clip.mp4", sound=sound,
+    )
+
+    assert sent[0].get("sound") == expected

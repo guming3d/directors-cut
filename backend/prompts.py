@@ -14,6 +14,7 @@ from .config import (
     DEFAULT_VIDEO_PROVIDER,
     HEADER_PATTERN,
     REASONING_DEPLOYMENT,
+    KLING_SOUND,
     ROOT,
     SEEDANCE_GENERATE_AUDIO,
     azure_text_client,
@@ -247,7 +248,11 @@ PROVIDER_PROFILES: dict[str, ProviderProfile] = {
     ),
     "kling": ProviderProfile(
         "Kling 3.0",
-        "Video only: no sound or speech is generated, so spoken lines must become visible action.",
+        (
+            "Generates synchronized speech, sound effects, and ambience from the prompt."
+            if KLING_SOUND
+            else "Video only: no sound or speech is generated, so spoken lines must become visible action."
+        ),
         max_prompt_chars=2500,
     ),
     "jimeng": ProviderProfile(

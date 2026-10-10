@@ -55,6 +55,8 @@
 
 设置 `VIDEO_PROVIDER=sora2`（默认）、`VIDEO_PROVIDER=kling` 或 `VIDEO_PROVIDER=jimeng` 选择后端。使用 Kling 时需配置 `KLING_API_BASE_URL`、`KLING_ACCESS_KEY`、`KLING_SECRET_KEY`（可选 `KLING_API_KEY` 仅用于旧环境），其余参数如 `KLING_MODEL_NAME`、`KLING_MODE`、`KLING_CFG_SCALE`、`KLING_POLL_INTERVAL`、`KLING_POLL_TIMEOUT`、`KLING_TOKEN_TTL` 仍可调，`python verify_kling_token.py` 可用于检查令牌有效期。使用 Jimeng 时需提供 `JIMENG_ACCESS_KEY_ID`、`JIMENG_SECRET_ACCESS_KEY`（如有 STS 令牌则填 `JIMENG_SECURITY_TOKEN`），默认调用 `https://visual.volcengineapi.com`，Region/Service 固定为 `cn-north-1` / `cv`，支持 5s/10s 时长，可选首帧参考图。Kling/Jimeng/Seedance 目前仅支持重新生成，不支持 remix。
 
+Kling 3.0（`KLING_MODEL_NAME=kling-v3`）默认为每个片段生成语音、音效与环境音；设置 `KLING_SOUND=off` 可生成无声片段。Jimeng 3.0 Pro 不支持音频，生成的片段始终无声。
+
 使用 Seedance 2.5（火山方舟，模型 `doubao-seedance-2-5-260628`）时需设置 `ARK_API_KEY`，支持 4/5/8/10/12 秒，默认生成音频（`SEEDANCE_GENERATE_AUDIO=false` 可关闭）。方舟仅接受 URL 形式的参考图，因此首帧会先上传到公开的 Cloudflare R2 存储桶，需配置 `R2_ACCOUNT_ID`、`R2_BUCKET`、`R2_PUBLIC_BASE_URL`、`R2_ACCESS_KEY_ID`、`R2_SECRET_ACCESS_KEY`（上传的帧会公开可读）。Seedance 按生成秒数计费，创建任务不会自动重试，测试时请使用 4 秒场景。
 
 Sora 生成与 remix 默认通过 `DefaultAzureCredential` 使用 Microsoft Entra ID 登录（`AZURE_OPENAI_AUTH=entra`；本地使用 `az login`，Azure 中使用托管标识），该标识需在 Sora 资源上具有 “Cognitive Services OpenAI User” 或同等角色。设置 `AZURE_OPENAI_AUTH=key` 可改用 `AZURE_OPENAI_API_KEY`，但资源禁用密钥认证时会报错 `AuthenticationTypeDisabled`。
