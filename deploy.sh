@@ -13,6 +13,8 @@ set -a
 # shellcheck disable=SC1090
 source "$ENV_FILE"
 set +a
+# shellcheck source=deploy_lib.sh
+source "$ROOT_DIR/deploy_lib.sh"
 
 required_vars=(
   AZURE_SUBSCRIPTION_ID
@@ -261,6 +263,8 @@ else
     "${BACKEND_SECRET_ARGS[@]}" \
     "${BACKEND_ENV_CREATE_ARGS[@]}" >/dev/null
 fi
+
+ensure_backend_entra_access
 
 BACKEND_FQDN=$(az containerapp show --name "$AZURE_CONTAINERAPPS_BACKEND" --resource-group "$AZURE_RESOURCE_GROUP" --query properties.configuration.ingress.fqdn -o tsv)
 echo "Backend available at https://${BACKEND_FQDN}" >&2

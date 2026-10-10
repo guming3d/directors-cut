@@ -48,6 +48,13 @@ set -a
 # shellcheck disable=SC1090
 source "$ENV_FILE"
 set +a
+# shellcheck source=deploy_lib.sh
+source "$ROOT_DIR/deploy_lib.sh"
+
+# Deployment-only override so a local LOG_LEVEL=DEBUG need not ship to Azure.
+if [[ -n "${DEPLOY_LOG_LEVEL:-}" ]]; then
+  LOG_LEVEL="$DEPLOY_LOG_LEVEL"
+fi
 
 required_vars=(
   AZURE_SUBSCRIPTION_ID
@@ -262,6 +269,8 @@ update_backend() {
   if [[ -n "${R2_SECRET_ACCESS_KEY:-}" ]]; then
     BACKEND_ENV_VARS+=("R2_SECRET_ACCESS_KEY=secretref:r2-secret-access-key")
   fi
+
+  ensure_backend_entra_access
 
   az containerapp update \
     --name "$AZURE_CONTAINERAPPS_BACKEND" \
