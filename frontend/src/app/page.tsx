@@ -31,6 +31,7 @@ import {
   PaperAirplaneIcon,
   PlayCircleIcon,
   TrashIcon,
+  ArrowRightStartOnRectangleIcon,
 } from "@heroicons/react/24/outline";
 import Image from "next/image";
 import {
@@ -2168,17 +2169,16 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-3">
-            <ThemeToggle theme={theme} onToggle={() => setTheme(theme === "dark" ? "light" : "dark")} />
-            <LanguageToggle language={language} translate={translate} onChange={setLanguage} />
-          </div>
-
+        <div className="flex items-center gap-2">
+          <ThemeToggle theme={theme} onToggle={() => setTheme(theme === "dark" ? "light" : "dark")} />
+          <LanguageToggle language={language} translate={translate} onChange={setLanguage} />
+          <div aria-hidden="true" className="mx-1 h-5 w-px bg-slate-200 dark:bg-slate-700" />
           <button
             type="button"
             onClick={handleLogout}
-            className="rounded-full border border-slate-300 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500 transition hover:border-slate-400 hover:text-slate-900 dark:border-slate-700 dark:text-slate-400 dark:hover:border-slate-600 dark:hover:text-slate-100"
+            className="inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-2 focus-visible:outline-blue-600 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100"
           >
+            <ArrowRightStartOnRectangleIcon aria-hidden="true" className="h-4 w-4" />
             {translate("Sign out")}
           </button>
         </div>

@@ -24,17 +24,30 @@ describe("ThemeToggle", () => {
 });
 
 describe("LanguageToggle", () => {
-  it("highlights the active language and triggers change", () => {
+  it("marks only the active language as pressed", () => {
+    render(<LanguageToggle language="en" translate={translate} onChange={vi.fn()} />);
+
+    expect(screen.getByRole("button", { pressed: true })).toHaveTextContent("English");
+  });
+
+  it("names each language in its own script", () => {
+    render(<LanguageToggle language="en" translate={translate} onChange={vi.fn()} />);
+
+    expect(screen.getByRole("button", { name: "中文" })).toBeInTheDocument();
+  });
+
+  it("switches language when another option is clicked", () => {
     const onChange = vi.fn();
     render(<LanguageToggle language="en" translate={translate} onChange={onChange} />);
 
-    const english = screen.getByRole("button", { name: "English" });
-    const chinese = screen.getByRole("button", { name: "Chinese" });
+    fireEvent.click(screen.getByRole("button", { name: "中文" }));
 
-    expect(english.className).toContain("text-slate-900");
-    expect(chinese.className).not.toContain("text-slate-900");
-
-    fireEvent.click(chinese);
     expect(onChange).toHaveBeenCalledWith("zh");
+  });
+
+  it("labels the group for assistive technology", () => {
+    render(<LanguageToggle language="en" translate={translate} onChange={vi.fn()} />);
+
+    expect(screen.getByRole("group", { name: "Language" })).toBeInTheDocument();
   });
 });
