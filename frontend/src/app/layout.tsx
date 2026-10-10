@@ -16,10 +16,9 @@ export const metadata: Metadata = {
   title: "Streams Studio",
   description:
     "video generation workflow by AI",
-  icons: {
-    icon: "/streams_logo_white_background.png",
-    shortcut: "/streams_logo_white_background.png",
-  },
+  // Tab and home-screen icons come from app/favicon.ico, app/icon.png, and
+  // app/apple-icon.png (Next.js file conventions), generated from images/logo.png
+  // by scripts/make_logo_assets.py.
 };
 
 export default function RootLayout({

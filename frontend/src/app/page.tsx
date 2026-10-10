@@ -2055,9 +2055,20 @@ export default function Home() {
       <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-950 px-4 py-10 text-slate-900 dark:text-slate-100">
         <div className="w-full max-w-md rounded-md border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 shadow-2xl">
           <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-500">{translate("Streams Studio")}</p>
-              <p className="text-[9px] text-slate-400">{translate("video generation workflow by AI")}</p>
+            <div className="flex items-center gap-3">
+              <Image
+                src="/logo-mark.png"
+                alt=""
+                aria-hidden="true"
+                width={36}
+                height={36}
+                priority
+                className="h-9 w-9 dark:brightness-0 dark:invert"
+              />
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-500">{translate("Streams Studio")}</p>
+                <p className="text-[9px] text-slate-400">{translate("video generation workflow by AI")}</p>
+              </div>
             </div>
             <div className="flex items-center gap-3">
               <ThemeToggle theme={theme} onToggle={() => setTheme(theme === "dark" ? "light" : "dark")} />
@@ -2120,7 +2131,16 @@ export default function Home() {
 
       <header className="sticky top-0 z-20 flex items-center justify-between border-b border-zinc-200 bg-white/80 px-6 py-3 backdrop-blur-xl dark:border-zinc-800 dark:bg-zinc-900/80">
         <div className="flex items-center gap-4">
-          <div>
+          <div className="flex items-center gap-2.5">
+            <Image
+              src="/logo-mark.png"
+              alt=""
+              aria-hidden="true"
+              width={28}
+              height={28}
+              priority
+              className="h-7 w-7 dark:brightness-0 dark:invert"
+            />
             <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-500">{translate("Streams Studio")}</p>
           </div>
           <div className="h-6 w-px bg-slate-400 dark:bg-slate-600" />
