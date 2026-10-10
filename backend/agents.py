@@ -10,7 +10,8 @@ from typing import Optional, Sequence
 from agent_framework import Executor, WorkflowContext, handler
 
 from .characters import prepare_character_refs
-from .config import REASONING_DEPLOYMENT, ROOT, SORA_TRANSIENT_RETRIES, logger
+from .config import REASONING_DEPLOYMENT, ROOT, SORA_TRANSIENT_RETRIES, logger, normalize_video_provider
+from .provider_limits import PROVIDER_CONCURRENCY
 from .first_frames import generate_first_frame_image
 from .prompts import get_visual_style_description
 from .images import prepare_scene_start_images, prepare_scene_tail_image
@@ -274,10 +275,12 @@ class Sora2Agent(Executor):
     ) -> list[SceneRender]:
         semaphore = asyncio.Semaphore(max(1, request.thread_count))
         provider_label = request.video_provider.upper()
+        # The provider's account limit caps parallel renders below thread_count.
+        concurrent = min(request.thread_count, PROVIDER_CONCURRENCY[normalize_video_provider(request.video_provider)])
         await report_progress(
             request,
             "rendering",
-            f"Rendering {len(batch.plans)} scene(s) with up to {request.thread_count} concurrent {provider_label} jobs.",
+            f"Rendering {len(batch.plans)} scene(s) with up to {concurrent} concurrent {provider_label} jobs.",
             progress=0.25,
         )
 

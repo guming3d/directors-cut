@@ -28,6 +28,11 @@ deployment = os.getenv("DEPLOYMENT_NAME", "sora-2")
 # identity in Azure); "key" sends the API key, which fails once key-based
 # authentication is disabled on the resource.
 auth_mode = (os.getenv("AZURE_OPENAI_AUTH") or "entra").strip().lower()
+# The SDK polls every second by default; a multi-minute render needs far less.
+try:
+    poll_interval_ms = max(1000, int(os.getenv("SORA_POLL_INTERVAL_MS", "5000")))
+except ValueError:
+    poll_interval_ms = 5000
 api_key = os.getenv("AZURE_OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
 
 if auth_mode == "key" and not api_key:
@@ -228,10 +233,10 @@ async def main() -> None:
                 )
             with open(reference_path, "rb") as reference_file:
                 video = await client.videos.create_and_poll(
-                    input_reference=reference_file, **create_kwargs
+                    input_reference=reference_file, poll_interval_ms=poll_interval_ms, **create_kwargs
                 )
         else:
-            video = await client.videos.create_and_poll(**create_kwargs)
+            video = await client.videos.create_and_poll(poll_interval_ms=poll_interval_ms, **create_kwargs)
 
         job_id = getattr(video, "id", None)
         status = getattr(video, "status", None)

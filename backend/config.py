@@ -191,13 +191,29 @@ KLING_CREATE_RETRY_JITTER_SECONDS = max(0.0, _float_env("KLING_CREATE_RETRY_JITT
 JIMENG_ACCESS_KEY_ID = os.getenv("JIMENG_ACCESS_KEY_ID") or os.getenv("JIMENG_ACCESS_KEY")
 JIMENG_API_BASE_URL = (os.getenv("JIMENG_API_BASE_URL") or "https://visual.volcengineapi.com").rstrip("/")
 JIMENG_POLL_INTERVAL_SECONDS = max(1.0, _float_env("JIMENG_POLL_INTERVAL", "3"))
-JIMENG_POLL_TIMEOUT_SECONDS = max(60.0, _float_env("JIMENG_POLL_TIMEOUT", "900"))
+# Jimeng often needs more than 15 minutes under load; its video_url lasts 1 hour.
+JIMENG_POLL_TIMEOUT_SECONDS = max(60.0, _float_env("JIMENG_POLL_TIMEOUT", "1800"))
 JIMENG_REGION = os.getenv("JIMENG_REGION", "cn-north-1")
-# Jimeng accounts allow few concurrent tasks; extra submissions get HTTP 429.
-try:
-    JIMENG_MAX_CONCURRENT_TASKS = max(1, int(os.getenv("JIMENG_MAX_CONCURRENT_TASKS", "1")))
-except ValueError:
-    JIMENG_MAX_CONCURRENT_TASKS = 1
+def _int_env(name: str, default: int, minimum: int) -> int:
+    try:
+        return max(minimum, int(os.getenv(name, str(default))))
+    except ValueError:
+        return default
+
+
+# Concurrent tasks each provider allows per account (official limits, 2026-10):
+# Sora 2 on Azure runs 2 video jobs at once; Kling allows the active video
+# pack's concurrency (20 for the current pack; 10 leaves room for a second
+# backend on the same account); Jimeng 3.0 Pro allows 1 on the free tier and 2
+# when paid; Seedance allows 3 for individual and 10 for enterprise accounts.
+SORA_MAX_CONCURRENT_TASKS = _int_env("SORA_MAX_CONCURRENT_TASKS", 2, 1)
+KLING_MAX_CONCURRENT_TASKS = _int_env("KLING_MAX_CONCURRENT_TASKS", 10, 1)
+JIMENG_MAX_CONCURRENT_TASKS = _int_env("JIMENG_MAX_CONCURRENT_TASKS", 1, 1)
+SEEDANCE_MAX_CONCURRENT_TASKS = _int_env("SEEDANCE_MAX_CONCURRENT_TASKS", 3, 1)
+SEEDANCE_CREATE_MAX_RETRIES = _int_env("SEEDANCE_CREATE_MAX_RETRIES", 5, 0)
+# Seconds between Sora status checks; the SDK default of 1s is far more than a
+# multi-minute render needs.
+SORA_POLL_INTERVAL_MS = _int_env("SORA_POLL_INTERVAL_MS", 5000, 1000)
 try:
     JIMENG_SUBMIT_MAX_RETRIES = max(0, int(os.getenv("JIMENG_SUBMIT_MAX_RETRIES", "5")))
 except ValueError:
@@ -564,6 +580,11 @@ __all__ = [
     "JIMENG_POLL_INTERVAL_SECONDS",
     "JIMENG_POLL_TIMEOUT_SECONDS",
     "JIMENG_MAX_CONCURRENT_TASKS",
+    "KLING_MAX_CONCURRENT_TASKS",
+    "SEEDANCE_CREATE_MAX_RETRIES",
+    "SEEDANCE_MAX_CONCURRENT_TASKS",
+    "SORA_MAX_CONCURRENT_TASKS",
+    "SORA_POLL_INTERVAL_MS",
     "JIMENG_REGION",
     "JIMENG_SUBMIT_MAX_RETRIES",
     "JIMENG_SUBMIT_RETRY_BASE_DELAY_SECONDS",

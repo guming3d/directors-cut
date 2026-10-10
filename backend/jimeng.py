@@ -8,7 +8,6 @@ import hashlib
 import hmac
 import json
 import time
-import weakref
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,7 +20,6 @@ from .config import (
     JIMENG_ACCESS_KEY_ID,
     JIMENG_API_BASE_URL,
     JIMENG_ALLOWED_DURATIONS,
-    JIMENG_MAX_CONCURRENT_TASKS,
     JIMENG_SUBMIT_MAX_RETRIES,
     JIMENG_SUBMIT_RETRY_BASE_DELAY_SECONDS,
     JIMENG_POLL_INTERVAL_SECONDS,
@@ -34,6 +32,7 @@ from .config import (
     JIMENG_SUPPORTED_ASPECT_RATIOS,
     logger,
 )
+from .provider_limits import provider_slot
 from .utils import nearest_aspect_ratio
 
 DOWNLOAD_CHUNK_SIZE = 1048576
@@ -185,26 +184,6 @@ def _resolution_to_aspect_ratio(resolution: str) -> str:
     return nearest_aspect_ratio(resolution, JIMENG_SUPPORTED_ASPECT_RATIOS)
 
 
-_SLOTS_BY_LOOP: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore]" = (
-    weakref.WeakKeyDictionary()
-)
-
-
-def _task_slots() -> asyncio.Semaphore:
-    """Limit concurrent Jimeng tasks; the account rejects extras with HTTP 429.
-
-    A slot is held from submission until the result arrives, so parallel
-    scenes queue here instead of failing.
-    """
-
-    loop = asyncio.get_running_loop()
-    slots = _SLOTS_BY_LOOP.get(loop)
-    if slots is None:
-        slots = asyncio.Semaphore(JIMENG_MAX_CONCURRENT_TASKS)
-        _SLOTS_BY_LOOP[loop] = slots
-    return slots
-
-
 async def _submit_with_retry(client: httpx.AsyncClient, payload: dict[str, Any]) -> dict[str, Any]:
     """Submit a task, retrying HTTP 429.
 
@@ -301,7 +280,7 @@ async def render_jimeng_clip(
     )
 
     timeout = httpx.Timeout(JIMENG_POLL_TIMEOUT_SECONDS, connect=30.0)
-    async with _task_slots(), httpx.AsyncClient(timeout=timeout) as client:
+    async with provider_slot("jimeng"), httpx.AsyncClient(timeout=timeout) as client:
         submit_response = await _submit_with_retry(client, request_payload)
         code = submit_response.get("code")
         if code != 10000:

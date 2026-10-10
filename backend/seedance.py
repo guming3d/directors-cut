@@ -14,6 +14,7 @@ import httpx
 from .config import (
     ARK_API_KEY,
     SEEDANCE_ALLOWED_DURATIONS,
+    SEEDANCE_CREATE_MAX_RETRIES,
     SEEDANCE_API_URL,
     SEEDANCE_GENERATE_AUDIO,
     SEEDANCE_IMAGE_ROLE,
@@ -25,6 +26,7 @@ from .config import (
     SEEDANCE_WATERMARK,
     logger,
 )
+from .provider_limits import provider_slot
 from .r2_storage import upload_public_file_async
 from .utils import nearest_aspect_ratio
 
@@ -94,10 +96,22 @@ async def _create_task(client: httpx.AsyncClient, payload: dict[str, Any]) -> st
     # Never retried automatically: every accepted create is billed, and after a
     # timeout or 5xx the task may already exist on Ark.
     uncertain = " The task may already exist; check the Ark console before resubmitting."
-    try:
-        response = await client.post(SEEDANCE_API_URL, json=payload, headers=_headers())
-    except httpx.RequestError as exc:
-        raise SeedanceAPIError(f"Seedance create request failed: {exc}.{uncertain}") from exc
+    for attempt in range(SEEDANCE_CREATE_MAX_RETRIES + 1):
+        try:
+            response = await client.post(SEEDANCE_API_URL, json=payload, headers=_headers())
+        except httpx.RequestError as exc:
+            raise SeedanceAPIError(f"Seedance create request failed: {exc}.{uncertain}") from exc
+        # 429 (rate limit) means Ark created no task, so only this is retried.
+        if response.status_code != 429 or attempt == SEEDANCE_CREATE_MAX_RETRIES:
+            break
+        delay = min(60.0, 5.0 * (2**attempt))
+        logger.warning(
+            "Seedance create rate-limited (HTTP 429); retrying in %.0fs (%d/%d).",
+            delay,
+            attempt + 1,
+            SEEDANCE_CREATE_MAX_RETRIES,
+        )
+        await asyncio.sleep(delay)
     if response.status_code >= 400:
         hint = uncertain if response.status_code >= 500 else ""
         raise SeedanceAPIError(
@@ -199,7 +213,7 @@ async def render_seedance_clip(
     )
 
     timeout = httpx.Timeout(60.0, connect=30.0)
-    async with httpx.AsyncClient(timeout=timeout) as client:
+    async with provider_slot("seedance"), httpx.AsyncClient(timeout=timeout) as client:
         task_id = await _create_task(client, payload)
         logger.info("Seedance task %s submitted for %s", task_id, output_path.name)
         final_response = await _poll_task(client, task_id)

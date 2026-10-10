@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Awaitable, Callable, Mapping, Optional, Sequence
 
+from .provider_limits import provider_slot
 from .config import (
     SORA_RETRY_BASE_DELAY_SECONDS,
     SORA_RETRY_JITTER_SECONDS,
@@ -120,7 +121,9 @@ async def run_sora_subprocess_with_retry(
         stdout = ""
         stderr = ""
         try:
-            stdout, stderr = await run_subprocess(cmd, cwd=cwd, env=dict(env) if env else None)
+            # Held per attempt so a job waiting out a retry delay frees its slot.
+            async with provider_slot("sora2"):
+                stdout, stderr = await run_subprocess(cmd, cwd=cwd, env=dict(env) if env else None)
             _append_attempt_log(
                 log_path=log_path,
                 attempt=attempt,

@@ -38,6 +38,7 @@ from .config import (
     KLING_TOKEN_TTL_SECONDS,
     logger,
 )
+from .provider_limits import provider_slot
 from .utils import resolution_to_size
 
 
@@ -307,7 +308,7 @@ async def render_kling_clip(
     )
 
     timeout = httpx.Timeout(KLING_POLL_TIMEOUT_SECONDS, connect=30.0)
-    async with httpx.AsyncClient(
+    async with provider_slot("kling"), httpx.AsyncClient(
         base_url=base_url,
         headers=headers,
         timeout=timeout,
