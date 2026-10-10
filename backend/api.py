@@ -33,6 +33,7 @@ from .config import (
     OUTPUT_DIR,
     REPRODUCE_DEFAULT_THREADS,
     RESOLUTION_PATTERN,
+    SCENE_IMAGE_PATTERN,
     SINGLE_VIDEO_JOBS_DIR,
     STATIC_URL_PREFIX,
     SUPPORTED_REPRODUCE_REFERENCE_MODES,
@@ -199,6 +200,24 @@ def _scene_directory_name(order: int, label: str | None) -> str:
     return f"scene-{order:02d}-{slug}"
 
 
+def _uploaded_start_images(job_id: str) -> dict[int, Path]:
+    """Start images the user uploaded for this job, keyed by scene number.
+
+    Only the job's own scene_images folder is read; the shared default
+    scene_start_screen folder is not part of any one job's materials.
+    """
+
+    upload_dir = job_root(job_id) / "scene_images"
+    if not upload_dir.is_dir():
+        return {}
+    images: dict[int, Path] = {}
+    for item in sorted(upload_dir.iterdir()):
+        match = SCENE_IMAGE_PATTERN.fullmatch(item.name)
+        if match and item.is_file():
+            images.setdefault(int(match.group(1)), item)
+    return images
+
+
 def _collect_workflow_assets(job: JobStatusResponse) -> list[tuple[Path, str]]:
     assets: list[tuple[Path, str]] = []
     base_dir = f"workflow_{job.job_id}"
@@ -222,10 +241,30 @@ def _collect_workflow_assets(job: JobStatusResponse) -> list[tuple[Path, str]]:
         suffix = final_video.suffix or ".mp4"
         _add(final_video, f"{base_dir}/final-video/final{suffix}")
 
+    for ref_path in job.character_ref_paths or []:
+        character_ref = _existing_file(ref_path)
+        if character_ref:
+            _add(character_ref, f"{base_dir}/character-references/{character_ref.name}")
+
+    uploaded_start_images = _uploaded_start_images(job.job_id)
+
     for scene in job.scenes or []:
         scene_dir = _scene_directory_name(scene.order, scene.label)
         prompt_dir = f"{base_dir}/scene-files/{scene_dir}/prompts"
         video_dir = f"{base_dir}/scene-files/{scene_dir}/videos"
+        image_dir = f"{base_dir}/scene-files/{scene_dir}/images"
+        # Versions usually share one first frame; store each image file once.
+        scene_images: set[Path] = set()
+
+        def _add_image(path_like: str | Path | None, name: str) -> None:
+            image = _existing_file(path_like)
+            if not image or image.resolve() in scene_images:
+                return
+            scene_images.add(image.resolve())
+            _add(image, f"{image_dir}/{name}{image.suffix or '.png'}")
+
+        _add_image(scene.first_frame_path, "first-frame")
+        _add_image(uploaded_start_images.get(scene.order), "uploaded-start-image")
 
         scene_prompt = _existing_file(scene.prompt_path)
         if scene_prompt:
@@ -251,6 +290,11 @@ def _collect_workflow_assets(job: JobStatusResponse) -> list[tuple[Path, str]]:
             if version_prompt:
                 suffix = version_prompt.suffix or ".txt"
                 _add(version_prompt, f"{prompt_dir}/{index:02d}-{version_slug}{suffix}")
+
+            _add_image(version.first_frame_path, f"{index:02d}-{version_slug}-first-frame")
+            _add_image(version.last_frame_path, f"{index:02d}-{version_slug}-last-frame")
+
+        _add_image(scene.last_frame_path, "last-frame")
 
     return assets
 
