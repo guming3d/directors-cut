@@ -118,6 +118,15 @@ fi
 if [[ -n "${R2_SECRET_ACCESS_KEY:-}" ]]; then
   BACKEND_SECRETS+=("r2-secret-access-key=$R2_SECRET_ACCESS_KEY")
 fi
+if [[ -n "${JIMENG_ACCESS_KEY_ID:-}" ]]; then
+  BACKEND_SECRETS+=("jimeng-access-key-id=$JIMENG_ACCESS_KEY_ID")
+fi
+if [[ -n "${JIMENG_SECRET_ACCESS_KEY:-}" ]]; then
+  BACKEND_SECRETS+=("jimeng-secret-access-key=$JIMENG_SECRET_ACCESS_KEY")
+fi
+if [[ -n "${JIMENG_SECURITY_TOKEN:-}" ]]; then
+  BACKEND_SECRETS+=("jimeng-security-token=$JIMENG_SECURITY_TOKEN")
+fi
 BACKEND_ENV_VARS=(
   "AZURE_OPENAI_API_KEY=secretref:sora-openai-api-key"
   "SORA_WORKFLOW_ALLOWED_ORIGINS=$DEFAULT_ALLOWED_ORIGINS"
@@ -167,6 +176,11 @@ optional_backend_envs=(
   KLING_MODEL_NAME
   KLING_MODE
   KLING_SOUND
+  JIMENG_API_BASE_URL
+  JIMENG_REGION
+  JIMENG_SERVICE
+  JIMENG_POLL_INTERVAL
+  JIMENG_POLL_TIMEOUT
   KLING_CFG_SCALE
   KLING_POLL_INTERVAL
   KLING_POLL_TIMEOUT
@@ -220,6 +234,15 @@ if [[ -n "${R2_ACCESS_KEY_ID:-}" ]]; then
 fi
 if [[ -n "${R2_SECRET_ACCESS_KEY:-}" ]]; then
   BACKEND_ENV_VARS+=("R2_SECRET_ACCESS_KEY=secretref:r2-secret-access-key")
+fi
+if [[ -n "${JIMENG_ACCESS_KEY_ID:-}" ]]; then
+  BACKEND_ENV_VARS+=("JIMENG_ACCESS_KEY_ID=secretref:jimeng-access-key-id")
+fi
+if [[ -n "${JIMENG_SECRET_ACCESS_KEY:-}" ]]; then
+  BACKEND_ENV_VARS+=("JIMENG_SECRET_ACCESS_KEY=secretref:jimeng-secret-access-key")
+fi
+if [[ -n "${JIMENG_SECURITY_TOKEN:-}" ]]; then
+  BACKEND_ENV_VARS+=("JIMENG_SECURITY_TOKEN=secretref:jimeng-security-token")
 fi
 
 BACKEND_SECRET_ARGS=(--secrets "${BACKEND_SECRETS[@]}")
