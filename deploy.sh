@@ -16,6 +16,11 @@ set +a
 # shellcheck source=deploy_lib.sh
 source "$ROOT_DIR/deploy_lib.sh"
 
+# Deployment-only override so a local LOG_LEVEL=DEBUG need not ship to Azure.
+if [[ -n "${DEPLOY_LOG_LEVEL:-}" ]]; then
+  LOG_LEVEL="$DEPLOY_LOG_LEVEL"
+fi
+
 required_vars=(
   AZURE_SUBSCRIPTION_ID
   AZURE_LOCATION
@@ -65,11 +70,19 @@ mirror_base_images
 REGISTRY_USERNAME=$(az acr credential show --name "$AZURE_CONTAINER_REGISTRY" --query username -o tsv)
 REGISTRY_PASSWORD=$(az acr credential show --name "$AZURE_CONTAINER_REGISTRY" --query passwords[0].value -o tsv)
 
+# With blob storage (the default) the environment runs inside a virtual network,
+# because the storage account is reachable only through a private endpoint.
+ENV_NETWORK_ARGS=()
+if [[ "${DEPLOY_OUTPUT_STORAGE:-blob}" == "blob" ]]; then
+  ensure_private_network
+  ENV_NETWORK_ARGS=(--infrastructure-subnet-resource-id "$INFRA_SUBNET_ID" --enable-workload-profiles)
+fi
 if ! az containerapp env show --name "$AZURE_CONTAINERAPPS_ENVIRONMENT" --resource-group "$AZURE_RESOURCE_GROUP" >/dev/null 2>&1; then
   az containerapp env create \
     --name "$AZURE_CONTAINERAPPS_ENVIRONMENT" \
     --resource-group "$AZURE_RESOURCE_GROUP" \
     --location "$AZURE_LOCATION" \
+    "${ENV_NETWORK_ARGS[@]}" \
     --logs-destination none >/dev/null
 fi
 

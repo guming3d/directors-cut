@@ -68,10 +68,88 @@ ensure_backend_entra_access() {
   ensure_role "$(backend_principal_id)" "Cognitive Services OpenAI User" "$resource_id" "$account"
 }
 
+# Storage accounts in this subscription have public network access disabled by
+# policy, so the backend reaches blob storage through a private endpoint. This
+# creates the virtual network the Container Apps environment runs in: one
+# subnet delegated to Container Apps and one for private endpoints. Safe to
+# re-run. Sets INFRA_SUBNET_ID for `az containerapp env create`.
+ensure_private_network() {
+  local vnet="${AZURE_VNET_NAME:-sora-workflow-vnet}"
+  if ! az network vnet show --name "$vnet" --resource-group "$AZURE_RESOURCE_GROUP" >/dev/null 2>&1; then
+    az network vnet create \
+      --name "$vnet" \
+      --resource-group "$AZURE_RESOURCE_GROUP" \
+      --location "$AZURE_LOCATION" \
+      --address-prefixes 10.40.0.0/16 >/dev/null
+    echo "Created virtual network ${vnet}."
+  fi
+  if ! az network vnet subnet show --vnet-name "$vnet" --name aca-infra --resource-group "$AZURE_RESOURCE_GROUP" >/dev/null 2>&1; then
+    az network vnet subnet create \
+      --vnet-name "$vnet" \
+      --name aca-infra \
+      --resource-group "$AZURE_RESOURCE_GROUP" \
+      --address-prefixes 10.40.0.0/23 \
+      --delegations Microsoft.App/environments >/dev/null
+  fi
+  if ! az network vnet subnet show --vnet-name "$vnet" --name private-endpoints --resource-group "$AZURE_RESOURCE_GROUP" >/dev/null 2>&1; then
+    az network vnet subnet create \
+      --vnet-name "$vnet" \
+      --name private-endpoints \
+      --resource-group "$AZURE_RESOURCE_GROUP" \
+      --address-prefixes 10.40.2.0/27 >/dev/null
+  fi
+  INFRA_SUBNET_ID=$(az network vnet subnet show --vnet-name "$vnet" --name aca-infra \
+    --resource-group "$AZURE_RESOURCE_GROUP" --query id -o tsv)
+  PRIVATE_VNET_NAME="$vnet"
+}
+
+# Private endpoint and DNS so <account>.blob.core.windows.net resolves to a
+# private address inside the virtual network. Safe to re-run.
+ensure_storage_private_endpoint() {
+  local account="$1" account_id="$2"
+  local endpoint="${account}-blob-pe"
+  local zone="privatelink.blob.core.windows.net"
+  ensure_private_network
+
+  if ! az network private-endpoint show --name "$endpoint" --resource-group "$AZURE_RESOURCE_GROUP" >/dev/null 2>&1; then
+    az network private-endpoint create \
+      --name "$endpoint" \
+      --resource-group "$AZURE_RESOURCE_GROUP" \
+      --location "$AZURE_LOCATION" \
+      --vnet-name "$PRIVATE_VNET_NAME" \
+      --subnet private-endpoints \
+      --private-connection-resource-id "$account_id" \
+      --group-id blob \
+      --connection-name "${account}-blob" >/dev/null
+    echo "Created private endpoint ${endpoint}."
+  fi
+  if ! az network private-dns zone show --name "$zone" --resource-group "$AZURE_RESOURCE_GROUP" >/dev/null 2>&1; then
+    az network private-dns zone create --name "$zone" --resource-group "$AZURE_RESOURCE_GROUP" >/dev/null
+  fi
+  if ! az network private-dns link vnet show --zone-name "$zone" --name "${PRIVATE_VNET_NAME}-link" \
+       --resource-group "$AZURE_RESOURCE_GROUP" >/dev/null 2>&1; then
+    az network private-dns link vnet create \
+      --zone-name "$zone" \
+      --name "${PRIVATE_VNET_NAME}-link" \
+      --resource-group "$AZURE_RESOURCE_GROUP" \
+      --virtual-network "$PRIVATE_VNET_NAME" \
+      --registration-enabled false >/dev/null
+  fi
+  if ! az network private-endpoint dns-zone-group show --endpoint-name "$endpoint" --name default \
+       --resource-group "$AZURE_RESOURCE_GROUP" >/dev/null 2>&1; then
+    az network private-endpoint dns-zone-group create \
+      --endpoint-name "$endpoint" \
+      --name default \
+      --resource-group "$AZURE_RESOURCE_GROUP" \
+      --private-dns-zone "$zone" \
+      --zone-name blob >/dev/null
+  fi
+}
+
 # Jobs and media are mirrored to a private blob container so deploys keep them
-# (backend/output_storage.py). Shared-key access stays disabled, as the
-# subscription's security baseline requires; the backend uses its managed
-# identity. Safe to re-run. Sets OUTPUT_STORAGE, AZURE_STORAGE_ACCOUNT_URL, and
+# (backend/output_storage.py). Shared-key and public network access stay
+# disabled, as the subscription's security baseline requires: the backend uses
+# its managed identity over a private endpoint. Safe to re-run. Sets OUTPUT_STORAGE, AZURE_STORAGE_ACCOUNT_URL, and
 # OUTPUT_BLOB_CONTAINER for the backend settings. DEPLOY_OUTPUT_STORAGE=local
 # skips it and keeps the old temporary-disk behaviour.
 ensure_output_storage() {
@@ -103,6 +181,7 @@ ensure_output_storage() {
     az storage container-rm create --storage-account "$account" --name "$container" --public-access off >/dev/null
   fi
 
+  ensure_storage_private_endpoint "$account" "$account_id"
   ensure_role "$(backend_principal_id)" "Storage Blob Data Contributor" "$account_id" "$account"
 
   OUTPUT_STORAGE=blob
