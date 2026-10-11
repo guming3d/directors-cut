@@ -15,6 +15,8 @@ from .config import (
     HEADER_PATTERN,
     REASONING_DEPLOYMENT,
     KLING_SOUND,
+    OUTPUT_DIR,
+    OUTPUT_STORAGE,
     ROOT,
     SEEDANCE_GENERATE_AUDIO,
     azure_text_client,
@@ -96,6 +98,10 @@ def _contains_scene_headers(script_text: str) -> bool:
 
 
 PROMPT_TEMPLATE_DIR = ROOT / "prompts"
+# In blob mode the code folder is replaced on every deploy, so dashboard edits
+# are saved under output/ (mirrored to blob storage) and override the shipped
+# templates. Local runs keep editing prompts/ directly.
+PROMPT_OVERRIDE_DIR: Path | None = OUTPUT_DIR / "prompt_overrides" if OUTPUT_STORAGE == "blob" else None
 WORKFLOW_TEMPLATE_FILES = {
     "sora2": PROMPT_TEMPLATE_DIR / "sora_prompt_generation.txt",
     "kling": PROMPT_TEMPLATE_DIR / "kling_prompt_generation.txt",
@@ -184,15 +190,21 @@ def _workflow_template_for_provider(provider: str | None) -> str:
         raise RuntimeError(
             "Workflow refinement template files are not configured for any provider."
         )
+    if PROMPT_OVERRIDE_DIR is not None and (PROMPT_OVERRIDE_DIR / path.name).is_file():
+        path = PROMPT_OVERRIDE_DIR / path.name
     template = _read_prompt_file(str(path))
     return template
 
 
 def workflow_template_path(provider: str | None = None) -> Path:
+    """Where a dashboard edit of the provider's template is saved."""
+
     normalized = normalize_video_provider(provider)
     path = WORKFLOW_TEMPLATE_FILES.get(normalized)
     if path is None:
         raise RuntimeError(f"No workflow prompt template configured for provider: {normalized}")
+    if PROMPT_OVERRIDE_DIR is not None:
+        return PROMPT_OVERRIDE_DIR / path.name
     return path
 
 

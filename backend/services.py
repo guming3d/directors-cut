@@ -48,6 +48,7 @@ from .sora_runner import SoraExecutionError, run_sora_subprocess_with_retry
 from .utils import escape_for_concat, normalize_script_text, run_subprocess
 from .workflow import workflow
 from .config import SINGLE_VIDEO_JOBS_DIR, OUTPUT_DIR
+from .output_storage import ensure_tree
 from .prompts import ProductionSettings, refine_text_with_llm
 from .config import video_client
 
@@ -583,6 +584,8 @@ async def _render_scene_regen_with_jimeng(
 
 
 async def run_single_video_remix(job_id: str, prompt: str) -> None:
+    # Media may only be in blob storage after a redeploy.
+    await ensure_tree(SINGLE_VIDEO_JOBS_DIR / job_id)
     prompt_text = prompt.strip()
     if not prompt_text:
         await _safe_single_add_message(job_id, "failed", "Remix prompt cannot be empty.")
@@ -695,6 +698,8 @@ async def run_single_video_remix(job_id: str, prompt: str) -> None:
 
 
 async def run_scene_remix_job(job_id: str, scene_order: int, prompt: str) -> None:
+    # Media may only be in blob storage after a redeploy.
+    await ensure_tree(job_root(job_id))
     from .models import SceneStatus
 
     prompt_text = prompt.strip()
@@ -810,6 +815,8 @@ async def run_scene_remix_job(job_id: str, scene_order: int, prompt: str) -> Non
 
 
 async def run_scene_regeneration_job(job_id: str, scene_order: int, prompt_override: str | None = None) -> None:
+    # Media may only be in blob storage after a redeploy.
+    await ensure_tree(job_root(job_id))
     try:
         scene = await WORKFLOW_JOB_STORE.get_scene(job_id, scene_order)
         resolution = await WORKFLOW_JOB_STORE.get_resolution(job_id)
@@ -1028,6 +1035,8 @@ async def run_scene_regeneration_job(job_id: str, scene_order: int, prompt_overr
 
 
 async def run_recompose_job(job_id: str) -> None:
+    # Media may only be in blob storage after a redeploy.
+    await ensure_tree(job_root(job_id))
     try:
         status = await WORKFLOW_JOB_STORE.get_status(job_id)
     except KeyError as exc:  # pragma: no cover - defensive logging

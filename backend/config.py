@@ -263,6 +263,16 @@ R2_SECRET_ACCESS_KEY = os.getenv("R2_SECRET_ACCESS_KEY")
 R2_JURISDICTION = (os.getenv("R2_JURISDICTION") or "").strip().lower()
 R2_UPLOAD_PREFIX = (os.getenv("R2_UPLOAD_PREFIX") or "seedance-refs").strip("/")
 
+# Where job data lives. "local" (default) keeps everything in output/;
+# "blob" mirrors output/ to a private Azure Blob container so cloud jobs and
+# media survive redeploys (see backend/output_storage.py).
+SUPPORTED_OUTPUT_STORAGE = ("local", "blob")
+_output_storage_env = (os.getenv("OUTPUT_STORAGE") or "local").strip().lower()
+OUTPUT_STORAGE = _output_storage_env if _output_storage_env in SUPPORTED_OUTPUT_STORAGE else "local"
+AZURE_STORAGE_ACCOUNT_URL = (os.getenv("AZURE_STORAGE_ACCOUNT_URL") or "").rstrip("/")
+OUTPUT_BLOB_CONTAINER = os.getenv("OUTPUT_BLOB_CONTAINER") or "output"
+OUTPUT_SYNC_INTERVAL_SECONDS = max(3.0, _float_env("OUTPUT_SYNC_INTERVAL_SECONDS", "15"))
+
 # Azure content understanding configuration
 AZURE_CONTENT_UNDERSTANDING_ENDPOINT = (os.getenv("AZURE_CONTENT_UNDERSTANDING_ENDPOINT") or "").rstrip("/")
 AZURE_CONTENT_UNDERSTANDING_API_VERSION = os.getenv(
@@ -627,7 +637,11 @@ __all__ = [
     "KLING_POLL_TIMEOUT_SECONDS",
     "KLING_SOUND",
     "KLING_ALLOWED_DURATIONS",
+    "AZURE_STORAGE_ACCOUNT_URL",
+    "OUTPUT_BLOB_CONTAINER",
     "OUTPUT_DIR",
+    "OUTPUT_STORAGE",
+    "OUTPUT_SYNC_INTERVAL_SECONDS",
     "PROMPTS_DIR",
     "REASONING_DEPLOYMENT",
     "REASONING_EFFORT",

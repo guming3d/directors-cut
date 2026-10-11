@@ -8,6 +8,7 @@ import shutil
 import tempfile
 import uuid
 import zipfile
+from urllib.parse import unquote
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -95,6 +96,7 @@ from .stores import (
     WORKFLOW_JOB_STORE,
     fail_interrupted_jobs,
 )
+from .output_storage import SYNC as OUTPUT_SYNC, ensure_local, ensure_tree, forget_tree
 from .utils import normalize_script_text, slugify
 
 
@@ -104,7 +106,18 @@ async def _app_lifespan(_: FastAPI):
     interrupted = await fail_interrupted_jobs()
     if interrupted:
         logger.warning("Marked %d job(s) interrupted by a backend restart as failed.", interrupted)
-    yield
+    OUTPUT_SYNC.start()
+    try:
+        yield
+    finally:
+        await OUTPUT_SYNC.stop()
+
+
+async def _remove_job_dir(directory: Path) -> None:
+    """Delete a job's files locally and, in blob mode, its stored copies."""
+
+    shutil.rmtree(directory, ignore_errors=True)
+    await asyncio.to_thread(forget_tree, directory)
 
 
 fastapi_app = FastAPI(
@@ -155,6 +168,19 @@ fastapi_app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@fastapi_app.middleware("http")
+async def _fetch_missing_static_files(request: Request, call_next):
+    """In blob mode, download media missing after a redeploy before serving it."""
+
+    path = request.url.path
+    if request.method in ("GET", "HEAD") and path.startswith(STATIC_URL_PREFIX + "/"):
+        relative = unquote(path[len(STATIC_URL_PREFIX) + 1 :])
+        target = (OUTPUT_DIR / relative).resolve()
+        if target.is_relative_to(OUTPUT_DIR.resolve()) and not target.is_file():
+            await ensure_local(target)
+    return await call_next(request)
+
 
 fastapi_app.mount(
     STATIC_URL_PREFIX,
@@ -451,7 +477,7 @@ async def delete_workflow(job_id: str) -> dict[str, str]:
         raise HTTPException(status_code=404, detail=f"Unknown job: {job_id}") from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    shutil.rmtree(job_root(job_id), ignore_errors=True)
+    await _remove_job_dir(job_root(job_id))
     return {"status": "deleted"}
 
 
@@ -462,6 +488,7 @@ async def download_workflow_assets(job_id: str):
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=f"Unknown job: {job_id}") from exc
 
+    await ensure_tree(job_root(job_id))
     assets = _collect_workflow_assets(job)
     if not assets:
         raise HTTPException(status_code=404, detail="No scene assets are available for this workflow.")
@@ -528,7 +555,7 @@ async def start_single_video(payload: SingleVideoPayload) -> SingleVideoJobRespo
             payload.video_provider,
         )
     except ValueError as exc:
-        shutil.rmtree(SINGLE_VIDEO_JOBS_DIR / job_id, ignore_errors=True)
+        await _remove_job_dir(SINGLE_VIDEO_JOBS_DIR / job_id)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     await SINGLE_VIDEO_STORE.create_job(
@@ -569,7 +596,7 @@ async def delete_single_video(job_id: str) -> dict[str, str]:
         raise HTTPException(status_code=404, detail=f"Unknown job: {job_id}") from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    shutil.rmtree(job_root(job_id), ignore_errors=True)
+    await _remove_job_dir(job_root(job_id))
     return {"status": "deleted"}
 
 
@@ -663,7 +690,7 @@ async def delete_video_insight(job_id: str) -> dict[str, str]:
         raise HTTPException(status_code=404, detail=f"Unknown job: {job_id}") from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    shutil.rmtree(video_insight_job_root(job_id, ensure_exists=False), ignore_errors=True)
+    await _remove_job_dir(video_insight_job_root(job_id, ensure_exists=False))
     return {"status": "deleted"}
 
 
@@ -751,7 +778,7 @@ async def delete_reproduce_job(job_id: str) -> dict[str, str]:
         raise HTTPException(status_code=404, detail=f"Unknown job: {job_id}") from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    shutil.rmtree(reproduce_job_root(job_id, ensure_exists=False), ignore_errors=True)
+    await _remove_job_dir(reproduce_job_root(job_id, ensure_exists=False))
     return {"status": "deleted"}
 
 

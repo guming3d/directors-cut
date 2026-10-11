@@ -114,3 +114,24 @@ def test_other_providers_first_frames_have_no_face_rule():
 
 def test_kling_profile_reports_generated_sound_by_default():
     assert "speech" in prompts.PROVIDER_PROFILES["kling"].audio
+
+
+def test_blob_mode_saves_template_edits_as_overrides(tmp_path, monkeypatch):
+    monkeypatch.setattr(prompts, "PROMPT_OVERRIDE_DIR", tmp_path / "prompt_overrides")
+    prompts._read_prompt_file.cache_clear()
+    prompts._workflow_template_for_provider.cache_clear()
+    shipped = prompts.WORKFLOW_TEMPLATE_FILES["kling"].read_text(encoding="utf-8")
+    try:
+        prompts.update_workflow_template_text("kling", "Edited in the dashboard")
+
+        assert (
+            prompts.get_workflow_template_text("kling"),
+            prompts.WORKFLOW_TEMPLATE_FILES["kling"].read_text(encoding="utf-8"),
+        ) == ("Edited in the dashboard", shipped)
+    finally:
+        prompts._read_prompt_file.cache_clear()
+        prompts._workflow_template_for_provider.cache_clear()
+
+
+def test_local_mode_has_no_prompt_override_dir():
+    assert prompts.PROMPT_OVERRIDE_DIR is None

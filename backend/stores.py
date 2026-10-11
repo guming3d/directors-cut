@@ -17,7 +17,11 @@ from .single_video_store import (
     SingleVideoJobStore,
     build_single_video_job_store,
 )
+from .output_storage import restore_startup_files
 from .workflow_store import WorkflowJobDatabase, WorkflowJobStore, build_workflow_job_store
+
+# In blob mode the job database lives in Azure; fetch it before the stores load it.
+restore_startup_files()
 
 WORKFLOW_JOB_STORE = build_workflow_job_store()
 SINGLE_VIDEO_STORE = build_single_video_job_store()

@@ -21,11 +21,15 @@ attrs==25.4.0
     #   jsonschema
     #   referencing
 azure-core==1.36.0
-    # via azure-identity
+    # via
+    #   azure-identity
+    #   azure-storage-blob
 azure-identity==1.26.0b1
     # via
     #   -r requirements.txt
     #   agent-framework-core
+azure-storage-blob==12.27.1
+    # via -r requirements.txt
 boto3==1.42.0
     # via -r requirements.txt
 botocore==1.41.6
@@ -48,6 +52,7 @@ click==8.2.1
 cryptography==46.0.3
     # via
     #   azure-identity
+    #   azure-storage-blob
     #   msal
     #   pyjwt
 distro==1.9.0
@@ -84,6 +89,8 @@ importlib-metadata==8.7.0
     # via opentelemetry-api
 iniconfig==2.3.0
     # via pytest
+isodate==0.7.2
+    # via azure-storage-blob
 jiter==0.12.0
     # via openai
 jmespath==1.0.1
@@ -226,6 +233,7 @@ typing-extensions==4.15.0
     #   anyio
     #   azure-core
     #   azure-identity
+    #   azure-storage-blob
     #   fastapi
     #   grpcio
     #   mcp

@@ -33,6 +33,7 @@ from .image_generation import ImageGenerationError, get_image_generator
 from .kling import KlingAPIError, render_kling_clip
 from .models import ReproduceSegmentVersion, VideoInsightSegment, VideoReproduceSegment
 from .prompts import render_prompt_template
+from .output_storage import ensure_tree
 from .stores import VIDEO_REPRODUCE_STORE
 from .utils import escape_for_concat, extract_frame_at_timestamp, run_subprocess, utc_now
 
@@ -71,6 +72,8 @@ def reproduce_job_root(job_id: str, *, ensure_exists: bool = True) -> Path:
 
 
 async def run_reproduce_job(job_id: str) -> None:
+    # Media may only be in blob storage after a redeploy.
+    await ensure_tree(reproduce_job_root(job_id, ensure_exists=False))
     try:
         job_state = await VIDEO_REPRODUCE_STORE.get_job_state(job_id)
         if not job_state.video_path:
@@ -247,6 +250,8 @@ async def run_reproduce_job(job_id: str) -> None:
 
 
 async def regenerate_segment(job_id: str, order: int, prompt: str) -> None:
+    # Media may only be in blob storage after a redeploy.
+    await ensure_tree(reproduce_job_root(job_id, ensure_exists=False))
     cleaned_prompt = (prompt or "").strip()
     if not cleaned_prompt:
         raise ValueError("Prompt text is required for regeneration.")
