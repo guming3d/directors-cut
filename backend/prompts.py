@@ -116,10 +116,11 @@ VISUAL_STYLE_DESCRIPTIONS: dict[str, str] = {
         "Characters have expressive anime-influenced proportions."
     ),
     "3d_animation": (
-        "Rendered in high-quality 3D animation with soft, realistic lighting and depth of field. "
-        "Character design uses a blend of anime-style facial proportions with realistic textures "
-        "and lighting. Smooth subsurface scattering on skin, detailed hair strands, and subtle "
-        "ambient occlusion."
+        "Rendered as a frame from a high-quality 3D CGI animated feature film: fully modeled "
+        "three-dimensional characters and sets with soft, realistic lighting and depth of field. "
+        "Stylized, appealing character design with large expressive eyes, realistic textures, "
+        "smooth subsurface scattering on skin, detailed fur and hair strands, and subtle ambient "
+        "occlusion. Volumetric shading only: not 2D, not cel-shaded, no drawn outlines, not anime."
     ),
     "realistic": (
         "Photorealistic live-action cinematography. Shot on digital cinema cameras with natural "

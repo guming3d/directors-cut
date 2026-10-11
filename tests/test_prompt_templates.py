@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from backend import first_frames, prompts
+from backend import first_frames, image_utils, prompts
 from backend.models import ScenePlan
 
 TEMPLATE_DIR = Path(prompts.PROMPT_TEMPLATE_DIR)
@@ -43,7 +43,7 @@ def test_static_templates_have_no_unknown_placeholders(name):
     known = {
         "settings", "prompt", "duration_hint", "scene_label", "video_model", "resolution",
         "visual_style", "face_rule", "prompt_text", "character_name", "character_description",
-        "segment_description",
+        "segment_description", "framing_note", "reference_note",
     }
     placeholders = set(re.findall(r"\$(\w+)", prompts.STATIC_PROMPT_FILES[name].read_text(encoding="utf-8")))
 
@@ -110,6 +110,74 @@ def test_sora_first_frame_prompt_keeps_human_faces_out():
 
 def test_other_providers_first_frames_have_no_face_rule():
     assert "human face" not in first_frames._fallback_image_prompt(_plan(), "720x1280", video_provider="kling")
+
+
+def test_landscape_framing_note_names_the_trimmed_top_and_bottom():
+    note = image_utils.framing_note("1280x720")
+
+    assert "top and bottom" in note and "8%" in note
+
+
+def test_portrait_framing_note_names_the_trimmed_sides():
+    note = image_utils.framing_note("720x1280")
+
+    assert "left and right" in note and "8%" in note
+
+
+def test_first_frame_prompt_forbids_lettering_on_props():
+    prompt = first_frames._fallback_image_prompt(_plan(), "1280x720", video_provider="kling")
+
+    assert "signs, jars, labels" in prompt
+
+
+def test_first_frame_prompt_includes_the_framing_note():
+    prompt = first_frames._fallback_image_prompt(_plan(), "1280x720", video_provider="kling")
+
+    assert image_utils.framing_note("1280x720") in prompt
+
+
+def test_3d_style_rules_out_2d_rendering():
+    assert "not 2D" in prompts.get_visual_style_description("3d_animation")
+
+
+@pytest.mark.asyncio
+async def test_first_frame_prompt_names_each_attached_reference(monkeypatch):
+    client = _RecordingClient(output_text="An image prompt.")
+    monkeypatch.setattr(first_frames, "azure_text_client", lambda: client)
+
+    await first_frames.build_first_frame_prompt(_plan(), "1280x720", reference_names=["Mango", "Pip"])
+
+    assert "Image 1: Mango; Image 2: Pip" in client.sent_text()
+
+
+@pytest.mark.asyncio
+async def test_first_frame_prompt_says_when_no_reference_is_attached(monkeypatch):
+    client = _RecordingClient(output_text="An image prompt.")
+    monkeypatch.setattr(first_frames, "azure_text_client", lambda: client)
+
+    await first_frames.build_first_frame_prompt(_plan(), "1280x720")
+
+    assert "No character reference images are attached" in client.sent_text()
+
+
+@pytest.mark.asyncio
+async def test_first_frame_image_prompt_is_saved_beside_the_image(tmp_path, monkeypatch):
+    async def fake_prompt(*args, **kwargs):
+        return "Saved image prompt."
+
+    async def fake_image(*args, **kwargs):
+        return b"png"
+
+    monkeypatch.setattr(first_frames, "build_first_frame_prompt", fake_prompt)
+    monkeypatch.setattr(first_frames, "_generate_image_bytes", fake_image)
+    monkeypatch.setattr(first_frames, "trim_image_bytes", lambda data, resolution: data)
+    request = type("R", (), {"first_frame_dir": str(tmp_path), "output_dir": str(tmp_path),
+                             "resolution": "1280x720", "visual_style": "3d_animation",
+                             "video_provider": "kling"})()
+
+    await first_frames.generate_first_frame_image(_plan(), request)
+
+    assert (tmp_path / "scene_01_first_frame_prompt.txt").read_text(encoding="utf-8") == "Saved image prompt."
 
 
 def test_kling_profile_reports_generated_sound_by_default():

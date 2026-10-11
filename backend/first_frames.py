@@ -16,7 +16,7 @@ from .config import (
     normalize_video_provider,
     reasoning_request_options,
 )
-from .image_utils import select_supported_image_size, trim_image_bytes
+from .image_utils import framing_note, select_supported_image_size, trim_image_bytes
 from .models import CharacterReference, ScenePlan, VideoWorkflowRequest
 from .prompts import get_visual_style_description, provider_profile, render_prompt_template
 
@@ -32,13 +32,31 @@ def _face_rule(video_provider: str | None) -> str:
     return SORA_FACE_RULE if normalize_video_provider(video_provider) == "sora2" else ""
 
 
+def _reference_note(reference_names: list[str] | None) -> str:
+    """Say which attached image shows which character, in upload order."""
+
+    if not reference_names:
+        return "No character reference images are attached."
+    listed = "; ".join(f"Image {index}: {name}" for index, name in enumerate(reference_names, 1))
+    return (
+        f"Character reference images attached, in order: {listed}. Keep each character identical "
+        "to its image, including its rendering style."
+    )
+
+
 def _fallback_image_prompt(
-    plan: ScenePlan, resolution: str, visual_style: str = "3d_animation", video_provider: str | None = None
+    plan: ScenePlan,
+    resolution: str,
+    visual_style: str = "3d_animation",
+    video_provider: str | None = None,
+    reference_names: list[str] | None = None,
 ) -> str:
     style_desc = get_visual_style_description(visual_style)
     return render_prompt_template(
         "first_frame_fallback",
         resolution=resolution,
+        framing_note=framing_note(resolution),
+        reference_note=_reference_note(reference_names),
         prompt_text=plan.prompt_text,
         visual_style=style_desc,
         face_rule=_face_rule(video_provider),
@@ -50,12 +68,16 @@ async def build_first_frame_prompt(
     resolution: str,
     visual_style: str = "3d_animation",
     video_provider: str | None = None,
+    reference_names: list[str] | None = None,
 ) -> str:
     """Use the reasoning model to craft an image prompt tailored to the scene opening."""
 
+    def fallback() -> str:
+        return _fallback_image_prompt(plan, resolution, visual_style, video_provider, reference_names)
+
     client = azure_text_client()
     if client is None:
-        return _fallback_image_prompt(plan, resolution, visual_style, video_provider)
+        return fallback()
 
     style_desc = get_visual_style_description(visual_style)
     system_prompt = render_prompt_template("first_frame_system")
@@ -64,6 +86,8 @@ async def build_first_frame_prompt(
         scene_label=plan.label,
         video_model=provider_profile(video_provider).label,
         resolution=resolution,
+        framing_note=framing_note(resolution),
+        reference_note=_reference_note(reference_names),
         prompt_text=plan.prompt_text,
         visual_style=style_desc,
         face_rule=_face_rule(video_provider),
@@ -83,10 +107,10 @@ async def build_first_frame_prompt(
         refined = await asyncio.to_thread(_call)
     except Exception as exc:  # pragma: no cover - defensive log path
         logger.warning("%s failed to draft first-frame prompt for %s: %s", REASONING_DEPLOYMENT, plan.label, exc)
-        return _fallback_image_prompt(plan, resolution, visual_style, video_provider)
+        return fallback()
 
     cleaned = refined.strip()
-    return cleaned or _fallback_image_prompt(plan, resolution, visual_style, video_provider)
+    return cleaned or fallback()
 
 
 async def _generate_image_bytes(
@@ -160,15 +184,23 @@ async def generate_first_frame_image(
     if target_path.is_file() and target_path.stat().st_size > 0:
         return str(target_path)
 
+    # The prompt numbers the references in this order, so it must match the upload.
+    refs = [
+        ref for ref in (character_refs or [])
+        if ref.image_path and Path(ref.image_path).is_file() and Path(ref.image_path).stat().st_size > 0
+    ][:MAX_CHARACTER_REF_IMAGES]
+
     image_prompt = await build_first_frame_prompt(
-        plan, request.resolution, request.visual_style, request.video_provider
+        plan,
+        request.resolution,
+        request.visual_style,
+        request.video_provider,
+        reference_names=[ref.name for ref in refs],
     )
+    # Kept beside the image so a bad frame can be traced to its prompt.
+    target_path.with_name(f"{target_path.stem}_prompt.txt").write_text(image_prompt, encoding="utf-8")
 
-    ref_paths: list[str] = []
-    for ref in (character_refs or []):
-        if ref.image_path and Path(ref.image_path).is_file():
-            ref_paths.append(ref.image_path)
-
+    ref_paths = [ref.image_path for ref in refs]
     raw_image = await _generate_image_bytes(image_prompt, request.resolution, ref_paths or None)
     trimmed_image = trim_image_bytes(raw_image, request.resolution)
     target_path.write_bytes(trimmed_image)

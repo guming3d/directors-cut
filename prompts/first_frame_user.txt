@@ -1,9 +1,9 @@
 Scene label: $scene_label
 Video model: $video_model
 Target frame: $resolution
+Framing note: $framing_note
 Visual style: $visual_style
 $face_rule
+$reference_note
 Scene prompt:
 $prompt_text
-
-Character reference images may be supplied to the image call; keep characters identical to them.

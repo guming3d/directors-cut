@@ -16,7 +16,7 @@ from .config import (
     logger,
     reasoning_request_options,
 )
-from .image_utils import select_supported_image_size, trim_image_bytes
+from .image_utils import framing_note, select_supported_image_size, trim_image_bytes
 from .models import CharacterReference
 from .prompts import get_visual_style_description, render_prompt_template
 
@@ -110,6 +110,7 @@ async def generate_character_ref_image(
         character_name=character.name,
         character_description=character.description,
         resolution=resolution,
+        framing_note=framing_note(resolution),
         visual_style=style_desc,
     )
     azure_size = select_supported_image_size(resolution)

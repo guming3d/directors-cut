@@ -50,6 +50,30 @@ def select_supported_image_size(resolution: str) -> str:
     return chosen
 
 
+def framing_note(resolution: str) -> str:
+    """Tell the image model which edges ``trim_image_bytes`` will cut off."""
+
+    target_w, target_h = resolution_to_size(resolution)
+    gen_w, gen_h = (int(value) for value in select_supported_image_size(resolution).split("x"))
+    target_ratio = target_w / target_h
+    gen_ratio = gen_w / gen_h
+    if abs(gen_ratio - target_ratio) < 0.01:
+        return f"The image is used uncropped at {target_w}x{target_h}."
+    if gen_ratio < target_ratio:
+        kept = (gen_w / target_ratio) / gen_h
+        edges = "top and bottom"
+        guidance = "leave clear space above heads and keep feet and key objects off the bottom edge"
+    else:
+        kept = (gen_h * target_ratio) / gen_w
+        edges = "left and right"
+        guidance = "keep subjects and key objects away from the side edges"
+    percent = round((1 - kept) / 2 * 100)
+    return (
+        f"The image is cropped to {target_w}x{target_h}: about {percent}% is cut from each of "
+        f"the {edges} edges, so {guidance}."
+    )
+
+
 def trim_image_bytes(image_bytes: bytes, resolution: str) -> bytes:
     """Center-crop and resize Azure output to the exact workflow resolution."""
 
@@ -92,4 +116,4 @@ def trim_image_bytes(image_bytes: bytes, resolution: str) -> bytes:
         return buffer.getvalue()
 
 
-__all__ = ["select_supported_image_size", "trim_image_bytes"]
+__all__ = ["framing_note", "select_supported_image_size", "trim_image_bytes"]
