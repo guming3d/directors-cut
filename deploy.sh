@@ -61,6 +61,7 @@ if ! az acr show --name "$AZURE_CONTAINER_REGISTRY" --resource-group "$AZURE_RES
 fi
 
 az acr login --name "$AZURE_CONTAINER_REGISTRY" >/dev/null
+mirror_base_images
 REGISTRY_USERNAME=$(az acr credential show --name "$AZURE_CONTAINER_REGISTRY" --query username -o tsv)
 REGISTRY_PASSWORD=$(az acr credential show --name "$AZURE_CONTAINER_REGISTRY" --query passwords[0].value -o tsv)
 
@@ -74,6 +75,7 @@ fi
 
 DOCKER_BUILDKIT=1 docker build \
   --file "$ROOT_DIR/Dockerfile.backend" \
+  --build-arg "BASE_IMAGE=$BACKEND_BASE_IMAGE" \
   --tag "$BACKEND_IMAGE" \
   "$ROOT_DIR"
 docker push "$BACKEND_IMAGE"
@@ -312,6 +314,7 @@ echo "Backend available at https://${BACKEND_FQDN}" >&2
 FRONTEND_API_BASE_URL="${FRONTEND_API_BASE_URL:-https://${BACKEND_FQDN}}"
 DOCKER_BUILDKIT=1 docker build \
   --file "$ROOT_DIR/frontend/Dockerfile" \
+  --build-arg "BASE_IMAGE=$FRONTEND_BASE_IMAGE" \
   --build-arg "NEXT_PUBLIC_API_BASE_URL=$FRONTEND_API_BASE_URL" \
   --tag "$FRONTEND_IMAGE" \
   "$ROOT_DIR/frontend"

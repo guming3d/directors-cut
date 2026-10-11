@@ -1,4 +1,6 @@
-FROM node:20-alpine AS base
+# Deploy scripts pass a copy mirrored into the project registry (deploy_lib.sh).
+ARG BASE_IMAGE=node:20-alpine
+FROM ${BASE_IMAGE} AS base
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1

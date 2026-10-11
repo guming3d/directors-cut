@@ -1,4 +1,6 @@
-FROM python:3.11-slim AS base
+# Deploy scripts pass a copy mirrored into the project registry (deploy_lib.sh).
+ARG BASE_IMAGE=python:3.11-slim
+FROM ${BASE_IMAGE} AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1

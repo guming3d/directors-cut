@@ -1,5 +1,26 @@
 # Shared helpers for deploy.sh and update.sh. Source after .env is loaded.
 
+# Copy the Docker Hub base images into the project registry once, so builds do
+# not depend on reaching Docker Hub from this machine (its DNS answers can be
+# unreliable) and avoid its pull limits. Azure performs the import. Sets
+# BACKEND_BASE_IMAGE and FRONTEND_BASE_IMAGE for the image builds.
+# DOCKER_BASE_REFRESH=1 re-imports to pick up base-image updates.
+mirror_base_images() {
+  local registry="${AZURE_CONTAINER_REGISTRY}"
+  local image repo tag
+  for image in "python:3.11-slim" "node:20-alpine"; do
+    repo="base/${image%%:*}"
+    tag="${image##*:}"
+    if [[ "${DOCKER_BASE_REFRESH:-0}" == "1" ]] || \
+       ! az acr repository show-tags --name "$registry" --repository "$repo" -o tsv 2>/dev/null | grep -qx "$tag"; then
+      az acr import --name "$registry" --source "docker.io/library/${image}" --image "${repo}:${tag}" --force >/dev/null
+      echo "Mirrored ${image} into ${registry}.azurecr.io/${repo}:${tag}."
+    fi
+  done
+  BACKEND_BASE_IMAGE="${registry}.azurecr.io/base/python:3.11-slim"
+  FRONTEND_BASE_IMAGE="${registry}.azurecr.io/base/node:20-alpine"
+}
+
 # Object id of the backend app's system-assigned identity, enabling it if needed.
 backend_principal_id() {
   az containerapp identity assign \
