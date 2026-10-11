@@ -20,6 +20,7 @@ export type SceneVersion = {
   last_frame_url?: string | null;
   first_frame_path?: string | null;
   first_frame_url?: string | null;
+  error?: string | null;
 };
 
 export type SceneStatus = {

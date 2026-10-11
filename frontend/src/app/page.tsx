@@ -919,6 +919,14 @@ export default function Home() {
     activeSceneVersions.find((version) => version.version_id === activeScene?.selected_version_id) ??
     activeSceneVersions[0];
   const activeSceneVideoUrl = buildAssetUrl(apiBase, activeSceneSelectedVersion?.video_url);
+  // A failed regeneration is not selected, so check the newest version too.
+  const activeSceneLatestVersion = activeSceneVersions[activeSceneVersions.length - 1];
+  const activeSceneFailure =
+    activeSceneSelectedVersion?.source === "failed"
+      ? activeSceneSelectedVersion
+      : activeSceneLatestVersion?.source === "failed"
+        ? activeSceneLatestVersion
+        : null;
   const activeSceneFirstFrameUrl =
     showAiFirstFrames && activeScene ? buildAssetUrl(apiBase, activeScene.first_frame_url) : null;
   const activeSceneLastFrameUrl =
@@ -3108,15 +3116,20 @@ export default function Home() {
                             ) : null}
                           </div>
 
-                          {activeSceneSelectedVersion?.source === "failed" ? (
+                          {activeSceneFailure ? (
                             <div className="flex items-start gap-2.5 rounded-lg bg-rose-50 px-3.5 py-3 dark:bg-rose-500/10">
                               <ExclamationTriangleIcon className="mt-0.5 h-4 w-4 flex-none text-rose-600 dark:text-rose-400" />
-                              <div>
+                              <div className="min-w-0">
                                 <p className="text-sm font-medium text-rose-700 dark:text-rose-300">
-                                  {translate("Scene generation blocked")}
+                                  {translate(
+                                    activeSceneFailure === activeSceneSelectedVersion
+                                      ? "Scene generation failed"
+                                      : "Last regeneration failed",
+                                  )}
                                 </p>
-                                <p className="text-xs text-rose-600 dark:text-rose-300">
-                                  {translate("Generation blocked. Update the prompt and regenerate this scene.")}
+                                <p className="break-words text-xs text-rose-600 dark:text-rose-300">
+                                  {activeSceneFailure.error ??
+                                    translate("Generation blocked. Update the prompt and regenerate this scene.")}
                                 </p>
                               </div>
                             </div>

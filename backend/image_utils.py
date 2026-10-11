@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import time
 from io import BytesIO
+from typing import Callable, TypeVar
 
+from openai import RateLimitError
 from PIL import Image
 
 from .config import SCENE_IMAGE_RESAMPLE, logger
@@ -15,6 +18,12 @@ AZURE_IMAGE_SIZE_MAP = {
     "720x1280": PORTRAIT_IMAGE_SIZE,
     "1280x720": LANDSCAPE_IMAGE_SIZE,
 }
+# A 429 means the request was not processed or billed, so it is safe to retry.
+IMAGE_RATE_LIMIT_ATTEMPTS = 4
+IMAGE_RATE_LIMIT_MAX_DELAY = 60.0
+
+T = TypeVar("T")
+
 # Share of a vertical crop taken from the top. Heads and ears sit near the top
 # edge far more often than anything important sits at the very bottom.
 CROP_TOP_SHARE = 0.25
@@ -51,6 +60,36 @@ def select_supported_image_size(resolution: str) -> str:
         chosen,
     )
     return chosen
+
+
+def _retry_after_seconds(exc: RateLimitError) -> float | None:
+    response = getattr(exc, "response", None)
+    value = response.headers.get("retry-after") if response is not None else None
+    try:
+        return float(value) if value is not None else None
+    except ValueError:
+        return None
+
+
+def call_with_rate_limit_retry(call: Callable[[], T], label: str) -> T:
+    """Run a blocking gpt-image call, waiting and retrying when it is rate limited."""
+
+    for attempt in range(1, IMAGE_RATE_LIMIT_ATTEMPTS + 1):
+        try:
+            return call()
+        except RateLimitError as exc:
+            if attempt == IMAGE_RATE_LIMIT_ATTEMPTS:
+                raise
+            delay = min(_retry_after_seconds(exc) or 10.0 * 2 ** (attempt - 1), IMAGE_RATE_LIMIT_MAX_DELAY)
+            logger.warning(
+                "%s hit the gpt-image rate limit; retrying in %.0fs (attempt %d of %d).",
+                label,
+                delay,
+                attempt + 1,
+                IMAGE_RATE_LIMIT_ATTEMPTS,
+            )
+            time.sleep(delay)
+    raise AssertionError("unreachable")
 
 
 def framing_note(resolution: str) -> str:
@@ -124,4 +163,4 @@ def trim_image_bytes(image_bytes: bytes, resolution: str) -> bytes:
         return buffer.getvalue()
 
 
-__all__ = ["framing_note", "select_supported_image_size", "trim_image_bytes"]
+__all__ = ["call_with_rate_limit_retry", "framing_note", "select_supported_image_size", "trim_image_bytes"]

@@ -50,6 +50,7 @@ def _scene_version_to_record(version: SceneVersionEntry) -> dict[str, Any]:
         "created_at": _serialize_datetime(version.created_at),
         "last_frame_path": version.last_frame_path,
         "first_frame_path": version.first_frame_path,
+        "error": version.error,
     }
 
 
@@ -67,6 +68,7 @@ def _scene_version_from_record(payload: dict[str, Any]) -> SceneVersionEntry:
         created_at=_deserialize_datetime(payload.get("created_at")) or utc_now(),
         last_frame_path=payload.get("last_frame_path"),
         first_frame_path=payload.get("first_frame_path"),
+        error=payload.get("error"),
     )
 
 
@@ -403,6 +405,7 @@ class WorkflowJobStore:
                 prompt=plan.prompt_text,
                 prompt_path=plan.prompt_path,
                 source="failed",
+                error=error,
             )
             scene.versions.append(version)
             if not scene.selected_version_id:
@@ -537,6 +540,7 @@ class WorkflowJobStore:
                         last_frame_url=build_static_asset_url(version.last_frame_path),
                         first_frame_path=version.first_frame_path,
                         first_frame_url=build_static_asset_url(version.first_frame_path),
+                        error=version.error,
                     )
                     for idx, version in enumerate(scene.versions)
                 ],

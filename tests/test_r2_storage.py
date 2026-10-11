@@ -86,3 +86,16 @@ def test_object_key_is_stable_for_same_content(tmp_path):
     path = tmp_path / "Frame.PNG"
 
     assert r2_storage.object_key_for(path, "a" * 64, "refs") == "refs/Frame-aaaaaaaaaaaa.png"
+
+
+def test_upload_connection_errors_keep_their_cause(r2_settings, monkeypatch, frame):
+    from botocore.exceptions import SSLError
+
+    class _BrokenS3(_FakeS3):
+        def put_object(self, **kwargs):
+            raise SSLError(endpoint_url="https://r2.test", error="EOF occurred in violation of protocol")
+
+    monkeypatch.setattr(r2_storage, "_s3_client", lambda: _BrokenS3())
+
+    with pytest.raises(R2UploadError, match="EOF occurred in violation of protocol"):
+        r2_storage.upload_public_file(frame)

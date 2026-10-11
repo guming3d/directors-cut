@@ -9,7 +9,7 @@ from typing import Optional, Sequence
 
 from agent_framework import Executor, WorkflowContext, handler
 
-from .characters import prepare_character_refs
+from .characters import map_scene_numbers, prepare_character_refs
 from .config import REASONING_DEPLOYMENT, ROOT, SORA_TRANSIENT_RETRIES, logger, normalize_video_provider
 from .provider_limits import PROVIDER_CONCURRENCY
 from .first_frames import generate_first_frame_image
@@ -207,6 +207,11 @@ class DirectorAgent(Executor):
                 )
                 character_refs = await prepare_character_refs(
                     script_text, request.resolution, char_ref_dir, request.visual_style
+                )
+                # Extraction cites the script's header numbers; plans use positions.
+                map_scene_numbers(
+                    character_refs,
+                    {draft.scene_number: order for order, draft in enumerate(drafts, start=1)},
                 )
                 ref_paths = [r.image_path for r in character_refs if r.image_path]
                 if character_refs:

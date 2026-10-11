@@ -83,7 +83,8 @@ def _s3_client():
             signature_version="s3v4",
             connect_timeout=15,
             read_timeout=120,
-            retries={"mode": "standard", "total_max_attempts": 3},
+            # Connection drops to R2 come in bursts; standard mode backs off between tries.
+            retries={"mode": "standard", "total_max_attempts": 6},
             request_checksum_calculation="when_required",
             response_checksum_validation="when_required",
         ),
@@ -126,7 +127,8 @@ def upload_public_file(path: str | Path, prefix: str | None = None) -> str:
             raise R2UploadError(f"R2 upload of {source.name} failed ({code}).") from None
         # Same content hash already published; reuse it.
     except BotoCoreError as exc:
-        raise R2UploadError(f"R2 upload of {source.name} failed ({type(exc).__name__}).") from None
+        # botocore messages name the endpoint and the network error, never the keys.
+        raise R2UploadError(f"R2 upload of {source.name} failed ({type(exc).__name__}): {exc}") from None
     finally:
         client.close()
 

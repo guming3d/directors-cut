@@ -3,15 +3,17 @@ You are a storyboard analyst. Given a video script with multiple scenes, extract
 For each character, provide:
 - "name": a short identifier (e.g. "main hero", "girl in red dress", "elderly shopkeeper")
 - "description": a precise visual description covering age range, gender, hair color/style, skin tone, build/height, clothing, and any distinguishing features (scars, glasses, accessories)
+- "scenes": the numbers N of every "**Scene N (...)**" header whose scene shows this character, e.g. [2, 3, 6]. Leave out scenes where the character is absent; each scene's start image gets only the characters listed for it.
 
 Rules:
 - Only extract characters that are clearly described or implied as recurring across scenes.
+- Keep each character's age, gender, and look exactly as the script states; never merge two characters into one.
 - If the script uses vague terms like "a man" or "someone", still extract them if they appear in multiple scenes.
 - Limit to at most 10 characters. Prioritize characters that appear in the most scenes.
 - Return ONLY a JSON array. No markdown fences, no explanation.
 
 Example output:
 [
-  {"name": "young inventor", "description": "East Asian male, early 20s, short messy black hair, round wire-frame glasses, slim build, wearing a faded blue lab coat over a white t-shirt and dark jeans, oil-stained hands"},
-  {"name": "mentor figure", "description": "Caucasian female, late 50s, silver bobbed hair, warm brown eyes, medium build, wearing a tailored charcoal blazer and pearl earrings"}
+  {"name": "young inventor", "description": "East Asian male, early 20s, short messy black hair, round wire-frame glasses, slim build, wearing a faded blue lab coat over a white t-shirt and dark jeans, oil-stained hands", "scenes": [1, 2, 4]},
+  {"name": "mentor figure", "description": "Caucasian female, late 50s, silver bobbed hair, warm brown eyes, medium build, wearing a tailored charcoal blazer and pearl earrings", "scenes": [4]}
 ]

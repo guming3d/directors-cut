@@ -16,7 +16,12 @@ from .config import (
     normalize_video_provider,
     reasoning_request_options,
 )
-from .image_utils import framing_note, select_supported_image_size, trim_image_bytes
+from .image_utils import (
+    call_with_rate_limit_retry,
+    framing_note,
+    select_supported_image_size,
+    trim_image_bytes,
+)
 from .models import CharacterReference, ScenePlan, VideoWorkflowRequest
 from .prompts import get_visual_style_description, provider_profile, render_prompt_template
 
@@ -131,12 +136,15 @@ async def _generate_image_bytes(
     def _call_with_refs() -> bytes:
         ref_files = [open(p, "rb") for p in valid_refs]
         try:
-            response = client.images.edit(
-                model=AZURE_IMAGE_DEPLOYMENT,
-                image=ref_files,
-                prompt=image_prompt,
-                n=1,
-                size=azure_size,
+            response = call_with_rate_limit_retry(
+                lambda: client.images.edit(
+                    model=AZURE_IMAGE_DEPLOYMENT,
+                    image=ref_files,
+                    prompt=image_prompt,
+                    n=1,
+                    size=azure_size,
+                ),
+                "First frame",
             )
         finally:
             for fh in ref_files:
@@ -146,11 +154,14 @@ async def _generate_image_bytes(
         return base64.b64decode(response.data[0].b64_json)
 
     def _call_generate() -> bytes:
-        response = client.images.generate(
-            model=AZURE_IMAGE_DEPLOYMENT,
-            prompt=image_prompt,
-            n=1,
-            size=azure_size,
+        response = call_with_rate_limit_retry(
+            lambda: client.images.generate(
+                model=AZURE_IMAGE_DEPLOYMENT,
+                prompt=image_prompt,
+                n=1,
+                size=azure_size,
+            ),
+            "First frame",
         )
         if not response.data:
             raise RuntimeError("Image generation returned no data payload.")
@@ -184,10 +195,13 @@ async def generate_first_frame_image(
     if target_path.is_file() and target_path.stat().st_size > 0:
         return str(target_path)
 
-    # The prompt numbers the references in this order, so it must match the upload.
+    # Only characters shown in this scene: an attached image of someone else
+    # gets drawn in their place. The prompt numbers the references in this
+    # order, so it must match the upload.
     refs = [
         ref for ref in (character_refs or [])
-        if ref.image_path and Path(ref.image_path).is_file() and Path(ref.image_path).stat().st_size > 0
+        if (not ref.scene_orders or plan.order in ref.scene_orders)
+        and ref.image_path and Path(ref.image_path).is_file() and Path(ref.image_path).stat().st_size > 0
     ][:MAX_CHARACTER_REF_IMAGES]
 
     image_prompt = await build_first_frame_prompt(

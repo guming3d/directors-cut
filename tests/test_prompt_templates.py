@@ -216,3 +216,56 @@ def test_blob_mode_saves_template_edits_as_overrides(tmp_path, monkeypatch):
 
 def test_local_mode_has_no_prompt_override_dir():
     assert prompts.PROMPT_OVERRIDE_DIR is None
+
+
+def _write_ref(tmp_path, name):
+    path = tmp_path / f"{name}_ref.png"
+    path.write_bytes(b"png")
+    return str(path)
+
+
+async def _capture_first_frame_refs(tmp_path, monkeypatch, refs, order):
+    captured = {}
+
+    async def fake_prompt(*args, reference_names=None, **kwargs):
+        captured["names"] = reference_names
+        return "prompt"
+
+    async def fake_image(prompt, resolution, ref_paths=None):
+        captured["paths"] = ref_paths
+        return b"png"
+
+    monkeypatch.setattr(first_frames, "build_first_frame_prompt", fake_prompt)
+    monkeypatch.setattr(first_frames, "_generate_image_bytes", fake_image)
+    monkeypatch.setattr(first_frames, "trim_image_bytes", lambda data, resolution: data)
+    request = type("R", (), {"first_frame_dir": str(tmp_path / f"frames{order}"), "output_dir": str(tmp_path),
+                             "resolution": "1280x720", "visual_style": "realistic", "video_provider": "kling"})()
+    plan = ScenePlan(order=order, label=f"Scene {order}", duration_seconds=5, description="d",
+                     prompt_path="p.txt", prompt_text="text")
+    await first_frames.generate_first_frame_image(plan, request, refs)
+    return captured
+
+
+@pytest.mark.asyncio
+async def test_first_frame_attaches_only_characters_in_that_scene(tmp_path, monkeypatch):
+    from backend.models import CharacterReference
+
+    refs = [
+        CharacterReference(name="protagonist", description="d", image_path=_write_ref(tmp_path, "p"), scene_orders=[2, 6]),
+        CharacterReference(name="elder", description="d", image_path=_write_ref(tmp_path, "e"), scene_orders=[6]),
+    ]
+
+    captured = await _capture_first_frame_refs(tmp_path, monkeypatch, refs, order=2)
+
+    assert captured["names"] == ["protagonist"]
+
+
+@pytest.mark.asyncio
+async def test_character_without_a_scene_list_is_attached_to_every_scene(tmp_path, monkeypatch):
+    from backend.models import CharacterReference
+
+    refs = [CharacterReference(name="hero", description="d", image_path=_write_ref(tmp_path, "h"))]
+
+    captured = await _capture_first_frame_refs(tmp_path, monkeypatch, refs, order=4)
+
+    assert captured["names"] == ["hero"]

@@ -16,7 +16,12 @@ from .config import (
     logger,
     reasoning_request_options,
 )
-from .image_utils import framing_note, select_supported_image_size, trim_image_bytes
+from .image_utils import (
+    call_with_rate_limit_retry,
+    framing_note,
+    select_supported_image_size,
+    trim_image_bytes,
+)
 from .models import CharacterReference
 from .prompts import get_visual_style_description, render_prompt_template
 
@@ -76,9 +81,31 @@ async def extract_characters(script_text: str) -> list[CharacterReference]:
         name = (item.get("name") or "").strip()
         description = (item.get("description") or "").strip()
         if name and description:
-            characters.append(CharacterReference(name=name, description=description))
+            characters.append(
+                CharacterReference(name=name, description=description, scene_orders=_scene_numbers(item.get("scenes")))
+            )
 
     return characters
+
+
+def _scene_numbers(value: object) -> list[int]:
+    if not isinstance(value, list):
+        return []
+    numbers = []
+    for entry in value:
+        text = str(entry).strip()
+        if text.isdigit() and int(text) not in numbers:
+            numbers.append(int(text))
+    return numbers
+
+
+def map_scene_numbers(characters: list[CharacterReference], number_to_order: dict[int, int]) -> None:
+    """Turn the script's ``**Scene N**`` numbers into scene orders (1-based positions)."""
+
+    for character in characters:
+        character.scene_orders = [
+            number_to_order[number] for number in character.scene_orders if number in number_to_order
+        ]
 
 
 async def generate_character_ref_image(
@@ -116,11 +143,14 @@ async def generate_character_ref_image(
     azure_size = select_supported_image_size(resolution)
 
     def _call() -> bytes:
-        response = client.images.generate(
-            model=AZURE_IMAGE_DEPLOYMENT,
-            prompt=image_prompt,
-            n=1,
-            size=azure_size,
+        response = call_with_rate_limit_retry(
+            lambda: client.images.generate(
+                model=AZURE_IMAGE_DEPLOYMENT,
+                prompt=image_prompt,
+                n=1,
+                size=azure_size,
+            ),
+            f"Reference image for {character.name}",
         )
         if not response.data:
             raise RuntimeError("Image generation returned no data payload.")
@@ -170,11 +200,14 @@ async def prepare_character_refs(
     logger.info("Extracted %d character(s) from script; generating reference images.", len(characters))
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    tasks = [
-        generate_character_ref_image(character, resolution, output_dir, visual_style)
-        for character in characters
-    ]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
+    # One at a time: parallel requests hit the gpt-image rate limit, and a
+    # character left without a reference loses its look in every scene.
+    results: list[object] = []
+    for character in characters:
+        try:
+            results.append(await generate_character_ref_image(character, resolution, output_dir, visual_style))
+        except Exception as exc:
+            results.append(exc)
 
     successful = []
     for character, result in zip(characters, results):
@@ -191,5 +224,6 @@ async def prepare_character_refs(
 __all__ = [
     "extract_characters",
     "generate_character_ref_image",
+    "map_scene_numbers",
     "prepare_character_refs",
 ]

@@ -33,6 +33,7 @@ from .seedance import render_seedance_clip, write_seedance_logs
 from .models import (
     EncodedImagePayload,
     SceneRender,
+    SceneStatus,
     SceneVersionEntry,
     SingleVideoJobConfig,
     SingleVideoVersionEntry,
@@ -814,6 +815,31 @@ async def run_scene_remix_job(job_id: str, scene_order: int, prompt: str) -> Non
         )
 
 
+async def _record_regeneration_failure(
+    job_id: str,
+    scene: SceneStatus,
+    error: str,
+    prompt_text: str | None = None,
+    prompt_path: Path | None = None,
+) -> None:
+    """Add a failed version so the dashboard stops waiting and shows why."""
+
+    version = SceneVersionEntry(
+        version_id=uuid.uuid4().hex,
+        label=f"Regenerate {len(scene.versions) + 1} (failed)",
+        video_path="",
+        prompt=prompt_text or None,
+        prompt_path=str(prompt_path) if prompt_path else None,
+        source="failed",
+        error=error,
+    )
+    try:
+        await WORKFLOW_JOB_STORE.add_scene_version(job_id, scene.order, version)
+    except KeyError:  # pragma: no cover - scene removed meanwhile
+        logger.warning("Scene %s of %s vanished before its failed regeneration was recorded.", scene.order, job_id)
+    await _safe_workflow_add_message(job_id, "failed", f"Regeneration for scene {scene.order} failed: {error}")
+
+
 async def run_scene_regeneration_job(job_id: str, scene_order: int, prompt_override: str | None = None) -> None:
     # Media may only be in blob storage after a redeploy.
     await ensure_tree(job_root(job_id))
@@ -842,11 +868,7 @@ async def run_scene_regeneration_job(job_id: str, scene_order: int, prompt_overr
         prompt_path = base_prompt_path
 
     if not prompt_path or not prompt_path.is_file():
-        await _safe_workflow_add_message(
-            job_id,
-            "failed",
-            f"Cannot regenerate {scene.label}; prompt file missing.",
-        )
+        await _record_regeneration_failure(job_id, scene, f"Cannot regenerate {scene.label}; prompt file missing.")
         return
 
     prompt_text_current = prompt_override_text or ""
@@ -889,11 +911,7 @@ async def run_scene_regeneration_job(job_id: str, scene_order: int, prompt_overr
             )
         except Exception as exc:  # pragma: no cover - defensive logging
             logger.exception("Kling regeneration job for %s scene %s failed: %s", job_id, scene_order, exc)
-            await _safe_workflow_add_message(
-                job_id,
-                "failed",
-                f"Regeneration for scene {scene_order} failed: {exc}",
-            )
+            await _record_regeneration_failure(job_id, scene, str(exc), prompt_text_current, prompt_path)
         return
 
     if video_provider in {"jimeng", "seedance"}:
@@ -932,15 +950,11 @@ async def run_scene_regeneration_job(job_id: str, scene_order: int, prompt_overr
                     else f"Regenerated {scene.label}."
                 ),
             )
-        except Exception as exc:  # pragma: no cover - defensive logging
+        except Exception as exc:
             logger.exception(
                 "%s regeneration job for %s scene %s failed: %s", video_provider, job_id, scene_order, exc
             )
-            await _safe_workflow_add_message(
-                job_id,
-                "failed",
-                f"Regeneration for scene {scene_order} failed: {exc}",
-            )
+            await _record_regeneration_failure(job_id, scene, str(exc), prompt_text_current, prompt_path)
         return
 
     env = os.environ.copy()
@@ -1027,11 +1041,7 @@ async def run_scene_regeneration_job(job_id: str, scene_order: int, prompt_overr
                 attempts=1,
             )
         logger.exception("Regeneration job for %s scene %s failed: %s", job_id, scene_order, error_text)
-        await _safe_workflow_add_message(
-            job_id,
-            "failed",
-            error_text,
-        )
+        await _record_regeneration_failure(job_id, scene, error_text, prompt_text_current, prompt_path)
 
 
 async def run_recompose_job(job_id: str) -> None:

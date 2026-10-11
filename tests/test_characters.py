@@ -219,3 +219,91 @@ async def test_prepare_character_refs_empty_on_extraction_failure(tmp_path, monk
 
     result = await prepare_character_refs("some script", "720x1280", tmp_path / "refs")
     assert result == []
+
+
+@pytest.mark.asyncio
+async def test_extract_characters_reads_the_scenes_each_character_appears_in(monkeypatch):
+    response = json.dumps([
+        {"name": "protagonist", "description": "woman, about 30", "scenes": [2, 3, "4", "x"]},
+        {"name": "elder", "description": "woman, about 60"},
+    ])
+    monkeypatch.setattr(characters, "azure_text_client", lambda: SimpleNamespace(
+        responses=SimpleNamespace(create=lambda **kwargs: None)))
+    monkeypatch.setattr(characters, "extract_response_text", lambda r: response)
+
+    result = await extract_characters(SAMPLE_SCRIPT)
+
+    assert [c.scene_orders for c in result] == [[2, 3, 4], []]
+
+
+def test_scene_header_numbers_are_mapped_to_scene_positions():
+    refs = [CharacterReference(name="a", description="d", scene_orders=[3, 5, 9])]
+
+    characters.map_scene_numbers(refs, {3: 1, 5: 2})
+
+    assert refs[0].scene_orders == [1, 2]
+
+
+def _fake_image_client(generate):
+    return SimpleNamespace(images=SimpleNamespace(generate=generate))
+
+
+@pytest.mark.asyncio
+async def test_reference_images_are_generated_one_at_a_time(tmp_path, monkeypatch):
+    import base64
+    import threading
+    import time
+
+    lock = threading.Lock()
+    state = {"active": 0, "peak": 0}
+
+    def generate(**kwargs):
+        with lock:
+            state["active"] += 1
+            state["peak"] = max(state["peak"], state["active"])
+        time.sleep(0.05)
+        with lock:
+            state["active"] -= 1
+        return SimpleNamespace(data=[SimpleNamespace(b64_json=base64.b64encode(b"png").decode())])
+
+    monkeypatch.setattr(characters, "azure_text_client", lambda: object())
+    monkeypatch.setattr(characters, "extract_response_text", lambda r: SAMPLE_EXTRACTION_RESPONSE)
+    monkeypatch.setattr(characters, "azure_image_client", lambda: _fake_image_client(generate))
+    monkeypatch.setattr(characters, "trim_image_bytes", lambda raw, res: raw)
+
+    async def fake_extract(script_text):
+        return [CharacterReference(name="one", description="d"), CharacterReference(name="two", description="d")]
+
+    monkeypatch.setattr(characters, "extract_characters", fake_extract)
+
+    await prepare_character_refs(SAMPLE_SCRIPT, "720x1280", tmp_path / "refs")
+
+    assert state["peak"] == 1
+
+
+@pytest.mark.asyncio
+async def test_rate_limited_reference_image_is_retried(tmp_path, monkeypatch):
+    import base64
+
+    import httpx
+    import openai
+
+    from backend import image_utils
+
+    calls = []
+
+    def generate(**kwargs):
+        calls.append(kwargs)
+        if len(calls) == 1:
+            response = httpx.Response(429, request=httpx.Request("POST", "https://example.test"))
+            raise openai.RateLimitError("rate limited", response=response, body=None)
+        return SimpleNamespace(data=[SimpleNamespace(b64_json=base64.b64encode(b"png").decode())])
+
+    monkeypatch.setattr(characters, "azure_image_client", lambda: _fake_image_client(generate))
+    monkeypatch.setattr(characters, "trim_image_bytes", lambda raw, res: raw)
+    monkeypatch.setattr(image_utils.time, "sleep", lambda seconds: None)
+
+    char = CharacterReference(name="hero", description="d")
+    result = await generate_character_ref_image(char, "720x1280", tmp_path / "refs")
+
+    assert result is not None and len(calls) == 2

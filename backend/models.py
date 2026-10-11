@@ -43,6 +43,8 @@ class CharacterReference:
     name: str
     description: str
     image_path: Optional[str] = None
+    # Scene orders the character appears in; empty means unknown, so every scene.
+    scene_orders: list[int] = field(default_factory=list)
 
 
 class EncodedImagePayload(BaseModel):
@@ -183,6 +185,8 @@ class SceneVersionEntry:
     created_at: datetime = field(default_factory=utc_now)
     last_frame_path: Optional[str] = None
     first_frame_path: Optional[str] = None
+    # Why a ``source="failed"`` version failed, shown on the scene.
+    error: Optional[str] = None
 
 
 @dataclass
@@ -447,6 +451,7 @@ class SceneVersionModel(BaseModel):
     last_frame_url: Optional[str] = None
     first_frame_path: Optional[str] = None
     first_frame_url: Optional[str] = None
+    error: Optional[str] = None
 
 
 class SceneStatusModel(BaseModel):
