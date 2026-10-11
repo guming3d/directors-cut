@@ -61,6 +61,8 @@ Kling 3.0（`KLING_MODEL_NAME=kling-v3`）默认为每个片段生成语音、�
 
 Sora 生成与 remix 默认通过 `DefaultAzureCredential` 使用 Microsoft Entra ID 登录（`AZURE_OPENAI_AUTH=entra`；本地使用 `az login`，Azure 中使用托管标识），该标识需在 Sora 资源上具有 “Cognitive Services OpenAI User” 或同等角色。设置 `AZURE_OPENAI_AUTH=key` 可改用 `AZURE_OPENAI_API_KEY`，但资源禁用密钥认证时会报错 `AuthenticationTypeDisabled`。
 
+本地运行时任务与素材保存在 `output/`。部署到 Azure 时，`update.sh` 与 `deploy.sh` 会设置 `OUTPUT_STORAGE=blob`：后端通过托管标识把 `output/` 镜像到私有 Blob 容器（存储账户 `<registry>out`，禁用共享密钥与公共访问），启动时先恢复任务数据库，再按需拉取视频和图片，因此重新部署不会再丢失历史记录。后端以单副本运行（任务保存在内存中）。云端仍有任务运行时 `update.sh` 会拒绝部署，加 `--force` 可强制部署。
+
 文本与视觉推理统一使用 `AZURE_OPENAI_REASONING_DEPLOYMENT`（默认 `gpt-6.1-sol`，`reasoning.effort=medium`）；若部署在其他资源上，可设置 `AZURE_OPENAI_REASONING_ENDPOINT`/`AZURE_OPENAI_REASONING_API_KEY`。剧本缺少 `**Scene N (Title)**` 场景标题时，推理模型会自动补充后继续执行。图像生成使用 Foundry `gpt-image-2.5-sunburst` 部署（`FOUNDRY_GPT_IMAGE_ENDPOINT`、`FOUNDRY_GPT_IMAGE_API_KEY`）。
 
 ### API 路由

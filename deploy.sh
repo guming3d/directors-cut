@@ -272,7 +272,7 @@ if az containerapp show --name "$AZURE_CONTAINERAPPS_BACKEND" --resource-group "
     --resource-group "$AZURE_RESOURCE_GROUP" \
     --image "$BACKEND_IMAGE" \
     --min-replicas 1 \
-    --max-replicas 2 \
+    --max-replicas 1 \
     --cpu 2.0 \
     --memory 4Gi \
     "${BACKEND_ENV_SET_ARGS[@]}" >/dev/null
@@ -285,7 +285,7 @@ else
     --target-port 8000 \
     --ingress external \
     --min-replicas 1 \
-    --max-replicas 2 \
+    --max-replicas 1 \
     --registry-server "$REGISTRY_SERVER" \
     --registry-username "$REGISTRY_USERNAME" \
     --registry-password "$REGISTRY_PASSWORD" \
@@ -296,6 +296,15 @@ else
 fi
 
 ensure_backend_entra_access
+ensure_output_storage
+if [[ "${OUTPUT_STORAGE:-}" == "blob" ]]; then
+  az containerapp update \
+    --name "$AZURE_CONTAINERAPPS_BACKEND" \
+    --resource-group "$AZURE_RESOURCE_GROUP" \
+    --set-env-vars "OUTPUT_STORAGE=blob" \
+      "AZURE_STORAGE_ACCOUNT_URL=${AZURE_STORAGE_ACCOUNT_URL}" \
+      "OUTPUT_BLOB_CONTAINER=${OUTPUT_BLOB_CONTAINER}" >/dev/null
+fi
 
 BACKEND_FQDN=$(az containerapp show --name "$AZURE_CONTAINERAPPS_BACKEND" --resource-group "$AZURE_RESOURCE_GROUP" --query properties.configuration.ingress.fqdn -o tsv)
 echo "Backend available at https://${BACKEND_FQDN}" >&2

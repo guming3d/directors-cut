@@ -26,6 +26,10 @@ For Seedance 2.5 (Volcengine Ark, model `doubao-seedance-2-5-260628`), set `ARK_
 
 Sora rendering and remix sign in with Microsoft Entra ID by default (`AZURE_OPENAI_AUTH=entra`) through `DefaultAzureCredential`: your `az login` locally, or a managed identity in Azure. That identity needs the "Cognitive Services OpenAI User" role (or equivalent) on the Sora resource. Set `AZURE_OPENAI_AUTH=key` to send `AZURE_OPENAI_API_KEY` instead; that fails with `AuthenticationTypeDisabled` when the resource has key-based authentication disabled.
 
+### Persistent cloud storage
+
+Locally, jobs and media live in `output/`. In Azure, `update.sh` and `deploy.sh` set `OUTPUT_STORAGE=blob`: the backend mirrors `output/` to a private blob container (storage account `<registry>out`, created with shared-key and public access disabled) through its managed identity, which gets "Storage Blob Data Contributor". On startup it restores the job database before loading jobs, then fetches videos and images on first use, so redeploys no longer erase history. The backend runs as a single replica, because jobs are held in memory. `update.sh` refuses to deploy while cloud jobs are running; add `--force` to deploy anyway.
+
 ### Models
 
 All text and vision reasoning (storyboard refinement, scene splitting, first-frame prompts, character extraction, segment descriptions) uses `AZURE_OPENAI_REASONING_DEPLOYMENT` (default `gpt-6.1-sol`) with `reasoning.effort=medium`; set `AZURE_OPENAI_REASONING_ENDPOINT`/`AZURE_OPENAI_REASONING_API_KEY` if it lives on a different resource than Sora. When a workflow script has no `**Scene N (Title)**` headers, the reasoning model inserts them automatically and the pipeline continues. Images come from the Foundry `gpt-image-2.5-sunburst` deployment (`FOUNDRY_GPT_IMAGE_ENDPOINT`, `FOUNDRY_GPT_IMAGE_API_KEY`).

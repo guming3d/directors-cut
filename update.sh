@@ -3,13 +3,15 @@ set -euo pipefail
 
 usage() {
   cat <<'USAGE'
-Usage: ./update.sh [--component backend|frontend|all] [--image-tag TAG]
+Usage: ./update.sh [--component backend|frontend|all] [--image-tag TAG] [--force]
 Rebuilds the requested images, pushes them to ACR, and updates the matching Azure Container Apps.
+Refuses to update the backend while cloud jobs are running unless --force is given.
 USAGE
 }
 
 COMPONENT="all"
 IMAGE_TAG_OVERRIDE=""
+FORCE=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --component)
@@ -19,6 +21,10 @@ while [[ $# -gt 0 ]]; do
     --image-tag)
       IMAGE_TAG_OVERRIDE="$2"
       shift 2
+      ;;
+    --force)
+      FORCE=1
+      shift
       ;;
     -h|--help)
       usage
@@ -82,6 +88,10 @@ az extension add --name containerapp --upgrade >/dev/null
 if ! az containerapp env show --name "$AZURE_CONTAINERAPPS_ENVIRONMENT" --resource-group "$AZURE_RESOURCE_GROUP" >/dev/null 2>&1; then
   echo "Container Apps environment $AZURE_CONTAINERAPPS_ENVIRONMENT not found. Run deploy.sh first." >&2
   exit 1
+fi
+
+if [[ "$COMPONENT" != "frontend" && "$FORCE" != "1" ]]; then
+  abort_if_cloud_jobs_running
 fi
 
 REGISTRY_SERVER="${AZURE_CONTAINER_REGISTRY}.azurecr.io"
@@ -176,6 +186,8 @@ update_backend() {
     --type external \
     --target-port 8000 >/dev/null
 
+  ensure_output_storage
+
   BACKEND_ENV_VARS=(
     "AZURE_OPENAI_API_KEY=secretref:sora-openai-api-key"
     "SORA_WORKFLOW_REQUIRE_AUTH=${SORA_WORKFLOW_REQUIRE_AUTH:-1}"
@@ -209,6 +221,10 @@ update_backend() {
     SORA_WORKFLOW_ALLOWED_LANGUAGES
     SORA_WORKFLOW_MODE
     VIDEO_PROVIDER
+    OUTPUT_STORAGE
+    AZURE_STORAGE_ACCOUNT_URL
+    OUTPUT_BLOB_CONTAINER
+    OUTPUT_SYNC_INTERVAL_SECONDS
     SEEDANCE_MODEL
     SEEDANCE_GENERATE_AUDIO
     SEEDANCE_RESOLUTION
@@ -308,7 +324,7 @@ update_backend() {
     --resource-group "$AZURE_RESOURCE_GROUP" \
     --image "$BACKEND_IMAGE" \
     --min-replicas 1 \
-    --max-replicas 2 \
+    --max-replicas 1 \
     --cpu 2.0 \
     --memory 4Gi \
     --set-env-vars "${BACKEND_ENV_VARS[@]}" >/dev/null
