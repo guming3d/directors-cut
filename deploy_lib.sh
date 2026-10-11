@@ -135,8 +135,9 @@ ensure_storage_private_endpoint() {
       --virtual-network "$PRIVATE_VNET_NAME" \
       --registration-enabled false >/dev/null
   fi
-  if ! az network private-endpoint dns-zone-group show --endpoint-name "$endpoint" --name default \
-       --resource-group "$AZURE_RESOURCE_GROUP" >/dev/null 2>&1; then
+  # `dns-zone-group show` exits 0 even when the group is missing, so list by name.
+  if [[ -z "$(az network private-endpoint dns-zone-group list --endpoint-name "$endpoint" \
+       --resource-group "$AZURE_RESOURCE_GROUP" --query "[?name=='default'].name" -o tsv)" ]]; then
     az network private-endpoint dns-zone-group create \
       --endpoint-name "$endpoint" \
       --name default \
