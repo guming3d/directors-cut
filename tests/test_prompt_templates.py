@@ -1,7 +1,9 @@
 import re
+from io import BytesIO
 from pathlib import Path
 
 import pytest
+from PIL import Image
 
 from backend import first_frames, image_utils, prompts
 from backend.models import ScenePlan
@@ -112,16 +114,27 @@ def test_other_providers_first_frames_have_no_face_rule():
     assert "human face" not in first_frames._fallback_image_prompt(_plan(), "720x1280", video_provider="kling")
 
 
-def test_landscape_framing_note_names_the_trimmed_top_and_bottom():
+def test_landscape_framing_note_gives_the_smaller_top_trim():
     note = image_utils.framing_note("1280x720")
 
-    assert "top and bottom" in note and "8%" in note
+    assert "top 4% and bottom 12%" in note
+
+
+def test_landscape_trim_keeps_more_of_the_top_than_a_centered_crop():
+    canvas = Image.new("RGB", (1536, 1024), "blue")
+    canvas.paste(Image.new("RGB", (1536, 60), "red"), (0, 0))
+    buffer = BytesIO()
+    canvas.save(buffer, format="PNG")
+
+    trimmed = Image.open(BytesIO(image_utils.trim_image_bytes(buffer.getvalue(), "1280x720")))
+
+    assert trimmed.getpixel((640, 2)) == (255, 0, 0)
 
 
 def test_portrait_framing_note_names_the_trimmed_sides():
     note = image_utils.framing_note("720x1280")
 
-    assert "left and right" in note and "8%" in note
+    assert "left 8% and right 8%" in note
 
 
 def test_first_frame_prompt_forbids_lettering_on_props():

@@ -15,6 +15,9 @@ AZURE_IMAGE_SIZE_MAP = {
     "720x1280": PORTRAIT_IMAGE_SIZE,
     "1280x720": LANDSCAPE_IMAGE_SIZE,
 }
+# Share of a vertical crop taken from the top. Heads and ears sit near the top
+# edge far more often than anything important sits at the very bottom.
+CROP_TOP_SHARE = 0.25
 
 
 def select_supported_image_size(resolution: str) -> str:
@@ -60,22 +63,27 @@ def framing_note(resolution: str) -> str:
     if abs(gen_ratio - target_ratio) < 0.01:
         return f"The image is used uncropped at {target_w}x{target_h}."
     if gen_ratio < target_ratio:
-        kept = (gen_w / target_ratio) / gen_h
-        edges = "top and bottom"
-        guidance = "leave clear space above heads and keep feet and key objects off the bottom edge"
+        cut = 1 - (gen_w / target_ratio) / gen_h
+        top = round(cut * CROP_TOP_SHARE * 100)
+        bottom = round(cut * (1 - CROP_TOP_SHARE) * 100)
+        strips = f"the top {top}% and bottom {bottom}% of the image"
+        band = "ear tips, hair, tails, and feet"
     else:
-        kept = (gen_h * target_ratio) / gen_w
-        edges = "left and right"
-        guidance = "keep subjects and key objects away from the side edges"
-    percent = round((1 - kept) / 2 * 100)
+        side = round((1 - (gen_h * target_ratio) / gen_w) / 2 * 100)
+        strips = f"the left {side}% and right {side}% of the image"
+        band = "hands, tails, and key objects"
     return (
-        f"The image is cropped to {target_w}x{target_h}: about {percent}% is cut from each of "
-        f"the {edges} edges, so {guidance}."
+        f"The image is cropped to {target_w}x{target_h}: {strips} are cut off. Fill those strips "
+        f"with background only (wall, sky, floor) and place the whole subject, including {band}, "
+        "inside the remaining area with a little space to spare."
     )
 
 
 def trim_image_bytes(image_bytes: bytes, resolution: str) -> bytes:
-    """Center-crop and resize Azure output to the exact workflow resolution."""
+    """Crop and resize Azure output to the exact workflow resolution.
+
+    Side crops are centered; vertical crops take ``CROP_TOP_SHARE`` from the top.
+    """
 
     target_w, target_h = resolution_to_size(resolution)
     with Image.open(BytesIO(image_bytes)) as img:
@@ -106,7 +114,7 @@ def trim_image_bytes(image_bytes: bytes, resolution: str) -> bytes:
                 cropped = converted.crop((left, 0, right, src_h))
             else:
                 new_height = int(src_w / target_ratio)
-                top = max(0, (src_h - new_height) // 2)
+                top = max(0, int((src_h - new_height) * CROP_TOP_SHARE))
                 bottom = top + new_height
                 cropped = converted.crop((0, top, src_w, bottom))
             resized = cropped.resize((target_w, target_h), SCENE_IMAGE_RESAMPLE)
