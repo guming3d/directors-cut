@@ -83,7 +83,11 @@ command -v docker >/dev/null || { echo "Docker CLI is required." >&2; exit 1; }
 
 az account set --subscription "$AZURE_SUBSCRIPTION_ID"
 az config set extension.use_dynamic_install=yes_without_prompt >/dev/null
-az extension add --name containerapp --upgrade >/dev/null
+if ! az extension add --name containerapp --upgrade >/dev/null; then
+  # The upgrade check needs aka.ms; an installed extension is good enough when it is unreachable.
+  az extension show --name containerapp >/dev/null 2>&1 || { echo "containerapp extension is missing and could not be installed." >&2; exit 1; }
+  echo "Could not upgrade the containerapp extension; using the installed one." >&2
+fi
 
 if ! az containerapp env show --name "$AZURE_CONTAINERAPPS_ENVIRONMENT" --resource-group "$AZURE_RESOURCE_GROUP" >/dev/null 2>&1; then
   echo "Container Apps environment $AZURE_CONTAINERAPPS_ENVIRONMENT not found. Run deploy.sh first." >&2
