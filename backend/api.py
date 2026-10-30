@@ -121,7 +121,7 @@ async def _remove_job_dir(directory: Path) -> None:
 
 
 fastapi_app = FastAPI(
-    title="Sora Agent Workflow API",
+    title="Director's Cut API",
     description="Async workflow orchestrator for Azure Sora multi-agent pipeline.",
     lifespan=_app_lifespan,
 )

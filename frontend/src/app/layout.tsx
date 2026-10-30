@@ -13,9 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Streams Studio",
+  title: "Director's Cut — Foundry Video Studio",
   description:
-    "video generation workflow by AI",
+    "Turn a storyboard into a finished multi-scene video with AI agents on Microsoft Foundry.",
   // Tab and home-screen icons come from app/favicon.ico, app/icon.png, and
   // app/apple-icon.png (Next.js file conventions), generated from images/logo.png
   // by scripts/make_logo_assets.py.

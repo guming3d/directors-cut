@@ -2086,8 +2086,8 @@ export default function Home() {
                 className="h-9 w-9 dark:brightness-0 dark:invert"
               />
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-500">{translate("Streams Studio")}</p>
-                <p className="text-[9px] text-slate-400">{translate("video generation workflow by AI")}</p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-500">Director&apos;s Cut</p>
+                <p className="text-[9px] text-slate-400">Foundry Video Studio</p>
               </div>
             </div>
             <div className="flex items-center gap-3">
@@ -2161,7 +2161,10 @@ export default function Home() {
               priority
               className="h-7 w-7 dark:brightness-0 dark:invert"
             />
-            <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-500">{translate("Streams Studio")}</p>
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-500">Director&apos;s Cut</p>
+              <p className="text-[9px] text-slate-400">Foundry Video Studio</p>
+            </div>
           </div>
           <div className="h-6 w-px bg-slate-400 dark:bg-slate-600" />
           <div className="flex items-center gap-1 rounded-lg bg-white p-1 dark:bg-slate-900">
