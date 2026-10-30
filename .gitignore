@@ -2,7 +2,8 @@ frontend/node_modules/
 .env
 output/
 __pycache__/
-Chapters/
+Chapters/*
+!Chapters/*.txt
 images_references/
 content-understanding/
 node-modules/

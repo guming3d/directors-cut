@@ -16,7 +16,11 @@ RUN apt-get update \
 COPY requirements.lock ./requirements.lock
 RUN pip install --no-cache-dir -r requirements.lock
 
-COPY . .
+# Copy only what the backend reads at runtime, so local media and notes stay out of the image.
+COPY backend ./backend
+COPY prompts ./prompts
+COPY Chapters/*.txt ./Chapters/
+COPY video_agent_workflow.py ./
 
 EXPOSE 8000
 

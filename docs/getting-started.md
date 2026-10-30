@@ -60,7 +60,7 @@ If no auth variables are configured, this script sets `SORA_WORKFLOW_REQUIRE_AUT
 ## Typical workflow
 
 1. Write a storyboard with `**Scene N (Title)**` headings (samples live in `Chapters/`). Without headings, the reasoning model inserts them for you.
-2. Optionally add start-frame images under `scene_start_screen/scene#.png` and reference images under `images_references/`.
+2. Optionally add start-frame images under `scene_start_screen/scene#.png`.
 3. In the **Storyboard workspace** tab, click **Start Workflow**, paste the storyboard, and choose the backend, resolution, visual style, scene duration, and `Parallel` or `Sequence` mode (sequence chains scenes through last-frame references).
 4. Watch the plan, render, and compose stages update live. Regenerate or remix individual scenes, pick the version you prefer, and regenerate the final MP4.
 
@@ -83,7 +83,6 @@ python video_agent_workflow.py --threads 3 --scene-duration 8 --resolution 720x1
 | `frontend/` | Next.js dashboard (App Router, TypeScript) |
 | `prompts/` | Prompt templates, editable from the dashboard |
 | `Chapters/` | Sample storyboard scripts |
-| `images_references/` | Optional reference images |
 | `tests/` | Backend tests (`pytest`) |
 | `deploy.sh`, `update.sh`, `deploy_lib.sh` | Azure Container Apps deployment ([Deployment](deployment.md)) |
 | `output/` | Generated clips, logs, manifests, and TinyDB job state (not committed) |
