@@ -29,7 +29,7 @@
 
 ## Deployment & Operations
 - `.env` drives local runs and Azure deployment; keep `.env.example` in sync when adding env vars (API keys, deployment names, CORS origins, thread limits, moderation retry counts, download variants). The frontend uses `.env.local` for `NEXT_PUBLIC_API_BASE_URL`.
-- Kling deployments require `KLING_API_BASE_URL`, `KLING_ACCESS_KEY`, and `KLING_SECRET_KEY` so the client can mint short-lived tokens (tune `KLING_TOKEN_TTL` as needed). Optional knobs (`KLING_MODEL_NAME`, `KLING_MODE`, `KLING_CFG_SCALE`, `KLING_POLL_INTERVAL`, `KLING_POLL_TIMEOUT`) remain available; document any additions in `.env.example` and README. Keep `verify_kling_token.py` handy for local credential checks.
+- Kling deployments require `KLING_API_BASE_URL`, `KLING_ACCESS_KEY`, and `KLING_SECRET_KEY` so the client can mint short-lived tokens (tune `KLING_TOKEN_TTL` as needed). Optional knobs (`KLING_MODEL_NAME`, `KLING_MODE`, `KLING_CFG_SCALE`, `KLING_POLL_INTERVAL`, `KLING_POLL_TIMEOUT`) remain available; document any additions in `.env.example` and `docs/configuration.md`. `tests/test_kling_auth.py` covers token generation.
 - `output/` is runtime storage for prompts, scenes, final videos, logs, and TinyDB (`workflow_jobs.json`, `single_video_jobs.json`); avoid committing generated artifacts.
 - FastAPI serves static assets from `output/` under `/static`; keep generated files within that tree so dashboard links resolve.
 - Sequence mode chains clips via the first start image; ensure `scene_start_screen` counts match scene totals or handle uploads via the API.

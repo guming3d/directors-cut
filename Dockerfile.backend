@@ -12,7 +12,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # requirements.lock pins every transitive dependency so rebuilds are reproducible;
-# regenerate it with uv pip compile (see README) after editing requirements.txt.
+# regenerate it with uv pip compile (see docs/getting-started.md) after editing requirements.txt.
 COPY requirements.lock ./requirements.lock
 RUN pip install --no-cache-dir -r requirements.lock
 
