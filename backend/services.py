@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
 import os
 import shutil
@@ -14,6 +15,8 @@ from typing import Optional
 
 from .config import (
     DEFAULT_SORA_RESOLUTION,
+    FAL_MODELS,
+    FAL_VIDEO_PROVIDERS,
     HEADER_PATTERN,
     REASONING_DEPLOYMENT,
     RESOLUTION_PATTERN,
@@ -29,6 +32,7 @@ from .config import (
 from .images import prepare_sequence_initial_image, resolve_scene_image_dir, save_payload_as_png
 from .kling import render_kling_clip
 from .jimeng import render_jimeng_clip
+from .fal import render_fal_clip, write_fal_logs
 from .seedance import render_seedance_clip, write_seedance_logs
 from .models import (
     EncodedImagePayload,
@@ -52,6 +56,10 @@ from .config import SINGLE_VIDEO_JOBS_DIR, OUTPUT_DIR
 from .output_storage import ensure_tree
 from .prompts import ProductionSettings, refine_text_with_llm
 from .config import video_client
+
+
+# Remix reuses a rendered Sora video by id; no other backend has an equivalent.
+REMIX_UNSUPPORTED_PROVIDERS = frozenset({"kling", "jimeng", "seedance", *FAL_VIDEO_PROVIDERS})
 
 
 def job_root(job_id: str) -> Path:
@@ -285,6 +293,8 @@ async def run_single_video_job(config: SingleVideoJobConfig) -> None:
             log_path, client_log_path, video_id = await _render_single_with_jimeng(config)
         elif config.video_provider == "seedance":
             log_path, client_log_path, video_id = await _render_single_with_seedance(config)
+        elif config.video_provider in FAL_MODELS:
+            log_path, client_log_path, video_id = await _render_single_with_fal(config)
         else:
             log_path, client_log_path, video_id = await _render_single_with_sora(config)
         await SINGLE_VIDEO_STORE.update_progress(job_id, 0.75, "Download completed, finalizing artifacts.")
@@ -511,6 +521,46 @@ async def _render_scene_regen_with_seedance(
     return log_path, client_log_path, result.task_id
 
 
+async def _render_single_with_fal(
+    config: SingleVideoJobConfig,
+) -> tuple[Path, Path, Optional[str]]:
+    reference_path = (
+        str(config.reference_image_path)
+        if config.reference_image_path
+        else (str(config.reference_image_paths[0]) if config.reference_image_paths else None)
+    )
+    result = await render_fal_clip(
+        provider=config.video_provider,
+        prompt_text=config.prompt_text,
+        duration_seconds=config.duration,
+        resolution=config.resolution,
+        output_path=config.video_path,
+        primary_image_path=reference_path,
+    )
+    log_path, client_log_path = write_fal_logs(result, config.video_path, ".client.log")
+    return log_path, client_log_path, result.request_id
+
+
+async def _render_scene_regen_with_fal(
+    provider: str,
+    job_id: str,
+    scene,
+    prompt_text: str,
+    resolution: str,
+    output_path: Path,
+) -> tuple[Path, Path, str]:
+    result = await render_fal_clip(
+        provider=provider,
+        prompt_text=prompt_text,
+        duration_seconds=scene.duration_seconds,
+        resolution=resolution,
+        output_path=output_path,
+        primary_image_path=scene.first_frame_path,
+    )
+    log_path, client_log_path = write_fal_logs(result, output_path, ".regen.log", action="regeneration")
+    return log_path, client_log_path, result.request_id
+
+
 async def _render_scene_regen_with_kling(
     job_id: str,
     scene,
@@ -597,7 +647,7 @@ async def run_single_video_remix(job_id: str, prompt: str) -> None:
         logger.warning("Remix requested for unknown single job %s: %s", job_id, exc)
         return
 
-    if job_state.video_provider in {"kling", "jimeng", "seedance"}:
+    if job_state.video_provider in REMIX_UNSUPPORTED_PROVIDERS:
         await _safe_single_add_message(
             job_id,
             "failed",
@@ -718,7 +768,7 @@ async def run_scene_remix_job(job_id: str, scene_order: int, prompt: str) -> Non
         )
         return
 
-    if video_provider in {"kling", "jimeng", "seedance"}:
+    if video_provider in REMIX_UNSUPPORTED_PROVIDERS:
         await _safe_workflow_add_message(
             job_id,
             "failed",
@@ -914,12 +964,13 @@ async def run_scene_regeneration_job(job_id: str, scene_order: int, prompt_overr
             await _record_regeneration_failure(job_id, scene, str(exc), prompt_text_current, prompt_path)
         return
 
-    if video_provider in {"jimeng", "seedance"}:
-        render_regen = (
-            _render_scene_regen_with_seedance
-            if video_provider == "seedance"
-            else _render_scene_regen_with_jimeng
-        )
+    if video_provider in {"jimeng", "seedance"} or video_provider in FAL_MODELS:
+        if video_provider == "seedance":
+            render_regen = _render_scene_regen_with_seedance
+        elif video_provider == "jimeng":
+            render_regen = _render_scene_regen_with_jimeng
+        else:
+            render_regen = functools.partial(_render_scene_regen_with_fal, video_provider)
         try:
             log_path, client_log_path, video_id = await render_regen(
                 job_id,

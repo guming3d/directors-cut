@@ -62,13 +62,36 @@ export const SORA_DURATION_OPTIONS = ["4", "8", "12"] as const;
 export const KLING_DURATION_OPTIONS = ["5", "10"] as const;
 export const SEEDANCE_DURATION_OPTIONS = ["4", "5", "8", "10", "12"] as const;
 export const resolutionOptions = ["720x1280", "1280x720", "1920x1080"] as const;
-export const VIDEO_PROVIDER_OPTIONS = ["sora2", "kling", "jimeng", "seedance"] as const;
+// Fal models deployed in Microsoft Foundry; durations mirror FAL_MODELS in backend/config.py.
+export const FAL_DURATION_OPTIONS: Record<string, readonly DurationOption[]> = {
+  "fal-kling-v3-pro": ["4", "5", "8", "10"],
+  "fal-ltx-2.5-pro": ["6", "8", "10"],
+  "fal-minimax-h3-max": ["4", "6", "8", "10"],
+  "fal-minimax-h3-max-turbo": ["4", "6", "8", "10"],
+};
+export const VIDEO_PROVIDER_OPTIONS = [
+  "sora2",
+  "kling",
+  "jimeng",
+  "seedance",
+  "fal-kling-v3-pro",
+  "fal-ltx-2.5-pro",
+  "fal-minimax-h3-max",
+  "fal-minimax-h3-max-turbo",
+] as const;
+
+export const isFalProvider = (provider: string | null): provider is string =>
+  provider !== null && Object.prototype.hasOwnProperty.call(FAL_DURATION_OPTIONS, provider);
 
 const VIDEO_PROVIDER_LABELS: Record<string, string> = {
   sora2: "Sora 2",
   kling: "Kling",
   jimeng: "Jimeng",
   seedance: "Seedance 2.5",
+  "fal-kling-v3-pro": "Kling V3 Pro (Foundry)",
+  "fal-ltx-2.5-pro": "LTX 2.5 Pro (Foundry)",
+  "fal-minimax-h3-max": "MiniMax H3 Max (Foundry)",
+  "fal-minimax-h3-max-turbo": "MiniMax H3 Max Turbo (Foundry)",
 };
 
 export const getVideoProviderLabel = (provider: string): string =>
@@ -97,6 +120,7 @@ export const REFERENCE_FRAME_OPTIONS: { value: ReferenceFrameMode; label: string
 ];
 
 export const getDurationOptions = (provider: string | null): readonly DurationOption[] => {
+  if (isFalProvider(provider)) return FAL_DURATION_OPTIONS[provider];
   if (provider === "seedance") return SEEDANCE_DURATION_OPTIONS;
   if (provider === "kling" || provider === "jimeng") return KLING_DURATION_OPTIONS;
   return SORA_DURATION_OPTIONS;

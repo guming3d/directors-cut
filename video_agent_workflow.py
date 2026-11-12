@@ -15,6 +15,7 @@ from backend import (
 )
 from backend.config import (
     DEFAULT_VIDEO_PROVIDER,
+    SUPPORTED_VIDEO_PROVIDERS,
     FINAL_VIDEO_PATH,
     SORA_CLIP_DURATION_SECONDS,
     allowed_durations_for_provider,
@@ -60,7 +61,7 @@ def main() -> None:
         "--scene-duration",
         type=int,
         default=SORA_CLIP_DURATION_SECONDS,
-        help="Seconds to assign each scene clip (Sora: 4/8/12, Kling/Jimeng: 5/10, Seedance: 4/5/8/10/12).",
+        help="Seconds to assign each scene clip (Sora: 4/8/12, Kling/Jimeng: 5/10, Seedance: 4/5/8/10/12, Fal models: per model).",
     )
     parser.add_argument(
         "--ai-first-frames",
@@ -69,7 +70,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--video-provider",
-        choices=("sora2", "kling", "jimeng", "seedance"),
+        choices=SUPPORTED_VIDEO_PROVIDERS,
         default=DEFAULT_VIDEO_PROVIDER,
         help="Video backend to use for rendering scenes.",
     )

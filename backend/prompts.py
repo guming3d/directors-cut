@@ -12,6 +12,7 @@ from typing import Literal, Sequence
 
 from .config import (
     DEFAULT_VIDEO_PROVIDER,
+    FAL_GENERATE_AUDIO,
     HEADER_PATTERN,
     REASONING_DEPLOYMENT,
     KLING_SOUND,
@@ -107,6 +108,12 @@ WORKFLOW_TEMPLATE_FILES = {
     "kling": PROMPT_TEMPLATE_DIR / "kling_prompt_generation.txt",
     "jimeng": PROMPT_TEMPLATE_DIR / "jimeng_prompt_generation.txt",
     "seedance": PROMPT_TEMPLATE_DIR / "seedance_prompt_generation.txt",
+    # Fal Kling V3 Pro is the same Kling 3.0 model, so it shares Kling's template
+    # (a dashboard edit applies to both); the two MiniMax H3 variants share one too.
+    "fal-kling-v3-pro": PROMPT_TEMPLATE_DIR / "kling_prompt_generation.txt",
+    "fal-ltx-2.5-pro": PROMPT_TEMPLATE_DIR / "ltx_prompt_generation.txt",
+    "fal-minimax-h3-max": PROMPT_TEMPLATE_DIR / "minimax_prompt_generation.txt",
+    "fal-minimax-h3-max-turbo": PROMPT_TEMPLATE_DIR / "minimax_prompt_generation.txt",
 }
 
 VISUAL_STYLE_DESCRIPTIONS: dict[str, str] = {
@@ -142,6 +149,10 @@ STATIC_PROMPT_FILES = {
     "refine_single_kling": PROMPT_TEMPLATE_DIR / "refine_single_kling.txt",
     "refine_single_jimeng": PROMPT_TEMPLATE_DIR / "refine_single_jimeng.txt",
     "refine_single_seedance": PROMPT_TEMPLATE_DIR / "refine_single_seedance.txt",
+    "refine_single_fal-kling-v3-pro": PROMPT_TEMPLATE_DIR / "refine_single_kling.txt",
+    "refine_single_fal-ltx-2.5-pro": PROMPT_TEMPLATE_DIR / "refine_single_ltx.txt",
+    "refine_single_fal-minimax-h3-max": PROMPT_TEMPLATE_DIR / "refine_single_minimax.txt",
+    "refine_single_fal-minimax-h3-max-turbo": PROMPT_TEMPLATE_DIR / "refine_single_minimax.txt",
     "refine_single_user": PROMPT_TEMPLATE_DIR / "refine_single_user.txt",
     "scene_split_system": PROMPT_TEMPLATE_DIR / "scene_split_system.txt",
     "first_frame_system": PROMPT_TEMPLATE_DIR / "first_frame_system.txt",
@@ -254,6 +265,9 @@ class ProviderProfile:
     max_prompt_chars: int | None = None
 
 
+_FAL_AUDIO_ON = "Generates dialogue, sound effects, and ambience from the prompt."
+_NO_AUDIO = "Video only: no sound or speech is generated, so spoken lines must become visible action."
+
 PROVIDER_PROFILES: dict[str, ProviderProfile] = {
     "sora2": ProviderProfile(
         "Sora 2",
@@ -281,6 +295,18 @@ PROVIDER_PROFILES: dict[str, ProviderProfile] = {
             else "Video only: no sound or speech is generated, so spoken lines must become visible action."
         ),
     ),
+    "fal-kling-v3-pro": ProviderProfile(
+        "Kling 3.0 Pro",
+        _FAL_AUDIO_ON if FAL_GENERATE_AUDIO else _NO_AUDIO,
+        max_prompt_chars=2500,
+    ),
+    "fal-ltx-2.5-pro": ProviderProfile(
+        "LTX 2.5 Pro",
+        _FAL_AUDIO_ON if FAL_GENERATE_AUDIO else _NO_AUDIO,
+        max_prompt_chars=5000,
+    ),
+    "fal-minimax-h3-max": ProviderProfile("MiniMax H3 Max", _FAL_AUDIO_ON),
+    "fal-minimax-h3-max-turbo": ProviderProfile("MiniMax H3 Max Turbo", _FAL_AUDIO_ON),
 }
 
 

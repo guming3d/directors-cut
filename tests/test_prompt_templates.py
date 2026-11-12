@@ -5,11 +5,11 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from backend import first_frames, image_utils, prompts
+from backend import config, first_frames, image_utils, prompts
 from backend.models import ScenePlan
 
 TEMPLATE_DIR = Path(prompts.PROMPT_TEMPLATE_DIR)
-PROVIDERS = ("sora2", "kling", "jimeng", "seedance")
+PROVIDERS = ("sora2", "kling", "jimeng", "seedance", *config.FAL_VIDEO_PROVIDERS)
 
 
 class _RecordingClient:

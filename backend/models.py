@@ -33,7 +33,16 @@ from .prompts import ProductionSettings
 from .utils import utc_now
 
 
-VideoProviderName = Literal["sora2", "kling", "jimeng", "seedance"]
+VideoProviderName = Literal[
+    "sora2",
+    "kling",
+    "jimeng",
+    "seedance",
+    "fal-kling-v3-pro",
+    "fal-ltx-2.5-pro",
+    "fal-minimax-h3-max",
+    "fal-minimax-h3-max-turbo",
+]
 
 
 @dataclass
@@ -111,7 +120,7 @@ class VideoWorkflowRequest(BaseModel):
     )
     scene_duration: int = Field(
         default=SORA_CLIP_DURATION_SECONDS,
-        description="Scene duration in seconds (Sora: 4/8/12, Kling/Jimeng: 5/10, Seedance: 4/5/8/10/12).",
+        description="Scene duration in seconds (Sora: 4/8/12, Kling/Jimeng: 5/10, Seedance: 4/5/8/10/12, Foundry Fal models: per model, see FAL_MODELS).",
     )
     thread_count: int = Field(
         default=int(os.getenv("SORA_WORKFLOW_THREADS", "3")),
@@ -729,7 +738,7 @@ class SingleVideoPayload(BaseModel):
     )
     duration: int = Field(
         default=8,
-        description="Video duration in seconds (Sora: 4/8/12, Kling/Jimeng: 5/10, Seedance: 4/5/8/10/12).",
+        description="Video duration in seconds (Sora: 4/8/12, Kling/Jimeng: 5/10, Seedance: 4/5/8/10/12, Foundry Fal models: per model, see FAL_MODELS).",
     )
     download_variant: Optional[str] = Field(
         default=None,

@@ -155,6 +155,9 @@ update_backend() {
   if [[ -n "${FOUNDRY_GPT_IMAGE_API_KEY:-}" ]]; then
     BACKEND_SECRETS+=("foundry-image-api-key=$FOUNDRY_GPT_IMAGE_API_KEY")
   fi
+  if [[ -n "${FOUNDRY_FAL_API_KEY:-}" ]]; then
+    BACKEND_SECRETS+=("foundry-fal-api-key=$FOUNDRY_FAL_API_KEY")
+  fi
   if [[ -n "${ARK_API_KEY:-}" ]]; then
     BACKEND_SECRETS+=("ark-api-key=$ARK_API_KEY")
   fi
@@ -257,6 +260,22 @@ update_backend() {
     KLING_MAX_CONCURRENT_TASKS
     SEEDANCE_MAX_CONCURRENT_TASKS
     SEEDANCE_CREATE_MAX_RETRIES
+    FOUNDRY_FAL_ENDPOINT
+    FOUNDRY_FAL_AUTH
+    FAL_GENERATE_AUDIO
+    FAL_MINIMAX_PROMPT_EXPANSION
+    FAL_MAX_CONCURRENT_TASKS
+    FAL_CREATE_MAX_RETRIES
+    FAL_POLL_INTERVAL
+    FAL_POLL_TIMEOUT
+    FAL_KLING_V3_PRO_DEPLOYMENT
+    FAL_KLING_V3_PRO_DURATIONS
+    FAL_LTX_2_5_PRO_DEPLOYMENT
+    FAL_LTX_2_5_PRO_DURATIONS
+    FAL_MINIMAX_H3_MAX_DEPLOYMENT
+    FAL_MINIMAX_H3_MAX_DURATIONS
+    FAL_MINIMAX_H3_MAX_TURBO_DEPLOYMENT
+    FAL_MINIMAX_H3_MAX_TURBO_DURATIONS
     SORA_POLL_INTERVAL_MS
     JIMENG_SUBMIT_MAX_RETRIES
     KLING_CFG_SCALE
@@ -303,6 +322,9 @@ update_backend() {
   fi
   if [[ -n "${FOUNDRY_GPT_IMAGE_API_KEY:-}" ]]; then
     BACKEND_ENV_VARS+=("FOUNDRY_GPT_IMAGE_API_KEY=secretref:foundry-image-api-key")
+  fi
+  if [[ -n "${FOUNDRY_FAL_API_KEY:-}" ]]; then
+    BACKEND_ENV_VARS+=("FOUNDRY_FAL_API_KEY=secretref:foundry-fal-api-key")
   fi
   if [[ -n "${ARK_API_KEY:-}" ]]; then
     BACKEND_ENV_VARS+=("ARK_API_KEY=secretref:ark-api-key")

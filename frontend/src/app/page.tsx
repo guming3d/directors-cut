@@ -46,6 +46,7 @@ import {
   VIDEO_PROVIDER_OPTIONS,
   VISUAL_STYLE_OPTIONS,
   getDurationOptions,
+  isFalProvider,
   getVideoProviderLabel,
   getImageGeneratorLabel,
   getReferenceModeLabel,
@@ -1035,16 +1036,25 @@ export default function Home() {
   };
 
 
+  // Switching to a Foundry Fal model starts at its shortest (cheapest) clip.
+  const previousWorkflowProvider = useRef(workflowProviderSelection);
   useEffect(() => {
     const allowed = getDurationOptions(workflowProviderSelection);
-    if (!allowed.includes(sceneDuration)) {
+    const switchedToFal =
+      previousWorkflowProvider.current !== workflowProviderSelection && isFalProvider(workflowProviderSelection);
+    previousWorkflowProvider.current = workflowProviderSelection;
+    if (switchedToFal || !allowed.includes(sceneDuration)) {
       setSceneDuration(allowed[0]);
     }
   }, [workflowProviderSelection, sceneDuration]);
 
+  const previousSingleProvider = useRef(singleProviderSelection);
   useEffect(() => {
     const allowed = getDurationOptions(singleProviderSelection);
-    if (!allowed.includes(singleDuration)) {
+    const switchedToFal =
+      previousSingleProvider.current !== singleProviderSelection && isFalProvider(singleProviderSelection);
+    previousSingleProvider.current = singleProviderSelection;
+    if (switchedToFal || !allowed.includes(singleDuration)) {
       setSingleDuration(allowed[0]);
     }
   }, [singleProviderSelection, singleDuration]);

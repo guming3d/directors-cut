@@ -49,6 +49,7 @@ ensure_role() {
 # backend app needs a managed identity with data-plane access to the Azure
 # OpenAI resource. Safe to re-run: the identity and role assignment are reused.
 ensure_backend_entra_access() {
+  ensure_backend_fal_access
   if [[ "${AZURE_OPENAI_AUTH:-entra}" == "key" ]]; then
     return
   fi
@@ -66,6 +67,24 @@ ensure_backend_entra_access() {
   fi
 
   ensure_role "$(backend_principal_id)" "Cognitive Services OpenAI User" "$resource_id" "$account"
+}
+
+# The Fal video models are called on the Foundry resource in FOUNDRY_FAL_ENDPOINT
+# (providers/falai route), which needs a role covering all Cognitive Services
+# data actions. Skipped when Fal is unset or uses FOUNDRY_FAL_AUTH=key.
+ensure_backend_fal_access() {
+  if [[ -z "${FOUNDRY_FAL_ENDPOINT:-}" || "${FOUNDRY_FAL_AUTH:-entra}" == "key" ]]; then
+    return
+  fi
+  local account
+  account=$(printf '%s' "$FOUNDRY_FAL_ENDPOINT" | sed -E 's#^https?://([^./]+)\..*#\1#')
+  local resource_id
+  resource_id=$(az cognitiveservices account list --query "[?name=='${account}'].id | [0]" -o tsv)
+  if [[ -z "$resource_id" ]]; then
+    echo "Foundry resource '${account}' (FOUNDRY_FAL_ENDPOINT) not found in subscription ${AZURE_SUBSCRIPTION_ID}." >&2
+    exit 1
+  fi
+  ensure_role "$(backend_principal_id)" "Foundry User" "$resource_id" "$account"
 }
 
 # Storage accounts in this subscription have public network access disabled by

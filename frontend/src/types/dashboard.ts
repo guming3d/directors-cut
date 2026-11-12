@@ -226,7 +226,7 @@ export type TabId = "combined" | "single" | "insight" | "reproduce";
 
 export type Language = "en" | "zh";
 
-export type DurationOption = "4" | "5" | "8" | "10" | "12";
+export type DurationOption = "4" | "5" | "6" | "8" | "10" | "12";
 
 export type ImageGeneratorOption = "gpt-image-2.5" | "kling" | "original";
 

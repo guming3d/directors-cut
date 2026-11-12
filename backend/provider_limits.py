@@ -14,6 +14,8 @@ import asyncio
 import weakref
 
 from .config import (
+    FAL_MAX_CONCURRENT_TASKS,
+    FAL_VIDEO_PROVIDERS,
     JIMENG_MAX_CONCURRENT_TASKS,
     KLING_MAX_CONCURRENT_TASKS,
     SEEDANCE_MAX_CONCURRENT_TASKS,
@@ -26,6 +28,8 @@ PROVIDER_CONCURRENCY: dict[str, int] = {
     "kling": KLING_MAX_CONCURRENT_TASKS,
     "jimeng": JIMENG_MAX_CONCURRENT_TASKS,
     "seedance": SEEDANCE_MAX_CONCURRENT_TASKS,
+    # Each Fal model is its own Foundry deployment with its own limits.
+    **{provider: FAL_MAX_CONCURRENT_TASKS for provider in FAL_VIDEO_PROVIDERS},
 }
 
 # asyncio primitives belong to one event loop, so keep one set per loop.

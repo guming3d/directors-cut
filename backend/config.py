@@ -6,6 +6,7 @@ import asyncio
 import logging
 import os
 import re
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
 
@@ -86,8 +87,92 @@ DEFAULT_REPRODUCE_REFERENCE_MODE = (
     _reference_mode_env if _reference_mode_env in SUPPORTED_REPRODUCE_REFERENCE_MODES else "start_end"
 )
 
+# Fal video models deployed in Microsoft Foundry. They are called through the
+# resource's provider-native route, <endpoint>/providers/falai/v1/<route>/...,
+# not the OpenAI /videos API (which rejects them with HTTP 500).
+@dataclass(frozen=True)
+class FalModelSpec:
+    label: str
+    # Foundry deployment name, sent as "model" in every request body.
+    deployment: str
+    # Route that owns requests/{id} status and result lookups.
+    queue_route: str
+    text_to_video_path: str
+    image_to_video_path: str
+    # Request field that carries the start image on image-to-video.
+    image_field: str
+    # Durations the app offers; each model's API accepts a different range.
+    durations: tuple[int, ...]
+    family: str  # "kling", "ltx", or "minimax": selects the request shape
+
+
+def _durations_env(name: str, default: tuple[int, ...], accepted: tuple[int, ...]) -> tuple[int, ...]:
+    """Durations from a comma list such as "4,8", limited to what the model accepts."""
+
+    raw = (os.getenv(name) or "").strip()
+    if not raw:
+        return default
+    try:
+        values = sorted({int(part) for part in raw.split(",") if part.strip()})
+    except ValueError:
+        return default
+    allowed = tuple(value for value in values if value in accepted)
+    return allowed or default
+
+
+# Accepted ranges come from each route's request validation (2026-11):
+# Kling V3 Pro 3-15 s, LTX 2.5 Pro 6/8/10 s, MiniMax H3 0.92-15 s.
+_KLING_V3_SECONDS = tuple(range(3, 16))
+_LTX_SECONDS = (6, 8, 10)
+_MINIMAX_SECONDS = tuple(range(1, 16))
+FAL_MODELS: dict[str, FalModelSpec] = {
+    "fal-kling-v3-pro": FalModelSpec(
+        label="Kling V3 Pro (Foundry)",
+        deployment=os.getenv("FAL_KLING_V3_PRO_DEPLOYMENT") or "Fal-Kling-V3-Pro",
+        queue_route="kling/v3/pro",
+        text_to_video_path="kling/v3/pro/text-to-video",
+        image_to_video_path="kling/v3/pro/image-to-video",
+        image_field="start_image_url",
+        durations=_durations_env("FAL_KLING_V3_PRO_DURATIONS", (4, 5, 8, 10), _KLING_V3_SECONDS),
+        family="kling",
+    ),
+    "fal-ltx-2.5-pro": FalModelSpec(
+        label="LTX 2.5 Pro (Foundry)",
+        deployment=os.getenv("FAL_LTX_2_5_PRO_DEPLOYMENT") or "Fal-LTX-2.5-Pro",
+        queue_route="lightricks/ltx-2.5",
+        text_to_video_path="lightricks/ltx-2.5/text-to-video/pro",
+        image_to_video_path="lightricks/ltx-2.5/image-to-video/pro",
+        image_field="image_url",
+        # 6 s is the shortest clip LTX 2.5 renders.
+        durations=_durations_env("FAL_LTX_2_5_PRO_DURATIONS", (6, 8, 10), _LTX_SECONDS),
+        family="ltx",
+    ),
+    "fal-minimax-h3-max": FalModelSpec(
+        label="MiniMax H3 Max (Foundry)",
+        deployment=os.getenv("FAL_MINIMAX_H3_MAX_DEPLOYMENT") or "Fal-MiniMax-H3-Max",
+        queue_route="minimax/h3-max",
+        text_to_video_path="minimax/h3-max/text-to-video",
+        image_to_video_path="minimax/h3-max/image-to-video",
+        image_field="image_url",
+        durations=_durations_env("FAL_MINIMAX_H3_MAX_DURATIONS", (4, 6, 8, 10), _MINIMAX_SECONDS),
+        family="minimax",
+    ),
+    "fal-minimax-h3-max-turbo": FalModelSpec(
+        label="MiniMax H3 Max Turbo (Foundry)",
+        deployment=os.getenv("FAL_MINIMAX_H3_MAX_TURBO_DEPLOYMENT") or "Fal-MiniMax-H3-Max-Turbo",
+        queue_route="minimax/h3-max-turbo",
+        text_to_video_path="minimax/h3-max-turbo/text-to-video",
+        image_to_video_path="minimax/h3-max-turbo/image-to-video",
+        image_field="image_url",
+        durations=_durations_env("FAL_MINIMAX_H3_MAX_TURBO_DURATIONS", (4, 6, 8, 10), _MINIMAX_SECONDS),
+        family="minimax",
+    ),
+}
+FAL_VIDEO_PROVIDERS = tuple(FAL_MODELS)
+
+
 # Video provider defaults
-SUPPORTED_VIDEO_PROVIDERS = ("sora2", "kling", "jimeng", "seedance")
+SUPPORTED_VIDEO_PROVIDERS = ("sora2", "kling", "jimeng", "seedance", *FAL_VIDEO_PROVIDERS)
 _provider_env = (os.getenv("VIDEO_PROVIDER") or "sora2").strip().lower()
 DEFAULT_VIDEO_PROVIDER = _provider_env if _provider_env in SUPPORTED_VIDEO_PROVIDERS else "sora2"
 SORA_ALLOWED_DURATIONS = (4, 8, 12)
@@ -135,6 +220,8 @@ def allowed_durations_for_provider(value: Optional[str]) -> tuple[int, ...]:
         return JIMENG_ALLOWED_DURATIONS
     if provider == "seedance":
         return SEEDANCE_ALLOWED_DURATIONS
+    if provider in FAL_MODELS:
+        return FAL_MODELS[provider].durations
     return SORA_ALLOWED_DURATIONS
 
 
@@ -252,6 +339,24 @@ SEEDANCE_IMAGE_ROLE = (os.getenv("SEEDANCE_IMAGE_ROLE") or "first_frame").strip(
 SEEDANCE_POLL_INTERVAL_SECONDS = max(2.0, _float_env("SEEDANCE_POLL_INTERVAL", "10"))
 SEEDANCE_POLL_TIMEOUT_SECONDS = max(60.0, _float_env("SEEDANCE_POLL_TIMEOUT", "1200"))
 SEEDANCE_SUPPORTED_ASPECT_RATIOS = ("16:9", "4:3", "1:1", "3:4", "9:16", "21:9")
+
+
+# Foundry resource hosting the Fal deployments, e.g.
+# https://<resource>.services.ai.azure.com
+FOUNDRY_FAL_ENDPOINT = (os.getenv("FOUNDRY_FAL_ENDPOINT") or "").strip().rstrip("/")
+# entra (default) signs in with Microsoft Entra ID; key sends FOUNDRY_FAL_API_KEY.
+FOUNDRY_FAL_AUTH = (os.getenv("FOUNDRY_FAL_AUTH") or "entra").strip().lower()
+FOUNDRY_FAL_API_KEY = os.getenv("FOUNDRY_FAL_API_KEY")
+FAL_GENERATE_AUDIO = _bool_env("FAL_GENERATE_AUDIO", True)
+# MiniMax H3 requires a prompt expansion mode on every request.
+FAL_MINIMAX_PROMPT_EXPANSION = (os.getenv("FAL_MINIMAX_PROMPT_EXPANSION") or "balanced").strip()
+# Concurrent renders per Fal deployment. Each deployment accepts 2 submissions
+# per minute by default (HTTP 429 beyond that, retried); status checks and
+# downloads are not counted.
+FAL_MAX_CONCURRENT_TASKS = _int_env("FAL_MAX_CONCURRENT_TASKS", 2, 1)
+FAL_CREATE_MAX_RETRIES = _int_env("FAL_CREATE_MAX_RETRIES", 5, 0)
+FAL_POLL_INTERVAL_SECONDS = max(2.0, _float_env("FAL_POLL_INTERVAL", "10"))
+FAL_POLL_TIMEOUT_SECONDS = max(60.0, _float_env("FAL_POLL_TIMEOUT", "1800"))
 
 # Cloudflare R2 public bucket used to host Seedance reference images, since Ark
 # only accepts media by URL.
@@ -621,6 +726,18 @@ __all__ = [
     "SEEDANCE_RESOLUTION",
     "SEEDANCE_SUPPORTED_ASPECT_RATIOS",
     "SEEDANCE_WATERMARK",
+    "FAL_CREATE_MAX_RETRIES",
+    "FAL_GENERATE_AUDIO",
+    "FAL_MAX_CONCURRENT_TASKS",
+    "FAL_MINIMAX_PROMPT_EXPANSION",
+    "FAL_MODELS",
+    "FAL_POLL_INTERVAL_SECONDS",
+    "FAL_POLL_TIMEOUT_SECONDS",
+    "FAL_VIDEO_PROVIDERS",
+    "FOUNDRY_FAL_API_KEY",
+    "FOUNDRY_FAL_AUTH",
+    "FOUNDRY_FAL_ENDPOINT",
+    "FalModelSpec",
     "KLING_API_BASE_URL",
     "KLING_API_KEY",
     "KLING_ACCESS_KEY",

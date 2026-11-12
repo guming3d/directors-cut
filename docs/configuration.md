@@ -16,7 +16,7 @@ All text and vision reasoning (storyboard refinement, scene splitting, first-fra
 
 ## Video backends
 
-Set `VIDEO_PROVIDER` to `sora2` (default), `kling`, `jimeng`, or `seedance` to choose the default engine for new jobs; the dashboard can override it per job and shows which engine each job used. All backends share the same Director and Composer agents. Remix is Sora-only; Kling, Jimeng, and Seedance jobs support regeneration instead.
+Set `VIDEO_PROVIDER` to `sora2` (default), `kling`, `jimeng`, `seedance`, or one of the Foundry Fal models (`fal-kling-v3-pro`, `fal-ltx-2.5-pro`, `fal-minimax-h3-max`, `fal-minimax-h3-max-turbo`) to choose the default engine for new jobs; the dashboard can override it per job and shows which engine each job used. All backends share the same Director and Composer agents. Remix is Sora-only; all other backends support regeneration instead.
 
 | Backend | Clip lengths |
 |---|---|
@@ -24,6 +24,9 @@ Set `VIDEO_PROVIDER` to `sora2` (default), `kling`, `jimeng`, or `seedance` to c
 | Kling | 5, 10 s |
 | Jimeng 3.0 Pro | 5, 10 s |
 | Seedance 2.5 | 4, 5, 8, 10, 12 s |
+| Kling V3 Pro (Foundry) | 4, 5, 8, 10 s (configurable, 3-15) |
+| LTX 2.5 Pro (Foundry) | 6, 8, 10 s |
+| MiniMax H3 Max / Max Turbo (Foundry) | 4, 6, 8, 10 s (configurable, 1-15) |
 
 ### Sora 2 (Azure OpenAI)
 
@@ -42,6 +45,17 @@ Provide `JIMENG_ACCESS_KEY_ID` and `JIMENG_SECRET_ACCESS_KEY` (STS token optiona
 ### Seedance
 
 For Seedance 2.5 (Volcengine Ark, model `doubao-seedance-2-5-260628`), set `ARK_API_KEY`. Clips can be 4, 5, 8, 10, or 12 seconds and include generated audio unless `SEEDANCE_GENERATE_AUDIO=false`. Ark only accepts reference images by URL, so start frames are uploaded to a public Cloudflare R2 bucket first: configure `R2_ACCOUNT_ID`, `R2_BUCKET`, `R2_PUBLIC_BASE_URL`, `R2_ACCESS_KEY_ID`, and `R2_SECRET_ACCESS_KEY` (uploaded frames become publicly readable). Seedance is billed per generated second and task creation is never retried automatically; use 4-second scenes while testing.
+
+### Fal models in Microsoft Foundry
+
+Four Fal deployments on one Foundry resource: `Fal-Kling-V3-Pro`, `Fal-LTX-2.5-Pro`, `Fal-MiniMax-H3-Max`, and `Fal-MiniMax-H3-Max-Turbo`. Set `FOUNDRY_FAL_ENDPOINT` to the resource (e.g. `https://testaistudio0307049060.services.ai.azure.com`). Calls go to its provider-native route, `<endpoint>/providers/falai/v1/<model>/{text,image}-to-video`, and the resource's `/providers/falai/v1/docs` lists the routes. They do not go through the OpenAI `/openai/v1/videos` API: that route accepts the Fal model names but fails every create with HTTP 500 ("Failed to parse video generation service error response").
+
+- **Auth:** Entra ID by default (`FOUNDRY_FAL_AUTH=entra`); the identity needs the "Foundry User" role on the resource, which `deploy.sh`/`update.sh` grant to the backend's managed identity. `FOUNDRY_FAL_AUTH=key` sends `FOUNDRY_FAL_API_KEY`.
+- **Start images** are sent inline as JPEG data URIs, so no public image hosting is needed. The finished video is an expiring asset on the same resource and is downloaded immediately.
+- **Clip lengths** start at 4 seconds, except LTX 2.5 Pro, whose shortest clip is 6 seconds. Override the offered lengths per model with `FAL_<MODEL>_DURATIONS` (see `.env.example`); keep `frontend/src/app/dashboard/constants.ts` in step.
+- **Output:** Kling V3 Pro renders 1080p; LTX 2.5 Pro renders 720p, or 1080p for 1920x1080 jobs; MiniMax renders 768P (768x1344 for portrait), or 1080P for 1920x1080 jobs. Kling and LTX generate audio unless `FAL_GENERATE_AUDIO=false`; MiniMax always adds sound.
+- **Limits:** each deployment accepts 2 submissions per minute by default. Rate-limited submits (HTTP 429) are retried with backoff; other submit failures are never retried, because an accepted submit is billed. Status checks are not rate-limited. Up to `FAL_MAX_CONCURRENT_TASKS` (default 2) renders run per model.
+- **Prompts:** Fal Kling V3 Pro uses the Kling 3.0 templates (a dashboard edit applies to both Kling backends). LTX and MiniMax have their own templates in `prompts/`, and the two MiniMax variants share one. Prompt limits are 2500 characters for Kling and 5000 for LTX.
 
 ## Video insight (Azure Content Understanding)
 

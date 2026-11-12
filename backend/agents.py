@@ -10,13 +10,14 @@ from typing import Optional, Sequence
 from agent_framework import Executor, WorkflowContext, handler
 
 from .characters import map_scene_numbers, prepare_character_refs
-from .config import REASONING_DEPLOYMENT, ROOT, SORA_TRANSIENT_RETRIES, logger, normalize_video_provider
+from .config import FAL_MODELS, REASONING_DEPLOYMENT, ROOT, SORA_TRANSIENT_RETRIES, logger, normalize_video_provider
 from .provider_limits import PROVIDER_CONCURRENCY
 from .first_frames import generate_first_frame_image
 from .prompts import get_visual_style_description
 from .images import prepare_scene_start_images, prepare_scene_tail_image
 from .kling import render_kling_clip
 from .jimeng import render_jimeng_clip
+from .fal import render_fal_clip, write_fal_logs
 from .seedance import render_seedance_clip, write_seedance_logs
 from .models import (
     CharacterReference,
@@ -241,7 +242,7 @@ class DirectorAgent(Executor):
 
 
 class Sora2Agent(Executor):
-    """Generate each clip concurrently via the configured video backend (Sora2, Kling, Jimeng, or Seedance)."""
+    """Generate each clip concurrently via the configured video backend (Sora2, Kling, Jimeng, Seedance, or a Foundry Fal model)."""
 
     def __init__(self) -> None:
         super().__init__(id="sora2_agent")
@@ -454,6 +455,8 @@ class Sora2Agent(Executor):
             return await self._invoke_jimeng(plan, request, scenes_dir, scene_images, reference_override, character_refs)
         if request.video_provider == "seedance":
             return await self._invoke_seedance(plan, request, scenes_dir, scene_images, reference_override, character_refs)
+        if request.video_provider in FAL_MODELS:
+            return await self._invoke_fal(plan, request, scenes_dir, scene_images, reference_override, character_refs)
         return await self._invoke_sora(plan, request, scenes_dir, scene_images, reference_override, character_refs)
 
     async def _invoke_jimeng(
@@ -555,6 +558,48 @@ class Sora2Agent(Executor):
             client_log_path=str(client_log_path),
             prompt_text=plan.prompt_text,
             video_id=result.task_id,
+            first_frame_path=first_frame_path,
+        )
+
+    async def _invoke_fal(
+        self,
+        plan: ScenePlan,
+        request: VideoWorkflowRequest,
+        scenes_dir: Path,
+        scene_images: Sequence[str],
+        reference_override: Optional[str] = None,
+        character_refs: list[CharacterReference] | None = None,
+    ) -> SceneRender:
+        video_path = scenes_dir / f"scene_{plan.order:02d}.mp4"
+        await report_progress(
+            request,
+            "rendering",
+            f"{FAL_MODELS[request.video_provider].label}: starting render for {plan.label}.",
+        )
+
+        input_reference, first_frame_path = await self._prepare_reference_image(
+            plan, request, scene_images, reference_override, character_refs
+        )
+        result = await render_fal_clip(
+            provider=request.video_provider,
+            prompt_text=plan.prompt_text,
+            duration_seconds=plan.duration_seconds,
+            resolution=request.resolution,
+            output_path=video_path,
+            primary_image_path=input_reference,
+        )
+        log_path, client_log_path = write_fal_logs(result, video_path, ".client.log")
+
+        return SceneRender(
+            order=plan.order,
+            label=plan.label,
+            duration_seconds=plan.duration_seconds,
+            prompt_path=plan.prompt_path,
+            video_path=str(video_path),
+            log_path=str(log_path),
+            client_log_path=str(client_log_path),
+            prompt_text=plan.prompt_text,
+            video_id=result.request_id,
             first_frame_path=first_frame_path,
         )
 
