@@ -176,7 +176,9 @@ async def test_begin_analyze_file_uploads_through_async_client(tmp_path, monkeyp
         return real_client(*args, **kwargs)
 
     monkeypatch.setattr(client_module.httpx, "AsyncClient", _client)
-    cu = AzureContentUnderstandingClient(endpoint="https://cu.example", api_key="test-key", api_version="2025-05-01-preview")
+    cu = AzureContentUnderstandingClient(
+        endpoint="https://cu.example", auth="key", api_key="test-key", api_version="2025-11-01"
+    )
 
     operation = await cu._begin_analyze_file(video_path, "video/mp4")
 
@@ -187,7 +189,7 @@ async def test_begin_analyze_file_uploads_through_async_client(tmp_path, monkeyp
     )
 
 
-def _client_with_transport(monkeypatch, handler):
+def _client_with_transport(monkeypatch, handler, **client_kwargs):
     import httpx
 
     from backend.content_insights import client as client_module
@@ -199,8 +201,9 @@ def _client_with_transport(monkeypatch, handler):
         return real_client(*args, **kwargs)
 
     monkeypatch.setattr(client_module.httpx, "AsyncClient", _client)
+    options = {"auth": "key", "api_key": "k"} | client_kwargs
     return AzureContentUnderstandingClient(
-        endpoint="https://gone.cognitiveservices.azure.com", api_key="k", api_version="2025-05-01-preview"
+        endpoint="https://gone.cognitiveservices.azure.com", api_version="2025-11-01", **options
     )
 
 
@@ -234,3 +237,169 @@ async def test_rejected_key_error_points_to_api_key_setting(tmp_path, monkeypatc
 
     with pytest.raises(ContentUnderstandingError, match="AZURE_CONTENT_UNDERSTANDING_API_KEY"):
         await cu._begin_analyze_file(video, "video/mp4")
+
+
+def test_extract_segments_reads_ga_audio_visual_contents() -> None:
+    payload = {
+        "status": "Succeeded",
+        "result": {
+            "analyzerId": "prebuilt-videoSearch",
+            "contents": [
+                {
+                    "kind": "audioVisual",
+                    "startTimeMs": 800,
+                    "endTimeMs": 3200,
+                    "KeyFrameTimesMs": [800, 1600],
+                    "markdown": "# Video: 00:00.800 => 00:03.200",
+                    "fields": {"Summary": {"type": "string", "valueString": "A person frames a coastal sunset."}},
+                },
+                {
+                    "kind": "audioVisual",
+                    "startTimeMs": 3200,
+                    "endTimeMs": 6000,
+                    "fields": {"Summary": {"type": "string", "valueString": "The camera pans to the ocean."}},
+                },
+            ],
+        },
+    }
+
+    _, segments = summarize_content_understanding_result(payload)
+
+    assert [(s.start_seconds, s.end_seconds, s.summary) for s in segments] == [
+        (0.8, 3.2, "A person frames a coastal sunset."),
+        (3.2, 6.0, "The camera pans to the ocean."),
+    ]
+
+
+def test_ga_contents_are_ignored_when_explicit_segments_exist() -> None:
+    payload = {
+        "result": {
+            "contents": [
+                {
+                    "kind": "audioVisual",
+                    "startTimeMs": 0,
+                    "endTimeMs": 9000,
+                    "fields": {
+                        "Segments": {
+                            "type": "array",
+                            "valueArray": [
+                                {
+                                    "type": "object",
+                                    "valueObject": {
+                                        "StartTimeMs": {"type": "integer", "valueInteger": 0},
+                                        "EndTimeMs": {"type": "integer", "valueInteger": 4000},
+                                    },
+                                }
+                            ],
+                        }
+                    },
+                }
+            ]
+        }
+    }
+
+    _, segments = summarize_content_understanding_result(payload)
+
+    assert [(s.start_seconds, s.end_seconds) for s in segments] == [(0.0, 4.0)]
+
+
+@pytest.mark.asyncio
+async def test_entra_mode_sends_bearer_token_instead_of_key(tmp_path, monkeypatch) -> None:
+    import httpx
+
+    seen: dict = {}
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        seen["authorization"] = request.headers.get("authorization")
+        seen["subscription_key"] = request.headers.get("ocp-apim-subscription-key")
+        return httpx.Response(202, headers={"operation-location": "https://cu.example/operations/1"})
+
+    async def _token() -> str:
+        return "entra-token"
+
+    cu = _client_with_transport(monkeypatch, _handler, auth="entra", api_key=None, token_provider=_token)
+    video = tmp_path / "clip.mp4"
+    video.write_bytes(b"v")
+
+    await cu._begin_analyze_file(video, "video/mp4")
+
+    assert (seen["authorization"], seen["subscription_key"]) == ("Bearer entra-token", None)
+
+
+@pytest.mark.asyncio
+async def test_binary_upload_posts_to_analyze_binary_route(tmp_path, monkeypatch) -> None:
+    import httpx
+
+    seen: dict = {}
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        seen["path"] = request.url.path
+        return httpx.Response(202, headers={"operation-location": "https://cu.example/operations/1"})
+
+    cu = _client_with_transport(monkeypatch, _handler, analyzer_id="prebuilt-videoSearch")
+    video = tmp_path / "clip.mp4"
+    video.write_bytes(b"v")
+
+    await cu._begin_analyze_file(video, "video/mp4")
+
+    assert seen["path"] == "/contentunderstanding/analyzers/prebuilt-videoSearch:analyzeBinary"
+
+
+@pytest.mark.asyncio
+async def test_rejected_entra_token_error_names_required_role(tmp_path, monkeypatch) -> None:
+    import httpx
+
+    from backend.content_insights.client import ContentUnderstandingError
+
+    async def _token() -> str:
+        return "entra-token"
+
+    cu = _client_with_transport(
+        monkeypatch,
+        lambda request: httpx.Response(403, json={"error": {"code": "PermissionDenied"}}),
+        auth="entra",
+        api_key=None,
+        token_provider=_token,
+    )
+    video = tmp_path / "clip.mp4"
+    video.write_bytes(b"v")
+
+    with pytest.raises(ContentUnderstandingError, match="Cognitive Services User"):
+        await cu._begin_analyze_file(video, "video/mp4")
+
+
+@pytest.mark.asyncio
+async def test_missing_entra_sign_in_raises_readable_error(tmp_path, monkeypatch) -> None:
+    import httpx
+    from azure.core.exceptions import ClientAuthenticationError
+
+    from backend.content_insights.client import ContentUnderstandingError
+
+    async def _token() -> str:
+        raise ClientAuthenticationError("DefaultAzureCredential failed to retrieve a token")
+
+    cu = _client_with_transport(
+        monkeypatch, lambda request: httpx.Response(202), auth="entra", api_key=None, token_provider=_token
+    )
+    video = tmp_path / "clip.mp4"
+    video.write_bytes(b"v")
+
+    with pytest.raises(ContentUnderstandingError, match="az login"):
+        await cu._begin_analyze_file(video, "video/mp4")
+
+
+def test_key_mode_without_api_key_fails_fast() -> None:
+    from backend.content_insights.client import ContentUnderstandingError
+
+    with pytest.raises(ContentUnderstandingError, match="AZURE_CONTENT_UNDERSTANDING_API_KEY"):
+        AzureContentUnderstandingClient(endpoint="https://cu.example", auth="key", api_key="", api_version="2025-11-01")
+
+
+def test_entra_mode_is_ready_without_api_key(monkeypatch) -> None:
+    from backend.content_insights import service
+
+    monkeypatch.setattr(service, "AZURE_CONTENT_UNDERSTANDING_ENDPOINT", "https://cu.example")
+    monkeypatch.setattr(service, "AZURE_CONTENT_UNDERSTANDING_API_KEY", None)
+    monkeypatch.setattr(service, "AZURE_CONTENT_UNDERSTANDING_AUTH", "entra")
+
+    service.ensure_content_understanding_ready()

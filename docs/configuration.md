@@ -61,10 +61,11 @@ Four Fal deployments on one Foundry resource: `Fal-Kling-V3-Pro`, `Fal-LTX-2.5-P
 
 The **Video insight** tab uploads an MP4/MOV/WEBM file to Azure Content Understanding, then shows the extracted key-frame timestamps and segment summaries. Each job stores the raw JSON manifest under `/static` with download links for the analyzed clip and the insight payload.
 
-- `AZURE_CONTENT_UNDERSTANDING_ENDPOINT` — the region-specific Cognitive Service endpoint.
-- `AZURE_CONTENT_UNDERSTANDING_API_KEY` — API key for the content understanding resource.
-- `AZURE_CONTENT_UNDERSTANDING_API_VERSION` — default `2025-05-01-preview`.
-- `AZURE_CONTENT_UNDERSTANDING_ANALYZER_ID` — defaults to `prebuilt-videoAnalyzer`.
+- `AZURE_CONTENT_UNDERSTANDING_ENDPOINT` — the Foundry (AI Services) resource endpoint, e.g. `https://<name>.cognitiveservices.azure.com/`.
+- `AZURE_CONTENT_UNDERSTANDING_AUTH` — `entra` (default) or `key`. `entra` signs in with Microsoft Entra ID (`az login` locally, the managed identity in Azure); the identity needs the **Cognitive Services User** role on the resource. `key` sends `AZURE_CONTENT_UNDERSTANDING_API_KEY` and fails if key-based access is disabled on the resource.
+- `AZURE_CONTENT_UNDERSTANDING_API_KEY` — only used when `AZURE_CONTENT_UNDERSTANDING_AUTH=key`.
+- `AZURE_CONTENT_UNDERSTANDING_API_VERSION` — default `2025-11-01`. The earlier `2025-05-01-preview` is retired (HTTP 410).
+- `AZURE_CONTENT_UNDERSTANDING_ANALYZER_ID` — defaults to `prebuilt-videoSearch`, which needs a completion deployment (for example `gpt-6-luna`) mapped in the resource defaults via `PATCH /contentunderstanding/defaults`, mapping both `prebuilt-analyzer-completion` and `prebuilt-analyzer-completion-mini`.
 - `CONTENT_UNDERSTANDING_MAX_UPLOAD_MB`, `CONTENT_UNDERSTANDING_POLL_INTERVAL`, `CONTENT_UNDERSTANDING_POLL_TIMEOUT` — optional overrides for upload size and polling cadence.
 - `AZURE_SPEECH_ENDPOINT` / `AZURE_SPEECH_KEY` — optional, reserved for future speech-to-text expansion.
 

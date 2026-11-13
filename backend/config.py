@@ -380,14 +380,28 @@ OUTPUT_SYNC_INTERVAL_SECONDS = max(3.0, _float_env("OUTPUT_SYNC_INTERVAL_SECONDS
 
 # Azure content understanding configuration
 AZURE_CONTENT_UNDERSTANDING_ENDPOINT = (os.getenv("AZURE_CONTENT_UNDERSTANDING_ENDPOINT") or "").rstrip("/")
+# 2025-05-01-preview (and its prebuilt-videoAnalyzer) is retired: the service
+# answers HTTP 410. prebuilt-videoSearch needs a completion model mapped in the
+# resource's Content Understanding defaults (PATCH /contentunderstanding/defaults).
 AZURE_CONTENT_UNDERSTANDING_API_VERSION = os.getenv(
     "AZURE_CONTENT_UNDERSTANDING_API_VERSION",
-    "2025-05-01-preview",
+    "2025-11-01",
+)
+# "entra" (default) signs in with Microsoft Entra ID (az login locally, managed
+# identity in Azure) and needs the "Cognitive Services User" role on the
+# resource; "key" sends AZURE_CONTENT_UNDERSTANDING_API_KEY, which fails once
+# key-based authentication is disabled on the resource.
+SUPPORTED_CONTENT_UNDERSTANDING_AUTH_MODES = ("key", "entra")
+_content_understanding_auth_env = (os.getenv("AZURE_CONTENT_UNDERSTANDING_AUTH") or "entra").strip().lower()
+AZURE_CONTENT_UNDERSTANDING_AUTH = (
+    _content_understanding_auth_env
+    if _content_understanding_auth_env in SUPPORTED_CONTENT_UNDERSTANDING_AUTH_MODES
+    else "entra"
 )
 AZURE_CONTENT_UNDERSTANDING_API_KEY = os.getenv("AZURE_CONTENT_UNDERSTANDING_API_KEY")
 AZURE_CONTENT_UNDERSTANDING_ANALYZER_ID = os.getenv(
     "AZURE_CONTENT_UNDERSTANDING_ANALYZER_ID",
-    "prebuilt-videoAnalyzer",
+    "prebuilt-videoSearch",
 )
 CONTENT_UNDERSTANDING_POLL_INTERVAL = max(
     1.0, _float_env("CONTENT_UNDERSTANDING_POLL_INTERVAL", "2")
@@ -666,6 +680,7 @@ __all__ = [
     "AZURE_CONTENT_UNDERSTANDING_ANALYZER_ID",
     "AZURE_CONTENT_UNDERSTANDING_API_KEY",
     "AZURE_CONTENT_UNDERSTANDING_API_VERSION",
+    "AZURE_CONTENT_UNDERSTANDING_AUTH",
     "AZURE_CONTENT_UNDERSTANDING_ENDPOINT",
     "AZURE_IMAGE_DEPLOYMENT",
     "AZURE_OPENAI_AUTH",

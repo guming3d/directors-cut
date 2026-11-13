@@ -123,6 +123,49 @@ def extract_segments(payload: dict[str, Any]) -> list[VideoInsightSegment]:
                 seen_ids.add(segment_id)
             if len(segments) >= MAX_ITEMS:
                 return segments
+    if not segments:
+        segments = _extract_audio_visual_contents(payload)
+    return segments
+
+
+def _extract_audio_visual_contents(payload: dict[str, Any]) -> list[VideoInsightSegment]:
+    """Read GA (2025-11-01) results, where each ``result.contents[]`` item is one segment.
+
+    prebuilt-videoSearch returns no explicit segment list: every audioVisual
+    content carries its own ``startTimeMs``/``endTimeMs`` and a ``Summary`` field.
+    """
+
+    result = payload.get("result") if isinstance(payload.get("result"), dict) else payload
+    contents = result.get("contents") if isinstance(result, dict) else None
+    if not isinstance(contents, list):
+        return []
+    segments: list[VideoInsightSegment] = []
+    for content in contents:
+        if not isinstance(content, dict) or content.get("startTimeMs") is None:
+            continue
+        start_ms = _to_float(content.get("startTimeMs"))
+        end_ms = _to_float(content.get("endTimeMs"))
+        start_seconds = max(start_ms / 1000.0, 0.0) if start_ms is not None else None
+        end_seconds = max(end_ms / 1000.0, 0.0) if end_ms is not None else None
+        fields = _flatten_schema_value(content.get("fields") or {})
+        summary = _first_non_empty(
+            _get_field(fields, "summary", "Summary"),
+            _get_field(fields, "description", "Description"),
+        )
+        segments.append(
+            VideoInsightSegment(
+                segment_id=None,
+                label=None,
+                start=_stringify_timestamp(start_seconds),
+                end=_stringify_timestamp(end_seconds),
+                start_seconds=start_seconds,
+                end_seconds=end_seconds,
+                summary=summary,
+                tags=[],
+            )
+        )
+        if len(segments) >= MAX_ITEMS:
+            break
     return segments
 
 

@@ -9,6 +9,7 @@ from typing import Optional
 
 from ..config import (
     AZURE_CONTENT_UNDERSTANDING_API_KEY,
+    AZURE_CONTENT_UNDERSTANDING_AUTH,
     AZURE_CONTENT_UNDERSTANDING_ENDPOINT,
     VIDEO_INSIGHT_JOBS_DIR,
     logger,
@@ -28,9 +29,14 @@ def video_insight_job_root(job_id: str, *, ensure_exists: bool = True) -> Path:
 
 
 def ensure_content_understanding_ready() -> None:
-    if not AZURE_CONTENT_UNDERSTANDING_ENDPOINT or not AZURE_CONTENT_UNDERSTANDING_API_KEY:
+    if not AZURE_CONTENT_UNDERSTANDING_ENDPOINT:
         raise RuntimeError(
-            "Configure AZURE_CONTENT_UNDERSTANDING_ENDPOINT and AZURE_CONTENT_UNDERSTANDING_API_KEY before running video insights.",
+            "Configure AZURE_CONTENT_UNDERSTANDING_ENDPOINT before running video insights.",
+        )
+    if AZURE_CONTENT_UNDERSTANDING_AUTH == "key" and not AZURE_CONTENT_UNDERSTANDING_API_KEY:
+        raise RuntimeError(
+            "AZURE_CONTENT_UNDERSTANDING_AUTH=key needs AZURE_CONTENT_UNDERSTANDING_API_KEY. "
+            "Set the key, or use AZURE_CONTENT_UNDERSTANDING_AUTH=entra.",
         )
 
 
