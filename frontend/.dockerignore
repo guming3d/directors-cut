@@ -1,0 +1,6 @@
+# The image installs its own dependencies (npm ci) and builds .next itself;
+# local copies would be uploaded as build context and merged over them.
+node_modules
+.next
+tsconfig.tsbuildinfo
+npm-debug.log*
